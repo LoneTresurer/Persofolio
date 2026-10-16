@@ -165,7 +165,26 @@
   .rep-legende { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; color: var(--encre-2); margin-top: 10px; }
   .rep-legende span { display: inline-flex; align-items: center; gap: 7px; }
 
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); border: 1px solid var(--filet); border-radius: var(--rayon); background: var(--carte); margin-bottom: 18px; overflow: hidden; }
+  /* Pas d'overflow:hidden : les infobulles de formule débordent des tuiles. */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); border: 1px solid var(--filet); border-radius: var(--rayon); background: var(--carte); margin-bottom: 18px; }
+  .kpis > div:first-child { border-top-left-radius: var(--rayon); }
+  .kpis > div:last-child { border-bottom-right-radius: var(--rayon); border-right: none; }
+
+  /* Formule d'un indicateur, au survol de son intitulé. */
+  .formule { position: relative; border-bottom: 1px dotted var(--encre-2); cursor: help; }
+  .formule::after {
+    content: attr(data-formule);
+    position: absolute; left: 0; top: calc(100% + 7px); z-index: 40;
+    width: max-content; max-width: 300px;
+    background: var(--encre); color: #fff; border-radius: 8px; padding: 9px 11px;
+    font-size: 12.5px; font-weight: 400; line-height: 1.5; white-space: pre-line;
+    opacity: 0; pointer-events: none; transition: opacity .12s;
+    box-shadow: 0 6px 20px rgba(21, 38, 29, .22);
+  }
+  .formule:hover::after, .formule:focus-visible::after { opacity: 1; }
+  /* Près du bord droit, l'infobulle s'aligne par la droite pour rester dans la page. */
+  .formule.droite::after { left: auto; right: 0; }
+  @media (hover: none) { .formule::after { display: none; } }
   .kpis > div { padding: 14px 18px; border-right: 1px solid var(--filet-2); border-bottom: 1px solid var(--filet-2); }
   .kpis .nom { font-size: 13px; color: var(--encre-2); }
   .kpis .valeur { font-size: 22px; font-weight: 500; margin: 2px 0; }
@@ -358,7 +377,7 @@
   <main>
     <div class="releve">
       <div>
-        <div class="libelle">Patrimoine net</div>
+        <div class="libelle" id="lib-net">Patrimoine net</div>
         <div class="montant" id="r-net">—</div>
         <div class="evol" id="r-evol"></div>
       </div>
@@ -483,6 +502,12 @@ function dureeTexte(mois) {
   if (mois == null || !isFinite(mois)) return '—';
   const a = Math.floor(mois / 12), m = mois % 12;
   return [a ? `${a} an${a > 1 ? 's' : ''}` : '', m ? `${m} mois` : ''].filter(Boolean).join(' ') || '0 mois';
+}
+
+/* Intitulé d'indicateur portant sa formule, visible au survol ou au clavier.
+   On y met le calcul *et* les nombres du moment : une formule abstraite se vérifie mal. */
+function formule(nom, calcul, droite = false) {
+  return `<span class="formule${droite ? ' droite' : ''}" tabindex="0" data-formule="${echap(calcul)}">${nom}</span>`;
 }
 
 function toast(msg) {
@@ -1001,6 +1026,29 @@ function ajouterDette({ nom, type, capital, taux, mensualite, jour, echeance, as
   E.programmees.push({ id: uid(), libelle: `Échéance ${nom}`, sens: 'SORTIE', categorie: 'credit', compte: 'courant', montant: arrondi(mensualite + assuranceDe(d)), jour, debut, actif: true, detteId: d.id });
   return d;
 }
+/* Une échéance de crédit importée a pu être programmée comme une simple dépense.
+   Quand l'utilisateur crée ensuite le crédit correspondant, les deux se cumuleraient
+   dans le plan mensuel : on repère la programmation jumelle pour proposer de la retirer. */
+function programmeeJumelle(mensualite, jour, nom) {
+  const motsNom = new Set(normaliserTiers(nom).split(' ').filter(m => m.length > 3));
+  return E.programmees.find(r => {
+    if (r.detteId || !r.actif || r.sens !== 'SORTIE' || r.type === 'VIREMENT') return false;
+    const ecartMontant = Math.abs(r.montant - mensualite) / Math.max(mensualite, 1);
+    const ecartJour = Math.abs(r.jour - jour);
+    if (ecartMontant > 0.05 || ecartJour > 3) return false;
+    // Montant et jour qui coïncident : c'est déjà un indice fort. La catégorie
+    // « crédit » ou un mot commun avec le nom du prêt lève le doute.
+    if (r.categorie === 'credit') return true;
+    return normaliserTiers(r.libelle).split(' ').some(m => m.length > 3 && motsNom.has(m));
+  }) || null;
+}
+
+/* Majuscules sans accents : comparaison de libellés entre une dette et une programmation. */
+function normaliserTiers(t) {
+  return (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
 /* Dettes créées avant l'ajout de la maturité et de l'assurance : on déduit la dernière échéance du rythme actuel. */
 function migrerDette(d) {
   if (d.assurance === undefined) d.assurance = null;
@@ -1185,6 +1233,10 @@ function ouvrirOnglet(nom) {
 function afficherReleve() {
   const net = patrimoineNet(), il30 = decalerJours(AUJ, -30);
   $('#r-net').textContent = argent(net);
+  $('#lib-net').innerHTML = formule('Patrimoine net',
+    `Compte courant + compte investissement − capital restant dû sur vos crédits
+`
+    + `${argent0(soldeCompte('courant'))} + ${argent0(soldeCompte('invest'))} − ${argent0(detteTotale())} = ${argent0(net)}`);
   $('#r-courant').textContent = argent(soldeCompte('courant'));
   $('#r-invest').textContent = argent(soldeCompte('invest'));
   $('#r-dettes').textContent = argent(-detteTotale());
@@ -1252,7 +1304,8 @@ function vueSynthese() {
       <div><div class="solde">${argent(s)}</div>${v != null ? `<div class="discret"><span class="${classe(v)}">${argent(v, true)}</span> sur 30 jours</div>` : ''}</div>
       <div class="lignes">${lignes}
         <span>Réservé aux objectifs</span><span>${argent(aff)}</span>
-        <span>Disponible</span><strong>${argent(s - aff)}</strong></div>
+        <span>${formule('Disponible', `Solde du compte − montants réservés à vos objectifs
+${argent0(s)} − ${argent0(aff)} = ${argent0(s - aff)}`)}</span><strong>${argent(s - aff)}</strong></div>
       <div class="actions">
         <button class="mini-btn" data-voir="${cpt}">Voir les opérations</button>
         <button class="mini-btn" data-virer="${cpt}">${cpt === 'courant' ? 'Virer vers l\'investissement' : 'Rapatrier sur le courant'}</button>
@@ -1286,12 +1339,28 @@ function vueSynthese() {
     </div>
 
     <div class="kpis">
-      <div><div class="nom">Capacité d'épargne prévue</div><div class="valeur ${classe(plan.capacite)}">${argent0(plan.capacite, true)}</div><div class="aide">par mois, d'après vos revenus, charges, crédits et budgets</div></div>
-      <div><div class="nom">Épargne constatée</div><div class="valeur ${constatee ? classe(constatee.moyenne) : ''}">${constatee ? argent0(constatee.moyenne, true) : '—'}</div><div class="aide">${constatee ? `moyenne des ${constatee.nb} dernier${constatee.nb > 1 ? 's' : ''} mois complet${constatee.nb > 1 ? 's' : ''}` : 'disponible après un premier mois complet'}</div></div>
-      <div><div class="nom">Dépensé en ${libelleMois(moisDe(AUJ), true)}</div><div class="valeur">${argent0(mois.sorties)}</div>
+      <div><div class="nom">${formule("Capacité d'épargne prévue",
+        `Revenus programmés − charges fixes − mensualités de crédit − budgets courants
+`
+        + `${argent0(plan.revenus)} − ${argent0(plan.fixes)} − ${argent0(plan.credits)} − ${argent0(plan.variables)} = ${argent0(plan.capacite, true)}`)}</div><div class="valeur ${classe(plan.capacite)}">${argent0(plan.capacite, true)}</div><div class="aide">par mois, d'après vos revenus, charges, crédits et budgets</div></div>
+      <div><div class="nom">${formule('Épargne constatée',
+        constatee
+          ? `Moyenne de (entrées − sorties) sur les ${constatee.nb} derniers mois complets, virements entre vos comptes exclus.
+Moyenne : ${argent0(constatee.moyenne, true)} par mois`
+          : 'Moyenne de (entrées − sorties) par mois complet écoulé. Aucun mois complet pour l\'instant.')}</div><div class="valeur ${constatee ? classe(constatee.moyenne) : ''}">${constatee ? argent0(constatee.moyenne, true) : '—'}</div><div class="aide">${constatee ? `moyenne des ${constatee.nb} dernier${constatee.nb > 1 ? 's' : ''} mois complet${constatee.nb > 1 ? 's' : ''}` : 'disponible après un premier mois complet'}</div></div>
+      <div><div class="nom">${formule(`Dépensé en ${libelleMois(moisDe(AUJ), true)}`,
+        `Somme des sorties du mois, virements entre vos comptes exclus, comparée au total prévu (charges fixes + crédits + budgets).
+`
+        + `${argent0(mois.sorties)} sur ${argent0(budgetMois)} prévus
+Le trait marque l'avancement du mois : ${pct(avance * 100, 0)}`)}</div><div class="valeur">${argent0(mois.sorties)}</div>
         <div class="progres" style="margin:6px 0"><i class="${mois.sorties > budgetMois ? 'depasse' : mois.sorties > budgetMois * avance * 1.1 ? 'proche' : ''}" style="width:${Math.min(100, mois.sorties / Math.max(budgetMois, 1) * 100)}%"></i><b style="left:${avance * 100}%" title="Avancement du mois"></b></div>
         <div class="aide">sur ${argent0(budgetMois)} prévus, le trait marque l'avancement du mois</div></div>
-      <div><div class="nom">Courant dans 30 jours</div><div class="valeur ${classe(soldePrevu)}">${argent0(soldePrevu)}</div><div class="aide">solde actuel et opérations programmées, hors dépenses courantes</div></div>
+      <div><div class="nom">${formule('Courant dans 30 jours',
+        `Solde actuel + opérations programmées des 30 prochains jours.
+`
+        + `${argent0(soldeCompte('courant'))} ${argent0(soldePrevu - soldeCompte('courant'), true)} = ${argent0(soldePrevu)}
+`
+        + `Les dépenses courantes à venir n'y sont pas : le solde réel sera plus bas.`, true)}</div><div class="valeur ${classe(soldePrevu)}">${argent0(soldePrevu)}</div><div class="aide">solde actuel et opérations programmées, hors dépenses courantes</div></div>
     </div>
 
     <div class="panneau" id="accroche-simu"></div>
@@ -1418,7 +1487,9 @@ function vueSimulateur() {
           <div class="resultat" style="margin:0 0 16px">
             <div><span>Au bout de ${sim.annees} ans</span><strong style="color:var(--invest)">${aff(p.total)}</strong><span>${sim.reel ? 'en euros d\'aujourd\'hui' : 'en euros courants'}</span></div>
             <div><span>Versé par vous</span><strong>${aff(p.verse)}</strong><span>${argent0(sim.mensuel)} × ${sim.annees * 12} mois${sim.initial ? ` + ${argent0(sim.initial)}` : ''}</span></div>
-            <div><span>Produit par les intérêts</span><strong class="gain">${aff(p.interets)}</strong><span>${pct(partInterets, 0)} du capital final</span></div>
+            <div><span>${formule('Produit par les intérêts', `Capital final − sommes réellement versées
+${argent0(p.total)} − ${argent0(p.verse)} = ${argent0(p.interets)}
+Intérêts calculés chaque mois au taux équivalent (1 + taux annuel)^(1/12) − 1, et réinvestis.`)}</span><strong class="gain">${aff(p.interets)}</strong><span>${pct(partInterets, 0)} du capital final</span></div>
           </div>
           <div class="courbe"><canvas id="c-simu"></canvas></div>
         </div>
@@ -1602,10 +1673,22 @@ function vueBudget() {
       <button class="mini-btn" id="btn-budgets">Ajuster les budgets</button>
     </div>
     <div class="kpis">
-      <div><div class="nom">Entrées</div><div class="valeur gain">${argent0(F.entrees)}</div><div class="aide">hors virements entre vos comptes</div></div>
-      <div><div class="nom">Sorties</div><div class="valeur">${argent0(F.sorties)}</div><div class="aide">dont ${argent0(F.fixes)} de charges programmées (${pct(F.sorties ? F.fixes / F.sorties * 100 : 0, 0)})</div></div>
-      <div><div class="nom">Solde du mois</div><div class="valeur ${classe(F.solde)}">${argent0(F.solde, true)}</div><div class="aide">${F.versInvest ? `dont ${argent0(F.versInvest)} placés sur l'investissement` : 'rien placé sur l\'investissement'}</div></div>
-      <div><div class="nom">Taux d'épargne</div><div class="valeur ${classe(tauxEpargne ?? 0)}">${tauxEpargne == null ? '—' : pct(tauxEpargne, 0)}</div><div class="aide">${tauxEpargne == null ? 'pas assez d\'entrées ce mois-ci pour être parlant' : 'part des entrées non dépensée'}</div></div>
+      <div><div class="nom">${formule('Entrées',
+        `Somme des opérations créditrices du mois.
+Les virements reçus depuis votre autre compte sont exclus : ce n'est pas un revenu, seulement un déplacement.`)}</div><div class="valeur gain">${argent0(F.entrees)}</div><div class="aide">hors virements entre vos comptes</div></div>
+      <div><div class="nom">${formule('Sorties',
+        `Somme des opérations débitrices du mois, virements vers votre autre compte exclus.
+`
+        + `Dont ${argent0(F.fixes)} d'opérations programmées, soit ${pct(F.sorties ? F.fixes / F.sorties * 100 : 0, 0)} du total.`)}</div><div class="valeur">${argent0(F.sorties)}</div><div class="aide">dont ${argent0(F.fixes)} de charges programmées (${pct(F.sorties ? F.fixes / F.sorties * 100 : 0, 0)})</div></div>
+      <div><div class="nom">${formule('Solde du mois',
+        `Entrées − sorties
+${argent0(F.entrees)} − ${argent0(F.sorties)} = ${argent0(F.solde, true)}`)}</div><div class="valeur ${classe(F.solde)}">${argent0(F.solde, true)}</div><div class="aide">${F.versInvest ? `dont ${argent0(F.versInvest)} placés sur l'investissement` : 'rien placé sur l\'investissement'}</div></div>
+      <div><div class="nom">${formule("Taux d'épargne",
+        `(Entrées − sorties) ÷ entrées
+`
+        + (tauxEpargne == null
+            ? 'Non calculé : les entrées du mois sont trop faibles devant les sorties pour que le rapport ait un sens.'
+            : `(${argent0(F.entrees)} − ${argent0(F.sorties)}) ÷ ${argent0(F.entrees)} = ${pct(tauxEpargne, 0)}`), true)}</div><div class="valeur ${classe(tauxEpargne ?? 0)}">${tauxEpargne == null ? '—' : pct(tauxEpargne, 0)}</div><div class="aide">${tauxEpargne == null ? 'pas assez d\'entrées ce mois-ci pour être parlant' : 'part des entrées non dépensée'}</div></div>
     </div>
     ${aVenir.length ? `<p class="note" style="margin:-4px 0 18px">Mois en cours : ${aVenir.map(e => `${echap(e.rec.libelle.toLowerCase())} de ${argent0(e.rec.montant)} attendu le ${+e.date.slice(8)}`).join(', ')}. D'ici là, le solde du mois reste mécaniquement négatif.</p>` : ''}
 
@@ -1798,15 +1881,31 @@ function vueDettes() {
 
   vue.innerHTML = `
     <div class="kpis">
-      <div><div class="nom">Capital restant dû</div><div class="valeur">${argent0(totalCapital)}</div><div class="aide">${enCours.length} crédit${enCours.length > 1 ? 's' : ''} en cours, taux nominal moyen pondéré ${pct(tauxMoyen, 2)}</div></div>
-      <div><div class="nom">Prélevé chaque mois</div><div class="valeur">${argent0(totalMens)}</div><div class="aide">${totalAss ? `dont ${argent(totalAss)} d'assurance` : 'aucune assurance emprunteur saisie'}</div></div>
-      <div><div class="nom">Coût restant des crédits</div><div class="valeur perte">${argent0(totalInt + totalCoutAss)}</div><div class="aide">${argent0(totalInt)} d'intérêts${totalCoutAss ? ` et ${argent0(totalCoutAss)} d'assurance` : ''}, au rythme actuel</div></div>
+      <div><div class="nom">${formule('Capital restant dû',
+        `Capital de départ, diminué à chaque échéance de la part qui amortit : mensualité − intérêts du mois.
+`
+        + `Intérêts du mois = capital restant × taux annuel ÷ 12.`)}</div><div class="valeur">${argent0(totalCapital)}</div><div class="aide">${enCours.length} crédit${enCours.length > 1 ? 's' : ''} en cours, taux nominal moyen pondéré ${pct(tauxMoyen, 2)}</div></div>
+      <div><div class="nom">${formule('Prélevé chaque mois',
+        `Somme des mensualités en cours, assurance emprunteur comprise.
+`
+        + `${argent0(totalMens - totalAss)} de mensualités + ${argent0(totalAss)} d'assurance = ${argent0(totalMens)}`)}</div><div class="valeur">${argent0(totalMens)}</div><div class="aide">${totalAss ? `dont ${argent(totalAss)} d'assurance` : 'aucune assurance emprunteur saisie'}</div></div>
+      <div><div class="nom">${formule('Coût restant des crédits',
+        `Intérêts et assurance qu'il reste à payer si vous remboursez au rythme actuel.
+`
+        + `${argent0(totalInt)} d'intérêts + ${argent0(totalCoutAss)} d'assurance = ${argent0(totalInt + totalCoutAss)}
+`
+        + `Le capital n'y est pas : lui, vous vous le devez à vous-même.`)}</div><div class="valeur perte">${argent0(totalInt + totalCoutAss)}</div><div class="aide">${argent0(totalInt)} d'intérêts${totalCoutAss ? ` et ${argent0(totalCoutAss)} d'assurance` : ''}, au rythme actuel</div></div>
       <div><div class="nom">Fin du dernier crédit</div><div class="valeur" style="text-transform:capitalize">${derniere ? libelleMois(derniere) : '—'}</div><div class="aide">${derniere ? `dans ${dureeTexte(ecartMois(moisDe(AUJ), derniere))}` : ''}</div></div>
     </div>
 
     <div class="grille-2">
       <div class="panneau">
-        <h2>Taux d'endettement</h2>
+        <h2>${formule("Taux d'endettement",
+          `Mensualités (assurance comprise) ÷ revenus nets programmés
+`
+          + `${argent0(totalMens)} ÷ ${argent0(plan.revenus)} = ${endettement == null ? '—' : pct(endettement)}
+`
+          + `Les banques françaises retiennent ${SEUIL_ENDETTEMENT} % comme limite usuelle.`)}</h2>
         <p class="sous-titre">Mensualités, assurance comprise, rapportées à vos revenus nets programmés.</p>
         <div style="font-size:28px;font-weight:500" class="${endettement > SEUIL_ENDETTEMENT ? 'perte' : ''}">${endettement == null ? '—' : pct(endettement)}</div>
         <div class="jauge"><div class="progres"><i class="${endettement > SEUIL_ENDETTEMENT ? 'depasse' : endettement > 30 ? 'proche' : ''}" style="width:${Math.min(100, (endettement || 0) / 50 * 100)}%"></i><b style="left:${SEUIL_ENDETTEMENT / 50 * 100}%"></b></div>
@@ -2701,7 +2800,14 @@ function tiroirDette(id, brouillon) {
       if (Math.abs(etatDette(d).capital - c.capital) > 0.005) (d.recalages = d.recalages || []).push({ date: AUJ, capital: c.capital });
       Object.assign(d, { nom, type: b.type, taux: c.taux, mensualite: c.mensualite, jour: +b.jour, echeance: b.echeance || d.echeance, assurance: c.assurance });
       E.programmees.filter(r => r.detteId === d.id).forEach(r => Object.assign(r, { libelle: `Échéance ${nom}`, montant: c.total, jour: +b.jour, actif: c.capital > 0.005 }));
-    } else ajouterDette({ nom, type: b.type, capital: c.capital, taux: c.taux, mensualite: c.mensualite, jour: +b.jour, echeance: b.echeance, assurance: c.assurance }, decalerJours(AUJ, 1));
+    } else {
+      const jumelle = programmeeJumelle(c.total, +b.jour, nom);
+      if (jumelle && confirm(`L'opération programmée « ${jumelle.libelle} » de ${argent(jumelle.montant)} le ${jumelle.jour} ressemble à l'échéance de ce crédit.\n\n`
+          + `La garder en plus du crédit compterait la même dépense deux fois. La supprimer ?`)) {
+        E.programmees = E.programmees.filter(r => r.id !== jumelle.id);
+      }
+      ajouterDette({ nom, type: b.type, capital: c.capital, taux: c.taux, mensualite: c.mensualite, jour: +b.jour, echeance: b.echeance, assurance: c.assurance }, decalerJours(AUJ, 1));
+    }
     sauver(); fermerTiroir(); rafraichir(); toast(d ? 'Crédit modifié' : 'Crédit ajouté');
   };
   if ($('#d-suppr')) $('#d-suppr').onclick = () => {
