@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EcoFolio · Mon compte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --papier: #F2F4F1;
+    --carte: #FFFFFF;
+    --encre: #15261D;
+    --encre-2: #5B6A61;
+    --filet: #D8DED8;
+    --foret: #1E6A48;
+    --foret-clair: #E3EFE7;
+    --gain: #1D7A4B;
+    --perte: #B23A2E;
+    --perte-clair: #F7E6E3;
+    --rayon: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--papier); color: var(--encre);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--foret); outline-offset: 2px; }
+  .cache { display: none !important; }
+  .num { text-align: right; white-space: nowrap; }
+  .gain { color: var(--gain); }
+  .perte { color: var(--perte); }
+  .discret { color: var(--encre-2); font-size: 13px; }
+
+  /* ── Connexion ─────────────────────────────────────────── */
+  #ecran-connexion { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+  .boite-connexion { width: 100%; max-width: 380px; }
+  .boite-connexion h1 { font-family: 'IBM Plex Serif', serif; font-weight: 500; font-size: 34px; margin: 0 0 4px; }
+  .boite-connexion p { margin: 0 0 28px; color: var(--encre-2); }
+  .champ { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .champ label { font-size: 13px; color: var(--encre-2); }
+  .champ input, .champ select {
+    background: var(--carte); border: 1px solid var(--filet); border-radius: 8px; padding: 10px 12px;
+  }
+  .champ input, .champ select { width: 100%; min-width: 0; }
+  .champ input:focus, .champ select:focus { border-color: var(--foret); outline: none; }
+  .btn {
+    border: 1px solid var(--foret); background: var(--foret); color: #fff; border-radius: 8px;
+    padding: 10px 18px; font-weight: 500;
+  }
+  .btn:hover { background: #185a3c; }
+  .btn, .mini-btn { white-space: nowrap; }
+  .btn-sec { background: transparent; color: var(--foret); }
+  .btn-sec:hover { background: var(--foret-clair); }
+  .btn-lien { background: none; border: none; color: var(--foret); padding: 0; text-decoration: underline; }
+  .erreur { background: var(--perte-clair); color: var(--perte); border-radius: 8px; padding: 10px 12px; font-size: 14px; margin-bottom: 14px; }
+
+  /* ── En-tête ───────────────────────────────────────────── */
+  header { border-bottom: 1px solid var(--filet); background: var(--carte); }
+  .barre { max-width: 1240px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+  .marque { font-weight: 600; letter-spacing: .01em; }
+  .marque span { color: var(--foret); }
+  .barre .espace { flex: 1; }
+  .utilisateur { color: var(--encre-2); font-size: 14px; }
+
+  main { max-width: 1240px; margin: 0 auto; padding: 28px 24px 60px; }
+
+  /* Tête de relevé : l'élément fort de la page */
+  .releve { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 28px 48px; margin-bottom: 26px; }
+  .releve .principal .libelle { color: var(--encre-2); font-size: 14px; }
+  .releve .montant { font-family: 'IBM Plex Serif', serif; font-size: clamp(40px, 6vw, 58px); line-height: 1.05; font-weight: 400; }
+  .releve .pnl { font-size: 17px; margin-top: 6px; }
+  .chiffres { display: grid; grid-template-columns: repeat(4, auto); gap: 12px 36px; }
+  .chiffres > div > span { display: block; color: var(--encre-2); font-size: 13px; }
+  .chiffres strong { font-size: 17px; font-weight: 500; }
+
+  nav.onglets { display: flex; gap: 4px; border-bottom: 1px solid var(--filet); margin-bottom: 22px; overflow-x: auto; }
+  nav.onglets button {
+    background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 14px;
+    color: var(--encre-2); font-weight: 500; white-space: nowrap;
+  }
+  nav.onglets button[aria-selected="true"] { color: var(--encre); border-bottom-color: var(--foret); }
+
+  .panneau { background: var(--carte); border: 1px solid var(--filet); border-radius: var(--rayon); padding: 18px 20px; margin-bottom: 18px; }
+  .panneau h2 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .panneau .sous-titre { color: var(--encre-2); font-size: 13px; margin: 0 0 14px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 500; color: var(--encre-2); font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--filet); white-space: nowrap; }
+  th.num { text-align: right; }
+  td { padding: 10px; border-bottom: 1px solid #EDF0EC; vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  .defile { overflow-x: auto; }
+  .titre-ligne strong { display: block; font-weight: 500; }
+  .titre-ligne small { color: var(--encre-2); }
+  .sous { display: block; font-size: 12px; color: var(--encre-2); }
+  .mini-btn { border: 1px solid var(--filet); background: var(--carte); border-radius: 6px; padding: 4px 10px; font-size: 13px; }
+  .mini-btn:hover { border-color: var(--foret); color: var(--foret); }
+  .mini-btn.danger:hover { border-color: var(--perte); color: var(--perte); }
+  .etiquette { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: 12px; font-weight: 500; background: #ECEFEB; }
+  .etiquette.ACHAT { background: var(--foret-clair); color: var(--foret); }
+  .etiquette.VENTE { background: #FBEEDC; color: #8A5412; }
+  .etiquette.DEPOT, .etiquette.DIVIDENDE { background: #E6EEF7; color: #2B5680; }
+  .etiquette.RETRAIT { background: var(--perte-clair); color: var(--perte); }
+
+  .vide { text-align: center; padding: 36px 16px; color: var(--encre-2); }
+  .vide p { margin: 0 0 14px; }
+
+  .grille-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 18px; }
+  .grille-2 .panneau { margin-bottom: 0; }
+  .donut { position: relative; height: 230px; }
+  .legende { list-style: none; padding: 0; margin: 12px 0 0; font-size: 13.5px; }
+  .legende li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .legende .pastille { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .legende .val { margin-left: auto; }
+  .courbe { position: relative; height: 320px; }
+
+  .indicateurs { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0; border: 1px solid var(--filet); border-radius: var(--rayon); background: var(--carte); margin-bottom: 18px; overflow: hidden; }
+  .indicateurs > div { padding: 16px 18px; border-right: 1px solid #EDF0EC; border-bottom: 1px solid #EDF0EC; }
+  .indicateurs .nom { font-size: 13px; color: var(--encre-2); }
+  .indicateurs .valeur { font-size: 24px; font-weight: 500; margin: 2px 0; }
+  .indicateurs .aide { font-size: 12.5px; color: var(--encre-2); line-height: 1.4; }
+
+  .article { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid #EDF0EC; }
+  .article:last-child { border-bottom: none; }
+  .article a { color: var(--encre); font-weight: 500; text-decoration: none; }
+  .article a:hover { text-decoration: underline; }
+  .article .meta { font-size: 12.5px; color: var(--encre-2); }
+  .sentiment { font-size: 12px; font-weight: 500; }
+  .sentiment.OPPORTUNITÉ, .sentiment.POSITIF { color: var(--gain); }
+  .sentiment.VIGILANCE, .sentiment.RISQUE { color: var(--perte); }
+  .sentiment.NEUTRE { color: var(--encre-2); }
+
+  /* ── Tiroir « Passer un ordre » ────────────────────────── */
+  .voile { position: fixed; inset: 0; background: rgba(21, 38, 29, .35); z-index: 20; }
+  .tiroir {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100%); background: var(--carte);
+    z-index: 21; padding: 22px 24px; overflow-y: auto; box-shadow: -8px 0 30px rgba(21, 38, 29, .12);
+    transform: translateX(100%); transition: transform .22s ease;
+  }
+  .tiroir.ouvert { transform: none; }
+  .tiroir h2 { font-family: 'IBM Plex Serif', serif; font-weight: 500; font-size: 24px; margin: 0 0 18px; }
+  .types { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 18px; background: var(--papier); padding: 4px; border-radius: 8px; }
+  .types button { border: none; background: none; border-radius: 6px; padding: 7px 0; font-size: 13px; color: var(--encre-2); }
+  .types button[aria-pressed="true"] { background: var(--carte); color: var(--encre); box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 500; }
+  .fiche { background: var(--papier); border-radius: 8px; padding: 10px 12px; font-size: 13.5px; margin: -4px 0 14px; }
+  .deux-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  .recap { border-top: 1px solid var(--filet); padding-top: 12px; margin: 6px 0 16px; font-size: 14px; }
+  .recap div { display: flex; justify-content: space-between; padding: 2px 0; }
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--encre); color: #fff; padding: 10px 18px; border-radius: 8px; z-index: 30; font-size: 14px; }
+
+  @media (max-width: 720px) {
+    .chiffres { grid-template-columns: repeat(2, auto); }
+    main { padding: 20px 14px 50px; }
+    .barre { padding: 12px 14px; gap: 10px; }
+    .utilisateur { display: none; }
+    .barre .btn { padding: 8px 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .tiroir { transition: none; } }
+</style>
+</head>
+<body>
+
+<!-- ═════════════ Connexion ═════════════ -->
+<section id="ecran-connexion">
+  <div class="boite-connexion">
+    <h1>EcoFolio</h1>
+    <p>Suivi de votre compte-titres : positions, plus-values, risque et actualités.</p>
+    <div id="auth-erreur" class="erreur cache"></div>
+    <form id="form-auth">
+      <div class="champ"><label for="auth-user">Nom d'utilisateur</label><input id="auth-user" autocomplete="username" required minlength="3"></div>
+      <div class="champ"><label for="auth-mdp">Mot de passe</label><input id="auth-mdp" type="password" autocomplete="current-password" required minlength="6"></div>
+      <button class="btn" type="submit" id="auth-btn" style="width:100%">Se connecter</button>
+    </form>
+    <p class="discret" style="margin-top:16px">
+      <span id="auth-bascule-texte">Pas encore de compte ?</span>
+      <button class="btn-lien" id="auth-bascule" type="button">Créer un compte</button>
+    </p>
+  </div>
+</section>
+
+<!-- ═════════════ Application ═════════════ -->
+<section id="ecran-app" class="cache">
+  <header>
+    <div class="barre">
+      <div class="marque">Eco<span>Folio</span></div>
+      <div class="espace"></div>
+      <span class="utilisateur" id="nom-utilisateur"></span>
+      <button class="btn" id="btn-ordre">Passer un ordre</button>
+      <button class="mini-btn" id="btn-deconnexion">Déconnexion</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="releve">
+      <div class="principal">
+        <div class="libelle">Valorisation du compte</div>
+        <div class="montant" id="k-valo">—</div>
+        <div class="pnl" id="k-pnl">—</div>
+      </div>
+      <div class="chiffres">
+        <div><span>Espèces</span><strong id="k-cash">—</strong></div>
+        <div><span>Titres</span><strong id="k-titres">—</strong></div>
+        <div><span>Plus-values latentes</span><strong id="k-pvl">—</strong></div>
+        <div><span>Plus-values réalisées</span><strong id="k-pvr">—</strong></div>
+        <div><span>Variation du jour</span><strong id="k-jour">—</strong></div>
+        <div><span>Dépôts nets</span><strong id="k-depots">—</strong></div>
+        <div><span>Dividendes</span><strong id="k-div">—</strong></div>
+        <div><span>Frais payés</span><strong id="k-frais">—</strong></div>
+      </div>
+    </div>
+
+    <nav class="onglets" role="tablist">
+      <button role="tab" data-onglet="positions" aria-selected="true">Positions</button>
+      <button role="tab" data-onglet="ordres">Carnet d'ordres</button>
+      <button role="tab" data-onglet="repartition">Répartition</button>
+      <button role="tab" data-onglet="performance">Performance</button>
+      <button role="tab" data-onglet="risque">Risque</button>
+      <button role="tab" data-onglet="actualites">Actualités</button>
+    </nav>
+
+    <!-- Positions -->
+    <div data-vue="positions">
+      <div class="panneau">
+        <h2>Positions ouvertes</h2>
+        <p class="sous-titre">Chaque ligne est affichée dans sa devise de cotation ; la colonne € intègre l'effet change et les frais.</p>
+        <div class="defile" id="table-positions"></div>
+      </div>
+      <div class="panneau" id="bloc-soldees">
+        <h2>Lignes soldées</h2>
+        <p class="sous-titre">Plus-values réalisées sur les titres entièrement vendus.</p>
+        <div class="defile" id="table-soldees"></div>
+      </div>
+    </div>
+
+    <!-- Carnet d'ordres -->
+    <div data-vue="ordres" class="cache">
+      <div class="panneau">
+        <h2>Carnet d'ordres et mouvements</h2>
+        <p class="sous-titre">Du plus récent au plus ancien. Une opération saisie par erreur peut être annulée si l'historique reste cohérent.</p>
+        <div class="defile" id="table-ordres"></div>
+      </div>
+    </div>
+
+    <!-- Répartition -->
+    <div data-vue="repartition" class="cache">
+      <div class="grille-2">
+        <div class="panneau"><h2>Zone géographique</h2><div class="donut"><canvas id="d-zone"></canvas></div><ul class="legende" id="l-zone"></ul></div>
+        <div class="panneau"><h2>Secteur</h2><div class="donut"><canvas id="d-secteur"></canvas></div><ul class="legende" id="l-secteur"></ul></div>
+        <div class="panneau"><h2>Devise</h2><div class="donut"><canvas id="d-devise"></canvas></div><ul class="legende" id="l-devise"></ul></div>
+        <div class="panneau"><h2>Titres et liquidités</h2><div class="donut"><canvas id="d-classe"></canvas></div><ul class="legende" id="l-classe"></ul></div>
+      </div>
+      <div class="panneau" style="margin-top:18px">
+        <h2>Par pays</h2>
+        <div class="defile" id="table-pays"></div>
+      </div>
+    </div>
+
+    <!-- Performance -->
+    <div data-vue="performance" class="cache">
+      <div class="panneau">
+        <h2>Valorisation du compte</h2>
+        <p class="sous-titre">Reconstituée jour par jour à partir de vos opérations et des cours de clôture.</p>
+        <div class="courbe"><canvas id="c-valo"></canvas></div>
+      </div>
+      <div class="panneau">
+        <h2>Plus ou moins-value cumulée</h2>
+        <p class="sous-titre">Valorisation moins dépôts nets, en euros. La performance en % (méthode TWR) neutralise l'effet de vos dépôts et retraits.</p>
+        <div class="courbe"><canvas id="c-pnl"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Risque -->
+    <div data-vue="risque" class="cache">
+      <div id="bloc-risque"></div>
+    </div>
+
+    <!-- Actualités -->
+    <div data-vue="actualites" class="cache">
+      <div class="panneau">
+        <h2>Actualités de vos titres</h2>
+        <p class="sous-titre">Flux Yahoo Finance et Google News, avec une lecture automatique du ton de chaque article.</p>
+        <div id="liste-actus"></div>
+      </div>
+    </div>
+  </main>
+</section>
+
+<!-- ═════════════ Tiroir Ordre ═════════════ -->
+<div class="voile cache" id="voile"></div>
+<aside class="tiroir" id="tiroir" aria-hidden="true">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h2>Passer un ordre</h2>
+    <button class="mini-btn" id="fermer-tiroir" aria-label="Fermer">Fermer</button>
+  </div>
+  <div class="types" id="types-ordre">
+    <button data-type="ACHAT" aria-pressed="true">Achat</button>
+    <button data-type="VENTE">Vente</button>
+    <button data-type="DEPOT">Dépôt</button>
+    <button data-type="RETRAIT">Retrait</button>
+    <button data-type="DIVIDENDE">Dividende</button>
+  </div>
+  <div id="ordre-erreur" class="erreur cache"></div>
+  <form id="form-ordre">
+    <div class="champ" data-pour="ACHAT VENTE DIVIDENDE">
+      <label for="o-ticker">Titre (ticker Yahoo Finance)</label>
+      <input id="o-ticker" placeholder="MC.PA, AAPL, SAP.DE, ASML.AS…" autocomplete="off">
+    </div>
+    <div class="fiche cache" id="o-fiche"></div>
+    <div class="deux-col" data-pour="ACHAT VENTE">
+      <div class="champ"><label for="o-qte">Quantité</label><input id="o-qte" type="number" min="0" step="any"></div>
+      <div class="champ"><label for="o-prix">Prix unitaire <span id="o-devise-lbl"></span></label><input id="o-prix" type="number" min="0" step="any"></div>
+    </div>
+    <div class="champ" data-pour="DEPOT RETRAIT DIVIDENDE">
+      <label for="o-montant">Montant (€)</label><input id="o-montant" type="number" min="0" step="0.01">
+    </div>
+    <div class="deux-col">
+      <div class="champ"><label for="o-date">Date d'exécution</label><input id="o-date" type="date"></div>
+      <div class="champ" data-pour="ACHAT VENTE"><label for="o-frais">Frais de courtage (€)</label><input id="o-frais" type="number" min="0" step="0.01" value="0"></div>
+    </div>
+    <div class="champ"><label for="o-comm">Commentaire (facultatif)</label><input id="o-comm" maxlength="200"></div>
+    <div class="recap cache" id="o-recap"></div>
+    <button class="btn" type="submit" id="o-valider" style="width:100%">Valider l'achat</button>
+  </form>
+</aside>
+
+<script>
+  const API = 'http://localhost:8000';
+  const LIBELLES = { ACHAT: "Valider l'achat", VENTE: 'Valider la vente', DEPOT: 'Enregistrer le dépôt', RETRAIT: 'Enregistrer le retrait', DIVIDENDE: 'Enregistrer le dividende' };
+  const NOMS_TYPE = { ACHAT: 'Achat', VENTE: 'Vente', DEPOT: 'Dépôt', RETRAIT: 'Retrait', DIVIDENDE: 'Dividende' };
+  const PALETTE = ['#1E6A48', '#4F9A74', '#9CC5A9', '#2B5680', '#7FA7CB', '#C08A3E', '#8E6BA8', '#B23A2E', '#6B7A70', '#D5C9A1'];
+  const $ = s => document.querySelector(s);
+
+  let jeton = localStorage.getItem('ecofolio_jeton');
+  let utilisateur = localStorage.getItem('ecofolio_user');
+  let SYN = null, typeOrdre = 'ACHAT', ficheOrdre = null, graphiques = {}, charge = {};
+
+  /* ── Formats ─────────────────────────────────────────── */
+  function argent(v, devise = 'EUR', signe = false) {
+    if (v === null || v === undefined || isNaN(v)) return '—';
+    if (devise === 'GBp' || devise === 'GBX') return (signe && v > 0 ? '+' : '') + nombre(v, 2) + ' p';
+    try {
+      return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: devise, signDisplay: signe ? 'exceptZero' : 'auto' }).format(v);
+    } catch { return nombre(v, 2) + ' ' + devise; }
+  }
+  const nombre = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? '—' : new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).format(v);
+  const pct = (v, signe = true) => (v === null || v === undefined || isNaN(v)) ? '—' : (signe && v > 0 ? '+' : '') + nombre(v, 2) + ' %';
+  const classe = v => v > 0 ? 'gain' : v < 0 ? 'perte' : '';
+  const dateFr = s => s ? new Date(s + (s.length === 10 ? 'T12:00:00' : '')).toLocaleDateString('fr-FR') : '—';
+  const echap = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function toast(msg) {
+    const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+    document.body.appendChild(t); setTimeout(() => t.remove(), 3200);
+  }
+
+  /* ── Appels API ──────────────────────────────────────── */
+  async function api(chemin, options = {}) {
+    let rep;
+    try {
+      rep = await fetch(API + chemin, {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(jeton ? { Authorization: 'Bearer ' + jeton } : {}), ...(options.headers || {}) },
+      });
+    } catch {
+      throw new Error("Le serveur ne répond pas. Lancez-le dans le terminal : python -m uvicorn main:app --reload");
+    }
+    const data = await rep.json().catch(() => ({}));
+    if (rep.status === 401 && jeton) { deconnecter(); throw new Error('Session expirée : reconnectez-vous.'); }
+    if (!rep.ok) {
+      const d = data.detail;
+      throw new Error(typeof d === 'string' ? d : Array.isArray(d) ? d.map(x => x.msg.replace('Value error, ', '')).join(' ; ') : `Erreur ${rep.status}`);
+    }
+    return data;
+  }
+
+  /* ── Connexion ───────────────────────────────────────── */
+  let modeInscription = false;
+  $('#auth-bascule').onclick = () => {
+    modeInscription = !modeInscription;
+    $('#auth-btn').textContent = modeInscription ? 'Créer mon compte' : 'Se connecter';
+    $('#auth-bascule-texte').textContent = modeInscription ? 'Déjà un compte ?' : 'Pas encore de compte ?';
+    $('#auth-bascule').textContent = modeInscription ? 'Se connecter' : 'Créer un compte';
+    $('#auth-mdp').autocomplete = modeInscription ? 'new-password' : 'current-password';
+    $('#auth-erreur').classList.add('cache');
+  };
+  $('#form-auth').onsubmit = async e => {
+    e.preventDefault();
+    const err = $('#auth-erreur'); err.classList.add('cache');
+    try {
+      const r = await api(modeInscription ? '/auth/inscription' : '/auth/connexion', {
+        method: 'POST', body: JSON.stringify({ username: $('#auth-user').value.trim(), mdp: $('#auth-mdp').value }),
+      });
+      jeton = r.jeton; utilisateur = r.username;
+      localStorage.setItem('ecofolio_jeton', jeton); localStorage.setItem('ecofolio_user', utilisateur);
+      demarrer();
+    } catch (ex) { err.textContent = ex.message; err.classList.remove('cache'); }
+  };
+  function deconnecter() {
+    if (jeton) fetch(API + '/auth/deconnexion', { method: 'POST', headers: { Authorization: 'Bearer ' + jeton } }).catch(() => {});
+    jeton = null; utilisateur = null;
+    localStorage.removeItem('ecofolio_jeton'); localStorage.removeItem('ecofolio_user');
+    $('#ecran-app').classList.add('cache'); $('#ecran-connexion').classList.remove('cache');
+  }
+  $('#btn-deconnexion').onclick = deconnecter;
+
+  /* ── Démarrage & onglets ─────────────────────────────── */
+  function demarrer() {
+    $('#ecran-connexion').classList.add('cache'); $('#ecran-app').classList.remove('cache');
+    $('#nom-utilisateur').textContent = utilisateur;
+    charge = {};
+    rafraichir();
+  }
+  async function rafraichir() {
+    try {
+      SYN = await api('/compte/synthese');
+      afficherReleve(); afficherPositions();
+      charge = {};
+      const actif = document.querySelector('nav.onglets [aria-selected="true"]').dataset.onglet;
+      ouvrirOnglet(actif);
+    } catch (ex) { toast(ex.message); }
+  }
+  document.querySelectorAll('nav.onglets button').forEach(b => b.onclick = () => ouvrirOnglet(b.dataset.onglet));
+  function ouvrirOnglet(nom) {
+    document.querySelectorAll('nav.onglets button').forEach(b => b.setAttribute('aria-selected', b.dataset.onglet === nom));
+    document.querySelectorAll('[data-vue]').forEach(v => v.classList.toggle('cache', v.dataset.vue !== nom));
+    if (charge[nom]) return;
+    charge[nom] = true;
+    ({ ordres: chargerOrdres, repartition: afficherRepartition, performance: chargerPerformance,
+       risque: chargerRisque, actualites: chargerActus }[nom] || (() => {}))();
+  }
+
+  /* ── Relevé (en-tête chiffré) ────────────────────────── */
+  function afficherReleve() {
+    const t = SYN.totaux;
+    $('#k-valo').textContent = argent(t.valorisation_eur);
+    $('#k-pnl').innerHTML = t.depots_nets_eur > 0
+      ? `<span class="${classe(t.pnl_total_eur)}">${argent(t.pnl_total_eur, 'EUR', true)} (${pct(t.perf_pct)})</span> <span class="discret">depuis l'ouverture</span>`
+      : '<span class="discret">Commencez par enregistrer un dépôt d\'espèces.</span>';
+    $('#k-cash').textContent = argent(t.cash_eur);
+    $('#k-titres').textContent = argent(t.titres_eur);
+    $('#k-pvl').innerHTML = `<span class="${classe(t.pv_latente_eur)}">${argent(t.pv_latente_eur, 'EUR', true)}</span>`;
+    $('#k-pvr').innerHTML = `<span class="${classe(t.pv_realisee_eur)}">${argent(t.pv_realisee_eur, 'EUR', true)}</span>`;
+    $('#k-jour').innerHTML = `<span class="${classe(t.var_jour_eur)}">${argent(t.var_jour_eur, 'EUR', true)}</span>`;
+    $('#k-depots').textContent = argent(t.depots_nets_eur);
+    $('#k-div').textContent = argent(t.dividendes_eur);
+    $('#k-frais').textContent = argent(t.frais_eur);
+  }
+
+  /* ── Positions ───────────────────────────────────────── */
+  function afficherPositions() {
+    const p = SYN.positions;
+    if (!p.length) {
+      $('#table-positions').innerHTML = `<div class="vide"><p>Aucune position ouverte.</p>
+        <button class="btn" onclick="ouvrirTiroir('${SYN.totaux.cash_eur > 0 ? 'ACHAT' : 'DEPOT'}')">${SYN.totaux.cash_eur > 0 ? 'Acheter un titre' : 'Enregistrer un dépôt'}</button></div>`;
+    } else {
+      $('#table-positions').innerHTML = `<table><thead><tr>
+        <th>Titre</th><th class="num">Quantité</th><th class="num">PRU</th><th class="num">Cours</th><th class="num">Jour</th>
+        <th class="num">Valeur</th><th class="num">+/- latente</th><th class="num">+/- latente (€)</th><th class="num">Poids</th><th></th>
+      </tr></thead><tbody>${p.map(l => `<tr>
+        <td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)} · depuis le ${dateFr(l.date_entree)}</small></td>
+        <td class="num">${nombre(l.quantite, l.quantite % 1 ? 4 : 0)}</td>
+        <td class="num">${argent(l.pru, l.devise)}</td>
+        <td class="num">${argent(l.cours, l.devise)}${l.cours_indisponible ? '<span class="sous">cours indisponible</span>' : ''}</td>
+        <td class="num ${classe(l.var_jour_pct)}">${pct(l.var_jour_pct)}</td>
+        <td class="num">${argent(l.valeur_devise, l.devise)}${l.devise !== 'EUR' ? `<span class="sous">${argent(l.valeur_eur)}</span>` : ''}</td>
+        <td class="num ${classe(l.pv_latente_devise)}">${argent(l.pv_latente_devise, l.devise, true)}<span class="sous">${pct(l.pv_latente_pct)}</span></td>
+        <td class="num ${classe(l.pv_latente_eur)}">${argent(l.pv_latente_eur, 'EUR', true)}</td>
+        <td class="num">${pct(l.poids_pct, false)}</td>
+        <td class="num"><button class="mini-btn" onclick="vendre('${l.ticker}')">Vendre</button></td>
+      </tr>`).join('')}</tbody></table>`;
+    }
+    const s = SYN.positions_soldees;
+    $('#bloc-soldees').classList.toggle('cache', !s.length);
+    $('#table-soldees').innerHTML = s.length ? `<table><thead><tr><th>Titre</th><th class="num">+/- réalisée (devise)</th><th class="num">+/- réalisée (€)</th><th class="num">Dividendes</th></tr></thead>
+      <tbody>${s.map(l => `<tr><td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)}</small></td>
+        <td class="num ${classe(l.pv_realisee_devise)}">${argent(l.pv_realisee_devise, l.devise, true)}</td>
+        <td class="num ${classe(l.pv_realisee_eur)}">${argent(l.pv_realisee_eur, 'EUR', true)}</td>
+        <td class="num">${argent(l.dividendes_eur)}</td></tr>`).join('')}</tbody></table>` : '';
+  }
+
+  /* ── Carnet d'ordres ─────────────────────────────────── */
+  async function chargerOrdres() {
+    const zone = $('#table-ordres');
+    zone.innerHTML = '<div class="vide">Chargement…</div>';
+    try {
+      const { operations } = await api('/compte/operations');
+      if (!operations.length) { zone.innerHTML = '<div class="vide"><p>Aucune opération pour l\'instant.</p><button class="btn" onclick="ouvrirTiroir(\'DEPOT\')">Enregistrer un dépôt</button></div>'; return; }
+      zone.innerHTML = `<table><thead><tr><th>Date</th><th>Opération</th><th>Titre</th><th class="num">Quantité</th><th class="num">Prix</th>
+        <th class="num">Frais</th><th class="num">Mouvement espèces</th><th class="num">+/- réalisée</th><th class="num">Solde espèces</th><th></th></tr></thead>
+        <tbody>${operations.map(o => `<tr>
+          <td>${dateFr(o.date)}</td>
+          <td><span class="etiquette ${o.type}">${NOMS_TYPE[o.type]}</span>${o.commentaire ? `<span class="sous">${echap(o.commentaire)}</span>` : ''}</td>
+          <td class="titre-ligne">${o.ticker ? `<strong>${echap(o.nom || o.ticker)}</strong><small>${echap(o.ticker)}</small>` : '—'}</td>
+          <td class="num">${o.quantite ? nombre(o.quantite, o.quantite % 1 ? 4 : 0) : ''}</td>
+          <td class="num">${o.prix ? argent(o.prix, o.devise) : ''}${o.devise && o.devise !== 'EUR' && o.taux_eur ? `<span class="sous">1 ${o.devise} = ${nombre(o.taux_eur, 4)} €</span>` : ''}</td>
+          <td class="num">${o.frais_eur ? argent(o.frais_eur) : ''}</td>
+          <td class="num ${classe(o.flux_cash_eur)}">${argent(o.flux_cash_eur, 'EUR', true)}</td>
+          <td class="num ${classe(o.pv_realisee_eur)}">${o.pv_realisee_eur !== undefined ? argent(o.pv_realisee_eur, 'EUR', true) : ''}</td>
+          <td class="num">${argent(o.cash_apres_eur)}</td>
+          <td class="num"><button class="mini-btn danger" onclick="annuler(${o.id})">Annuler</button></td>
+        </tr>`).join('')}</tbody></table>`;
+    } catch (ex) { zone.innerHTML = `<div class="erreur">${echap(ex.message)}</div>`; }
+  }
+  async function annuler(id) {
+    if (!confirm('Annuler définitivement cette opération ?')) return;
+    try { await api('/compte/operations/' + id, { method: 'DELETE' }); toast('Opération annulée.'); rafraichir(); }
+    catch (ex) { alert(ex.message); }
+  }
+
+  /* ── Répartition ─────────────────────────────────────── */
+  function donut(id, donnees) {
+    graphiques[id]?.destroy();
+    const leg = $('#l-' + id.slice(2));
+    if (!donnees.length || !window.Chart) { leg.innerHTML = '<li class="discret">Aucune donnée.</li>'; return; }
+    graphiques[id] = new Chart($('#' + id), {
+      type: 'doughnut',
+      data: { labels: donnees.map(d => d.label), datasets: [{ data: donnees.map(d => d.valeur_eur), backgroundColor: PALETTE, borderColor: '#fff', borderWidth: 2 }] },
+      options: { maintainAspectRatio: false, cutout: '64%', plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: c => ` ${c.label} : ${argent(c.raw)}` } } } },
+    });
+    leg.innerHTML = donnees.map((d, i) => `<li><span class="pastille" style="background:${PALETTE[i % PALETTE.length]}"></span>${echap(d.label)}<span class="val">${pct(d.poids_pct, false)}</span></li>`).join('');
+  }
+  function afficherRepartition() {
+    const r = SYN.repartition;
+    donut('d-zone', r.zone); donut('d-secteur', r.secteur); donut('d-devise', r.devise); donut('d-classe', r.classe);
+    $('#table-pays').innerHTML = r.pays.length ? `<table><thead><tr><th>Pays</th><th class="num">Valeur</th><th class="num">Poids</th></tr></thead>
+      <tbody>${r.pays.map(p => `<tr><td>${echap(p.label)}</td><td class="num">${argent(p.valeur_eur)}</td><td class="num">${pct(p.poids_pct, false)}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="vide">Aucune position ouverte.</div>';
+  }
+
+  /* ── Performance ─────────────────────────────────────── */
+  async function chargerPerformance() {
+    try {
+      const { points } = await api('/compte/historique');
+      if (!window.Chart || !points.length) return;
+      const axeX = { ticks: { maxTicksLimit: 8, color: '#5B6A61' }, grid: { display: false } };
+      const axeY = f => ({ ticks: { callback: f, color: '#5B6A61' }, grid: { color: '#EDF0EC' } });
+      const labels = points.map(p => dateFr(p.date));
+      graphiques.valo?.destroy(); graphiques.pnl?.destroy();
+      graphiques.valo = new Chart($('#c-valo'), {
+        type: 'line',
+        data: { labels, datasets: [
+          { label: 'Valorisation', data: points.map(p => p.valorisation_eur), borderColor: '#1E6A48', backgroundColor: 'rgba(30,106,72,.08)', fill: true, pointRadius: 0, borderWidth: 2, tension: .15 },
+          { label: 'Dépôts nets', data: points.map(p => p.depots_nets_eur), borderColor: '#5B6A61', borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5, stepped: true },
+        ] },
+        options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          plugins: { tooltip: { callbacks: { label: c => ` ${c.dataset.label} : ${argent(c.raw)}` } } },
+          scales: { x: axeX, y: axeY(v => argent(v).replace(/,00/, '')) } },
+      });
+      graphiques.pnl = new Chart($('#c-pnl'), {
+        type: 'line',
+        data: { labels, datasets: [
+          { label: '+/- value (€)', data: points.map(p => p.pnl_eur), borderColor: '#1E6A48', pointRadius: 0, borderWidth: 2, tension: .15, yAxisID: 'y',
+            segment: { borderColor: c => c.p1.parsed.y < 0 ? '#B23A2E' : '#1E6A48' } },
+          { label: 'Performance TWR (%)', data: points.map(p => p.perf_twr_pct), borderColor: '#2B5680', borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, yAxisID: 'y2' },
+        ] },
+        options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          plugins: { tooltip: { callbacks: { label: c => c.datasetIndex ? ` ${c.dataset.label} : ${pct(c.raw)}` : ` ${c.dataset.label} : ${argent(c.raw, 'EUR', true)}` } } },
+          scales: { x: axeX, y: axeY(v => argent(v).replace(/,00/, '')), y2: { position: 'right', grid: { display: false }, ticks: { callback: v => v + ' %', color: '#2B5680' } } } },
+      });
+    } catch (ex) { toast(ex.message); }
+  }
+
+  /* ── Risque ──────────────────────────────────────────── */
+  async function chargerRisque() {
+    const zone = $('#bloc-risque');
+    zone.innerHTML = '<div class="panneau vide">Calcul sur un an de cours…</div>';
+    try {
+      const r = await api('/compte/risque');
+      if (!r.disponible) { zone.innerHTML = `<div class="panneau vide">${echap(r.message)}</div>`; return; }
+      const c = r.concentration;
+      const cases = [
+        ['Volatilité annualisée', pct(r.volatilite_pct, false), 'Ampleur habituelle des variations sur un an. Un indice actions mondial tourne autour de 15 %.'],
+        ['VaR 95 % à 1 jour', argent(r.var95_1j_eur), `Perte journalière qui n'est dépassée qu'un jour sur vingt (${pct(r.var95_1j_pct, false)}).`],
+        ['Perte moyenne au-delà (CVaR)', pct(-r.cvar95_1j_pct), 'Perte moyenne lors des 5 % de pires journées.'],
+        ['Baisse maximale (max drawdown)', pct(r.max_drawdown_pct), 'Pire recul depuis un plus haut sur la période, à composition actuelle.'],
+        ['Bêta', nombre(r.beta), `Sensibilité au ${r.indice_reference} : 1,2 signifie +/-12 % quand l'indice fait +/-10 %.`],
+        ['Ratio de Sharpe', nombre(r.sharpe), 'Rendement au-delà du taux sans risque (2 %) par unité de volatilité.'],
+        ['Première ligne', pct(c.premiere_ligne_pct, false), `Les trois premières pèsent ${pct(c.trois_premieres_pct, false)} du portefeuille titres.`],
+        ['Nombre effectif de lignes', nombre(c.nb_lignes_effectif, 1), 'Diversification réelle compte tenu des poids (1 / indice de Herfindahl).'],
+        ['Exposition hors euro', pct(r.exposition_devises_hors_eur_pct, false), 'Part des titres soumise au risque de change.'],
+      ];
+      zone.innerHTML = `<p class="discret" style="margin:0 0 12px">Calculés sur ${r.n_jours} jours (${r.periode}) avec la composition actuelle, rendements convertis en euros.</p>
+        <div class="indicateurs">${cases.map(([n, v, a]) => `<div><div class="nom">${n}</div><div class="valeur">${v}</div><div class="aide">${a}</div></div>`).join('')}</div>
+        <div class="panneau"><h2>Contribution de chaque ligne au risque</h2>
+          <p class="sous-titre">Une ligne peut peser 20 % du portefeuille mais porter 40 % de son risque si elle est volatile et corrélée au reste.</p>
+          <div class="defile"><table><thead><tr><th>Titre</th><th class="num">Poids</th><th class="num">Volatilité</th><th class="num">Bêta</th><th class="num">Part du risque</th></tr></thead>
+          <tbody>${r.par_ligne.map(l => `<tr><td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)}</small></td>
+            <td class="num">${pct(l.poids_pct, false)}</td><td class="num">${pct(l.volatilite_pct, false)}</td>
+            <td class="num">${nombre(l.beta)}</td><td class="num"><strong>${pct(l.contribution_risque_pct, false)}</strong></td></tr>`).join('')}</tbody></table></div></div>`;
+    } catch (ex) { zone.innerHTML = `<div class="erreur">${echap(ex.message)}</div>`; }
+  }
+
+  /* ── Actualités ──────────────────────────────────────── */
+  async function chargerActus() {
+    const zone = $('#liste-actus');
+    zone.innerHTML = '<div class="vide">Chargement des flux…</div>';
+    try {
+      const { articles } = await api('/compte/actualites');
+      const lib = { 'OPPORTUNITÉ': 'Plutôt positif', POSITIF: 'Plutôt positif', NEUTRE: 'Neutre', RISQUE: 'Plutôt négatif', VIGILANCE: 'Vigilance' };
+      zone.innerHTML = articles.length ? articles.map(a => `<div class="article">
+          <a href="${echap(a.lien)}" target="_blank" rel="noopener">${echap(a.titre)}</a>
+          <span class="sentiment ${a.sentiment}">${lib[a.sentiment] || ''}</span>
+          <div class="meta">${echap(a.nom)} (${echap(a.ticker)})${a.date ? ' · ' + new Date(a.date).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : ''}</div>
+        </div>`).join('') : '<div class="vide">Aucune actualité trouvée pour vos titres.</div>';
+    } catch (ex) { zone.innerHTML = `<div class="erreur">${echap(ex.message)}</div>`; }
+  }
+
+  /* ── Tiroir « Passer un ordre » ──────────────────────── */
+  function ouvrirTiroir(type = 'ACHAT', ticker = '', quantite = '') {
+    $('#form-ordre').reset();
+    $('#o-date').value = new Date().toISOString().slice(0, 10);
+    $('#o-date').max = $('#o-date').value;
+    $('#o-fiche').classList.add('cache'); $('#ordre-erreur').classList.add('cache');
+    ficheOrdre = null;
+    choisirType(type);
+    if (ticker) { $('#o-ticker').value = ticker; chercherTitre(); }
+    if (quantite) $('#o-qte').value = quantite;
+    $('#voile').classList.remove('cache'); $('#tiroir').classList.add('ouvert'); $('#tiroir').setAttribute('aria-hidden', 'false');
+    setTimeout(() => (ticker ? $('#o-prix') : type === 'ACHAT' ? $('#o-ticker') : $('#o-montant')).focus(), 60);
+  }
+  function fermerTiroir() {
+    $('#voile').classList.add('cache'); $('#tiroir').classList.remove('ouvert'); $('#tiroir').setAttribute('aria-hidden', 'true');
+  }
+  function vendre(ticker) {
+    const l = SYN.positions.find(p => p.ticker === ticker);
+    ouvrirTiroir('VENTE', ticker, l ? l.quantite : '');
+  }
+  function choisirType(t) {
+    typeOrdre = t;
+    document.querySelectorAll('#types-ordre button').forEach(b => b.setAttribute('aria-pressed', b.dataset.type === t));
+    document.querySelectorAll('#form-ordre [data-pour]').forEach(el => el.classList.toggle('cache', !el.dataset.pour.split(' ').includes(t)));
+    $('#o-fiche').classList.toggle('cache', !ficheOrdre || !['ACHAT', 'VENTE'].includes(t));
+    $('#o-valider').textContent = LIBELLES[t];
+    majRecap();
+  }
+  document.querySelectorAll('#types-ordre button').forEach(b => b.onclick = () => choisirType(b.dataset.type));
+  $('#btn-ordre').onclick = () => ouvrirTiroir(SYN && SYN.totaux.cash_eur > 0 ? 'ACHAT' : 'DEPOT');
+  $('#fermer-tiroir').onclick = fermerTiroir;
+  $('#voile').onclick = fermerTiroir;
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') fermerTiroir(); });
+
+  async function chercherTitre() {
+    const tk = $('#o-ticker').value.trim().toUpperCase();
+    ficheOrdre = null; $('#o-devise-lbl').textContent = '';
+    if (!tk || !['ACHAT', 'VENTE'].includes(typeOrdre)) { majRecap(); return; }
+    const f = $('#o-fiche'); f.classList.remove('cache'); f.textContent = 'Recherche de ' + tk + '…';
+    try {
+      ficheOrdre = await api('/titres/' + encodeURIComponent(tk));
+      const detenu = SYN?.positions.find(p => p.ticker === tk);
+      f.innerHTML = `<strong>${echap(ficheOrdre.nom)}</strong> · cours ${argent(ficheOrdre.prix, ficheOrdre.devise)}
+        <span class="sous">${echap(ficheOrdre.secteur || 'Secteur non renseigné')} · ${echap(ficheOrdre.zone)}${ficheOrdre.devise !== 'EUR' ? ` · 1 ${ficheOrdre.devise} = ${nombre(ficheOrdre.taux_eur, 4)} €` : ''}${detenu ? ` · vous en détenez ${nombre(detenu.quantite, detenu.quantite % 1 ? 4 : 0)}` : ''}</span>`;
+      $('#o-devise-lbl').textContent = '(' + ficheOrdre.devise + ')';
+      if (!$('#o-prix').value) $('#o-prix').value = ficheOrdre.prix.toFixed(ficheOrdre.prix < 10 ? 4 : 2);
+    } catch (ex) { f.innerHTML = `<span class="perte">${echap(ex.message)}</span>`; }
+    majRecap();
+  }
+  $('#o-ticker').addEventListener('change', chercherTitre);
+  ['#o-qte', '#o-prix', '#o-frais', '#o-montant'].forEach(s => $(s).addEventListener('input', majRecap));
+
+  function majRecap() {
+    const r = $('#o-recap');
+    if (!['ACHAT', 'VENTE'].includes(typeOrdre) || !ficheOrdre) { r.classList.add('cache'); return; }
+    const q = parseFloat($('#o-qte').value) || 0, p = parseFloat($('#o-prix').value) || 0, fr = parseFloat($('#o-frais').value) || 0;
+    const brut = q * p, brutEur = brut * (ficheOrdre.taux_eur || 1);
+    const net = typeOrdre === 'ACHAT' ? brutEur + fr : brutEur - fr;
+    r.classList.remove('cache');
+    r.innerHTML = `<div><span>Montant brut</span><span>${argent(brut, ficheOrdre.devise)}</span></div>
+      ${ficheOrdre.devise !== 'EUR' ? `<div><span>Soit environ (taux actuel)</span><span>${argent(brutEur)}</span></div>` : ''}
+      <div><span>${typeOrdre === 'ACHAT' ? 'Débit' : 'Crédit'} espèces estimé</span><strong>${argent(net)}</strong></div>
+      ${typeOrdre === 'ACHAT' && SYN ? `<div class="discret"><span>Espèces disponibles</span><span>${argent(SYN.totaux.cash_eur)}</span></div>` : ''}`;
+  }
+
+  $('#form-ordre').onsubmit = async e => {
+    e.preventDefault();
+    const err = $('#ordre-erreur'); err.classList.add('cache');
+    const corps = { type: typeOrdre, date: $('#o-date').value, commentaire: $('#o-comm').value || null };
+    if (['ACHAT', 'VENTE'].includes(typeOrdre)) {
+      Object.assign(corps, { ticker: $('#o-ticker').value.trim().toUpperCase(), quantite: parseFloat($('#o-qte').value),
+        prix: parseFloat($('#o-prix').value), frais_eur: parseFloat($('#o-frais').value) || 0 });
+    } else {
+      corps.montant_eur = parseFloat($('#o-montant').value);
+      if (typeOrdre === 'DIVIDENDE' && $('#o-ticker').value.trim()) corps.ticker = $('#o-ticker').value.trim().toUpperCase();
+    }
+    const btn = $('#o-valider'); btn.disabled = true;
+    try {
+      await api('/compte/operations', { method: 'POST', body: JSON.stringify(corps) });
+      fermerTiroir();
+      toast({ ACHAT: 'Achat enregistré.', VENTE: 'Vente enregistrée.', DEPOT: 'Dépôt enregistré.', RETRAIT: 'Retrait enregistré.', DIVIDENDE: 'Dividende enregistré.' }[typeOrdre]);
+      rafraichir();
+    } catch (ex) { err.textContent = ex.message; err.classList.remove('cache'); }
+    finally { btn.disabled = false; }
+  };
+
+  /* ── Lancement ───────────────────────────────────────── */
+  if (jeton) demarrer();
+</script>
+</body>
+</html>
