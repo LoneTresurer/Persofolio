@@ -1,12 +1,16 @@
+# EcoFolio — Budget et comptes + Compte-titres
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pydantic>=2.0.0
 numpy>=1.24.0
 pandas>=2.0.0
-scipy>=1.11.0
-scikit-learn>=1.3.0
 yfinance>=0.2.36
-openpyxl>=3.1.0
 httpx>=0.25.0
-pdfplumber>=0.10.0
-python-multipart>=0.0.6
+
+# Dépendances de l'optimiseur ESG archivé (backend/archive_optimiseur/) :
+# à réinstaller seulement si vous réactivez ce module.
+# scipy>=1.11.0
+# scikit-learn>=1.3.0
+# openpyxl>=3.1.0
+# pdfplumber>=0.10.0
+# python-multipart>=0.0.6

@@ -1,0 +1,1985 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EcoFolio · Budget et comptes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  /* Même système visuel que portefeuille.html (compte-titres) */
+  :root {
+    --papier: #F2F4F1;
+    --carte: #FFFFFF;
+    --encre: #15261D;
+    --encre-2: #5B6A61;
+    --filet: #D8DED8;
+    --filet-2: #EDF0EC;
+    --foret: #1E6A48;
+    --foret-clair: #E3EFE7;
+    --invest: #2B5680;
+    --invest-clair: #E6EEF7;
+    --gain: #1D7A4B;
+    --perte: #B23A2E;
+    --perte-clair: #F7E6E3;
+    --ambre: #8A5412;
+    --ambre-clair: #FBEEDC;
+    --rayon: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--papier); color: var(--encre);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--foret); outline-offset: 2px; }
+  .cache { display: none !important; }
+  .num { text-align: right; white-space: nowrap; }
+  .gain { color: var(--gain); }
+  .perte { color: var(--perte); }
+  .discret { color: var(--encre-2); font-size: 13px; }
+  h1, h2, h3 { margin: 0; }
+
+  .champ { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; min-width: 0; }
+  .champ label, .champ .lib { font-size: 13px; color: var(--encre-2); }
+  .champ > label { display: flex; flex-direction: column; gap: 6px; }
+  .champ input, .champ select { font-size: 15px; color: var(--encre); }
+  .bloc-dette { background: var(--carte); border: 1px solid var(--filet); border-radius: var(--rayon); padding: 14px 16px; margin-bottom: 12px; }
+  .bloc-dette .tete-panneau { margin-bottom: 10px; }
+  .champ input, .champ select, .saisie {
+    background: var(--carte); border: 1px solid var(--filet); border-radius: 8px; padding: 9px 11px; width: 100%; min-width: 0;
+  }
+  .champ input:focus, .champ select:focus, .saisie:focus { border-color: var(--foret); outline: none; }
+  .btn { border: 1px solid var(--foret); background: var(--foret); color: #fff; border-radius: 8px; padding: 10px 18px; font-weight: 500; white-space: nowrap; }
+  .btn:hover { background: #185a3c; }
+  .btn-sec { background: transparent; color: var(--foret); }
+  .btn-sec:hover { background: var(--foret-clair); }
+  .btn-lien { background: none; border: none; color: var(--foret); padding: 0; text-decoration: underline; }
+  .btn-danger { border-color: var(--perte); background: transparent; color: var(--perte); }
+  .btn-danger:hover { background: var(--perte-clair); }
+  .mini-btn { border: 1px solid var(--filet); background: var(--carte); border-radius: 6px; padding: 4px 10px; font-size: 13px; white-space: nowrap; text-decoration: none; }
+  .mini-btn:hover { border-color: var(--foret); color: var(--foret); }
+  .mini-btn.danger:hover { border-color: var(--perte); color: var(--perte); }
+  .erreur { background: var(--perte-clair); color: var(--perte); border-radius: 8px; padding: 10px 12px; font-size: 14px; margin-bottom: 14px; }
+  .note { background: var(--papier); border-radius: 8px; padding: 10px 12px; font-size: 13.5px; color: var(--encre-2); }
+  .note.alerte { background: var(--ambre-clair); color: var(--ambre); }
+  .note.danger { background: var(--perte-clair); color: var(--perte); }
+
+  /* ── En-tête ───────────────────────────────────────────── */
+  header { border-bottom: 1px solid var(--filet); background: var(--carte); }
+  .barre { max-width: 1240px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+  .marque { font-weight: 600; letter-spacing: .01em; }
+  .marque span { color: var(--foret); }
+  .module { color: var(--encre-2); font-size: 14px; padding-left: 12px; border-left: 1px solid var(--filet); }
+  .barre .espace { flex: 1; }
+  .sauvegarde { font-size: 13px; color: var(--encre-2); white-space: nowrap; }
+  .sauvegarde.erreur-svg { color: var(--perte); }
+  .sauvegarde button { font-size: 13px; }
+  .utilisateur { color: var(--encre-2); font-size: 14px; }
+  main { max-width: 1240px; margin: 0 auto; padding: 28px 24px 60px; }
+
+  /* ── Relevé permanent : patrimoine net et ses composantes ─ */
+  .releve { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 22px 48px; margin-bottom: 26px; }
+  .releve .libelle { color: var(--encre-2); font-size: 14px; }
+  .releve .montant { font-family: 'IBM Plex Serif', serif; font-size: clamp(38px, 6vw, 54px); line-height: 1.05; }
+  .releve .evol { font-size: 15px; margin-top: 6px; }
+  .chiffres { display: grid; grid-template-columns: repeat(3, auto); gap: 10px 36px; }
+  .chiffres > div > span { display: flex; align-items: center; gap: 7px; color: var(--encre-2); font-size: 13px; }
+  .chiffres strong { font-size: 18px; font-weight: 500; }
+  .pastille { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; display: inline-block; }
+
+  nav.onglets { display: flex; gap: 4px; border-bottom: 1px solid var(--filet); margin-bottom: 22px; overflow-x: auto; }
+  nav.onglets button { background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 14px; color: var(--encre-2); font-weight: 500; white-space: nowrap; }
+  nav.onglets button[aria-selected="true"] { color: var(--encre); border-bottom-color: var(--foret); }
+
+  .panneau { background: var(--carte); border: 1px solid var(--filet); border-radius: var(--rayon); padding: 18px 20px; margin-bottom: 18px; min-width: 0; }
+  .panneau h2 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .panneau .sous-titre { color: var(--encre-2); font-size: 13px; margin: 0 0 14px; }
+  .tete-panneau { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .grille-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 18px; margin-bottom: 18px; }
+  .grille-2 > .panneau { margin-bottom: 0; }
+  .grille-large { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px; }
+  @media (max-width: 960px) { .grille-large { grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 500; color: var(--encre-2); font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--filet); white-space: nowrap; }
+  th.num { text-align: right; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--filet-2); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  .defile { overflow-x: auto; }
+  .sous { display: block; font-size: 12px; color: var(--encre-2); }
+  .etiquette { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: 12px; font-weight: 500; background: #ECEFEB; white-space: nowrap; }
+  .etiquette.courant { background: var(--foret-clair); color: var(--foret); }
+  .etiquette.invest { background: var(--invest-clair); color: var(--invest); }
+  .etiquette.auto { background: var(--papier); color: var(--encre-2); font-weight: 400; }
+  .vide { text-align: center; padding: 30px 16px; color: var(--encre-2); }
+  .vide p { margin: 0 0 14px; }
+  .courbe { position: relative; height: 280px; }
+  .donut { position: relative; height: 220px; }
+
+  /* ── Synthèse : les deux comptes ───────────────────────── */
+  .comptes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 18px; margin-bottom: 18px; }
+  .compte { background: var(--carte); border: 1px solid var(--filet); border-radius: var(--rayon); padding: 18px 20px; border-top: 4px solid var(--foret); display: flex; flex-direction: column; gap: 10px; }
+  .compte.invest { border-top-color: var(--invest); }
+  .compte .nom { font-weight: 600; }
+  .compte .role { color: var(--encre-2); font-size: 13px; }
+  .compte .solde { font-family: 'IBM Plex Serif', serif; font-size: 34px; line-height: 1.1; }
+  .compte .lignes { display: grid; grid-template-columns: 1fr auto; gap: 3px 16px; font-size: 13.5px; border-top: 1px solid var(--filet-2); padding-top: 10px; }
+  .compte .lignes span:nth-child(odd) { color: var(--encre-2); }
+  .compte .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+
+  /* Barre de répartition : où est l'argent, et ce qui est dû */
+  .repartition { margin-bottom: 18px; }
+  .rep-barre { display: flex; height: 36px; border-radius: 6px; overflow: hidden; background: var(--filet-2); }
+  .rep-barre > div { min-width: 2px; display: flex; align-items: center; padding: 0 10px; color: #fff; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; }
+  .rep-barre.dette { height: 14px; margin-top: 8px; background: transparent; }
+  .rep-legende { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; color: var(--encre-2); margin-top: 10px; }
+  .rep-legende span { display: inline-flex; align-items: center; gap: 7px; }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); border: 1px solid var(--filet); border-radius: var(--rayon); background: var(--carte); margin-bottom: 18px; overflow: hidden; }
+  .kpis > div { padding: 14px 18px; border-right: 1px solid var(--filet-2); border-bottom: 1px solid var(--filet-2); }
+  .kpis .nom { font-size: 13px; color: var(--encre-2); }
+  .kpis .valeur { font-size: 22px; font-weight: 500; margin: 2px 0; }
+  .kpis .aide { font-size: 12.5px; color: var(--encre-2); line-height: 1.4; }
+
+  .progres { position: relative; height: 8px; background: var(--filet-2); border-radius: 4px; overflow: hidden; }
+  .progres > i { position: absolute; inset: 0 auto 0 0; background: var(--foret); border-radius: 4px; }
+  .progres > i.depasse { background: var(--perte); }
+  .progres > i.proche { background: #C08A3E; }
+  .progres > b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--encre); opacity: .55; }
+
+  .objectif { padding: 12px 0; border-bottom: 1px solid var(--filet-2); display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: center; }
+  .objectif:last-child { border-bottom: none; }
+  .objectif .titre { font-weight: 500; }
+  .objectif .progres { grid-column: 1 / -1; }
+  .objectif .detail { grid-column: 1 / -1; font-size: 13px; color: var(--encre-2); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .statut { font-size: 12px; font-weight: 500; border-radius: 4px; padding: 1px 7px; }
+  .statut.ok { background: var(--foret-clair); color: var(--foret); }
+  .statut.serre { background: var(--ambre-clair); color: var(--ambre); }
+  .statut.ko { background: var(--perte-clair); color: var(--perte); }
+  .statut.fini { background: var(--invest-clair); color: var(--invest); }
+
+  .echeance { display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--filet-2); align-items: center; font-size: 14px; }
+  .echeance:last-child { border-bottom: none; }
+  .echeance .jour { text-align: center; line-height: 1.1; }
+  .echeance .jour strong { display: block; font-size: 18px; font-weight: 500; }
+  .echeance .jour small { color: var(--encre-2); font-size: 12px; }
+
+  /* ── Outils de filtre ──────────────────────────────────── */
+  .filtres { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .filtres .saisie { width: auto; padding: 7px 10px; font-size: 14px; }
+  .segments { display: inline-flex; background: var(--papier); padding: 3px; border-radius: 8px; gap: 2px; }
+  .segments button { border: none; background: none; border-radius: 6px; padding: 6px 12px; font-size: 13.5px; color: var(--encre-2); }
+  .segments button[aria-pressed="true"] { background: var(--carte); color: var(--encre); box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 500; }
+  .nav-mois { display: inline-flex; align-items: center; gap: 6px; }
+  .nav-mois strong { min-width: 150px; text-align: center; font-weight: 500; text-transform: capitalize; }
+  select.cat-inline { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 3px 4px; font-size: 13.5px; max-width: 190px; }
+  select.cat-inline:hover, select.cat-inline:focus { border-color: var(--filet); background: var(--carte); }
+
+  /* ── Flux du mois (Sankey) ─────────────────────────────── */
+  .sankey { width: 100%; min-width: 560px; display: block; }
+  .sankey text { font-size: 12.5px; fill: var(--encre); }
+  .sankey text.m { fill: var(--encre-2); font-size: 12px; }
+  .sankey path { opacity: .32; transition: opacity .15s; }
+  .sankey path:hover { opacity: .6; }
+
+  .cat-ligne td:first-child { display: flex; align-items: center; gap: 8px; }
+  .cat-ligne .progres { min-width: 120px; }
+  tr.cliquable { cursor: pointer; }
+  tr.cliquable:hover td { background: #F7F9F6; }
+
+  /* ── Dettes ────────────────────────────────────────────── */
+  .jauge { margin-top: 8px; }
+  .jauge .progres { height: 10px; }
+  .jauge .graduation { display: flex; justify-content: space-between; font-size: 12px; color: var(--encre-2); margin-top: 4px; }
+  .resultat { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 6px; }
+  .resultat > div { background: var(--papier); border-radius: 8px; padding: 10px 12px; }
+  .resultat span { display: block; font-size: 12.5px; color: var(--encre-2); }
+  .resultat strong { font-size: 18px; font-weight: 500; }
+
+  /* ── Assistant de configuration ────────────────────────── */
+  #assistant { min-height: 100vh; padding: 40px 20px 80px; }
+  .assistant { max-width: 720px; margin: 0 auto; }
+  .assistant > .marque { margin-bottom: 36px; }
+  .etapes { display: flex; gap: 6px; margin-bottom: 30px; list-style: none; padding: 0; counter-reset: e; }
+  .etapes li { flex: 1; font-size: 12.5px; color: var(--encre-2); border-top: 3px solid var(--filet); padding-top: 8px; counter-increment: e; }
+  .etapes li::before { content: counter(e) ". "; }
+  .etapes li.fait { border-top-color: #9CC5A9; }
+  .etapes li.actif { border-top-color: var(--foret); color: var(--encre); font-weight: 500; }
+  .assistant h1 { font-family: 'IBM Plex Serif', serif; font-weight: 500; font-size: 32px; line-height: 1.2; margin-bottom: 8px; }
+  .assistant .intro { color: var(--encre-2); margin: 0 0 26px; max-width: 60ch; }
+  .assistant h3 { font-size: 15px; font-weight: 600; margin: 26px 0 10px; }
+  .lignes-saisie { display: flex; flex-direction: column; gap: 8px; }
+  .ligne-saisie { display: grid; gap: 8px; align-items: end; }
+  .ligne-saisie label { font-size: 12px; color: var(--encre-2); display: block; margin-bottom: 3px; }
+  @media (min-width: 721px) { .ligne-saisie label.repete { display: none; } }
+  .ligne-saisie .suppr { height: 40px; width: 40px; border: 1px solid var(--filet); background: var(--carte); border-radius: 8px; color: var(--encre-2); }
+  .ligne-saisie .suppr:hover { color: var(--perte); border-color: var(--perte); }
+  .puces { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .puces button { border: 1px dashed var(--filet); background: transparent; border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--encre-2); }
+  .puces button:hover { border-color: var(--foret); color: var(--foret); }
+  .grille-budgets { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0 12px; }
+  .bilan { background: var(--carte); border: 1px solid var(--filet); border-radius: var(--rayon); padding: 16px 18px; margin-top: 24px; }
+  .bilan .ligne { display: flex; justify-content: space-between; padding: 3px 0; font-size: 14.5px; }
+  .bilan .ligne.total { border-top: 1px solid var(--filet); margin-top: 6px; padding-top: 8px; font-weight: 600; }
+  .pied-assistant { display: flex; justify-content: space-between; align-items: center; margin-top: 30px; gap: 12px; }
+  .case { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; margin: 10px 0; }
+  .case input { margin-top: 4px; accent-color: var(--foret); }
+  .accueil-choix { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 10px; }
+  .accueil-choix button { text-align: left; background: var(--carte); border: 1px solid var(--filet); border-radius: var(--rayon); padding: 18px; }
+  .accueil-choix button:hover { border-color: var(--foret); }
+  .accueil-choix strong { display: block; font-size: 16px; margin-bottom: 4px; }
+  .accueil-choix span { color: var(--encre-2); font-size: 13.5px; }
+
+  /* ── Tiroir ────────────────────────────────────────────── */
+  .voile { position: fixed; inset: 0; background: rgba(21, 38, 29, .35); z-index: 20; }
+  .tiroir { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100%); background: var(--carte); z-index: 21; padding: 22px 24px; overflow-y: auto; box-shadow: -8px 0 30px rgba(21, 38, 29, .12); transform: translateX(100%); transition: transform .22s ease; }
+  .tiroir.ouvert { transform: none; }
+  .tiroir h2 { font-family: 'IBM Plex Serif', serif; font-weight: 500; font-size: 24px; margin: 0; }
+  .tiroir .entete { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .deux-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  .types { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 18px; background: var(--papier); padding: 4px; border-radius: 8px; }
+  .types button { border: none; background: none; border-radius: 6px; padding: 7px 0; font-size: 13.5px; color: var(--encre-2); }
+  .types button[aria-pressed="true"] { background: var(--carte); color: var(--encre); box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 500; }
+  .actions-tiroir { display: flex; gap: 10px; margin-top: 6px; }
+  .actions-tiroir .btn:first-child { flex: 1; }
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--encre); color: #fff; padding: 10px 18px; border-radius: 8px; z-index: 30; font-size: 14px; }
+
+  @media (max-width: 720px) {
+    .chiffres { grid-template-columns: repeat(2, auto); }
+    main { padding: 20px 14px 50px; }
+    .barre { padding: 12px 14px; gap: 8px; flex-wrap: wrap; }
+    .utilisateur, .module, .sauvegarde:not(.erreur-svg) { display: none; }
+    .ligne-saisie { grid-template-columns: 1fr 1fr !important; }
+    .ligne-saisie > div:first-child { grid-column: 1 / -1; }
+    .ligne-saisie { padding-bottom: 10px; border-bottom: 1px solid var(--filet); }
+  }
+  @media (prefers-reduced-motion: reduce) { .tiroir, .sankey path { transition: none; } }
+</style>
+</head>
+<body>
+
+<!-- ═════════════ Chargement / serveur injoignable ═════════════ -->
+<section id="ecran-etat">
+  <div class="assistant" style="padding-top:18vh">
+    <div class="marque">Eco<span>Folio</span> <span class="discret" style="font-weight:400">· Budget et comptes</span></div>
+    <h1 id="etat-titre" style="font-family:'IBM Plex Serif',serif;font-weight:500;font-size:28px">Chargement de vos comptes…</h1>
+    <p class="intro" id="etat-texte"></p>
+    <div id="etat-actions"></div>
+  </div>
+</section>
+
+<!-- ═════════════ Assistant de configuration ═════════════ -->
+<section id="assistant" class="cache">
+  <div class="assistant">
+    <div class="marque">Eco<span>Folio</span> <span class="discret" style="font-weight:400">· Budget et comptes</span></div>
+    <ol class="etapes" id="etapes"></ol>
+    <div id="etape"></div>
+    <div id="assistant-erreur" class="erreur cache"></div>
+    <div class="pied-assistant" id="pied-assistant"></div>
+  </div>
+</section>
+
+<!-- ═════════════ Application ═════════════ -->
+<section id="app" class="cache">
+  <header>
+    <div class="barre">
+      <div class="marque">Eco<span>Folio</span></div>
+      <div class="module">Budget et comptes</div>
+      <div class="espace"></div>
+      <span class="sauvegarde" id="sauvegarde" aria-live="polite"></span>
+      <span class="utilisateur" id="nom-utilisateur"></span>
+      <a class="mini-btn" href="index.html">Accueil</a>
+      <a class="mini-btn" href="portefeuille.html">Compte-titres</a>
+      <button class="btn" id="btn-operation">Ajouter une opération</button>
+      <button class="mini-btn" id="btn-reinit" title="Effacer les données de ce module et relancer la configuration">Réinitialiser</button>
+      <button class="mini-btn" id="btn-deconnexion">Déconnexion</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="releve">
+      <div>
+        <div class="libelle">Patrimoine net</div>
+        <div class="montant" id="r-net">—</div>
+        <div class="evol" id="r-evol"></div>
+      </div>
+      <div class="chiffres">
+        <div><span><i class="pastille" style="background:var(--foret)"></i>Compte courant</span><strong id="r-courant">—</strong></div>
+        <div><span><i class="pastille" style="background:var(--invest)"></i>Compte investissement</span><strong id="r-invest">—</strong></div>
+        <div><span><i class="pastille" style="background:var(--perte)"></i>Dettes restantes</span><strong id="r-dettes">—</strong></div>
+      </div>
+    </div>
+
+    <nav class="onglets" role="tablist">
+      <button role="tab" data-onglet="synthese" aria-selected="true">Synthèse</button>
+      <button role="tab" data-onglet="comptes">Comptes</button>
+      <button role="tab" data-onglet="budget">Budget</button>
+      <button role="tab" data-onglet="dettes">Dettes</button>
+    </nav>
+
+    <div data-vue="synthese"></div>
+    <div data-vue="comptes" class="cache"></div>
+    <div data-vue="budget" class="cache"></div>
+    <div data-vue="dettes" class="cache"></div>
+  </main>
+</section>
+
+<div class="voile cache" id="voile"></div>
+<aside class="tiroir" id="tiroir" aria-hidden="true"></aside>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════════
+   EcoFolio · Budget et comptes — prototype front-end
+   Données stockées dans le navigateur (localStorage), une entrée par utilisateur.
+   Le modèle (comptes / opérations / opérations programmées / dettes / objectifs)
+   est pensé pour être déplacé tel quel dans une table SQLite côté backend.
+   ════════════════════════════════════════════════════════════════════════ */
+
+const $ = s => document.querySelector(s);
+/* Même compte que le compte-titres : jeton délivré par l'API à la connexion (index.html). */
+const API = /:8000$/.test(location.host) ? location.origin : 'http://localhost:8000';
+const JETON = localStorage.getItem('ecofolio_jeton');
+let UTILISATEUR = localStorage.getItem('ecofolio_user') || '';
+if (!JETON) location.replace('index.html');
+const ANCIENNE_CLE = 'ecofolio_banque_v1:' + UTILISATEUR.toLowerCase();   // prototype précédent (navigateur)
+
+/* ── Référentiels ──────────────────────────────────────── */
+const CATEGORIES = {
+  // Sorties
+  logement:    { nom: 'Logement',                 sens: 'SORTIE', couleur: '#1E6A48' },
+  factures:    { nom: 'Énergie et télécoms',      sens: 'SORTIE', couleur: '#4F9A74' },
+  courses:     { nom: 'Courses',                  sens: 'SORTIE', couleur: '#9CC5A9' },
+  transport:   { nom: 'Transport',                sens: 'SORTIE', couleur: '#7FA7CB' },
+  sorties:     { nom: 'Restaurants et sorties',   sens: 'SORTIE', couleur: '#C08A3E' },
+  abonnements: { nom: 'Abonnements',              sens: 'SORTIE', couleur: '#8E6BA8' },
+  sante:       { nom: 'Santé',                    sens: 'SORTIE', couleur: '#D98C7A' },
+  shopping:    { nom: 'Shopping',                 sens: 'SORTIE', couleur: '#D5C9A1' },
+  loisirs:     { nom: 'Loisirs et voyages',       sens: 'SORTIE', couleur: '#5F8F8B' },
+  credit:      { nom: 'Remboursements de crédit', sens: 'SORTIE', couleur: '#B23A2E' },
+  impots:      { nom: 'Impôts et taxes',          sens: 'SORTIE', couleur: '#6B7A70' },
+  divers:      { nom: 'Divers',                   sens: 'SORTIE', couleur: '#A8B2AB' },
+  // Entrées
+  salaire:     { nom: 'Salaire',                  sens: 'ENTREE', couleur: '#1D7A4B' },
+  complement:  { nom: 'Revenus complémentaires',  sens: 'ENTREE', couleur: '#4F9A74' },
+  aides:       { nom: 'Aides et allocations',     sens: 'ENTREE', couleur: '#7FA7CB' },
+  rembours:    { nom: 'Remboursements reçus',     sens: 'ENTREE', couleur: '#9CC5A9' },
+  autre_rev:   { nom: 'Autres revenus',           sens: 'ENTREE', couleur: '#A8B2AB' },
+  // Mouvement interne, jamais compté comme revenu ou dépense
+  virement:    { nom: 'Virement entre comptes',   sens: 'INTERNE', couleur: '#2B5680' },
+};
+const CATS_SORTIE = Object.keys(CATEGORIES).filter(k => CATEGORIES[k].sens === 'SORTIE');
+const CATS_ENTREE = Object.keys(CATEGORIES).filter(k => CATEGORIES[k].sens === 'ENTREE');
+const CATS_VARIABLES = ['courses', 'transport', 'sorties', 'loisirs', 'shopping', 'sante', 'divers'];
+const COMPTES = {
+  courant: { nom: 'Compte courant', court: 'Courant', couleur: '#1E6A48', role: 'Dépenses du quotidien et épargne disponible' },
+  invest:  { nom: 'Compte investissement', court: 'Investissement', couleur: '#2B5680', role: 'Liquidités disponibles pour le compte-titres' },
+};
+const TYPES_DETTE = {
+  immobilier: 'Prêt immobilier', conso: 'Crédit à la consommation', auto: 'Crédit auto',
+  etudiant: 'Prêt étudiant', renouvelable: 'Crédit renouvelable', autre: 'Autre dette',
+};
+const SEUIL_ENDETTEMENT = 35; // % des revenus nets, norme HCSF (assurance comprise)
+
+/* ── Formats ───────────────────────────────────────────── */
+const nombre = (v, d = 2) => (v == null || isNaN(v)) ? '—' : new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).format(v);
+function argent(v, signe = false, d = 2) {
+  if (v == null || isNaN(v)) return '—';
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: d, maximumFractionDigits: d, signDisplay: signe ? 'exceptZero' : 'auto' }).format(v);
+}
+const argent0 = (v, signe) => argent(v, signe, 0);
+const pct = (v, d = 1) => (v == null || !isFinite(v)) ? '—' : nombre(v, d) + ' %';
+const classe = v => v > 0.004 ? 'gain' : v < -0.004 ? 'perte' : '';
+const echap = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const lireNombre = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : 0; };
+const arrondi = v => Math.round(v * 100) / 100;
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+/* ── Dates (toujours en chaînes locales AAAA-MM-JJ) ─────── */
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const versDate = s => new Date(s + 'T12:00:00');
+const AUJ = iso(new Date());
+const moisDe = s => s.slice(0, 7);
+const joursDansMois = (a, m) => new Date(a, m, 0).getDate();           // m = 1..12
+function decalerMois(cleMois, n) {
+  const [a, m] = cleMois.split('-').map(Number);
+  const d = new Date(a, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function decalerJours(s, n) { const d = versDate(s); d.setDate(d.getDate() + n); return iso(d); }
+function dateDansMois(cleMois, jour) {
+  const [a, m] = cleMois.split('-').map(Number);
+  return `${cleMois}-${String(Math.min(jour, joursDansMois(a, m))).padStart(2, '0')}`;
+}
+const libelleMois = (cle, court = false) => versDate(cle + '-01').toLocaleDateString('fr-FR', court ? { month: 'short' } : { month: 'long', year: 'numeric' });
+const dateCourte = s => versDate(s).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+const dateLongue = s => versDate(s).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+const ecartMois = (de, a) => { const [a1, m1] = de.split('-').map(Number), [a2, m2] = a.split('-').map(Number); return (a2 - a1) * 12 + (m2 - m1); };
+function dureeTexte(mois) {
+  if (mois == null || !isFinite(mois)) return '—';
+  const a = Math.floor(mois / 12), m = mois % 12;
+  return [a ? `${a} an${a > 1 ? 's' : ''}` : '', m ? `${m} mois` : ''].filter(Boolean).join(' ') || '0 mois';
+}
+
+function toast(msg) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 3200);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ÉTAT ET PERSISTANCE
+   ════════════════════════════════════════════════════════════════════════ */
+let E = null;          // état complet du module
+let VERSION = 0;       // version serveur sur laquelle E est fondé (contrôle de concurrence)
+
+async function api(chemin, options = {}) {
+  let rep;
+  try {
+    rep = await fetch(API + chemin, { ...options, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + JETON, ...(options.headers || {}) } });
+  } catch {
+    const e = new Error('Le serveur ne répond pas. Dans le dossier backend, lancez « python -m uvicorn main:app --reload », puis ouvrez http://localhost:8000.');
+    e.reseau = true; throw e;
+  }
+  const data = await rep.json().catch(() => ({}));
+  if (rep.status === 401) { deconnecter(); throw new Error('Session expirée.'); }
+  if (!rep.ok) {
+    const d = data.detail, e = new Error(typeof d === 'string' ? d : d?.message || (Array.isArray(d) ? d.map(x => x.msg).join(' ; ') : `Erreur ${rep.status}`));
+    e.status = rep.status; e.detail = d; throw e;
+  }
+  return data;
+}
+
+function deconnecter() {
+  fetch(API + '/auth/deconnexion', { method: 'POST', headers: { Authorization: 'Bearer ' + JETON } }).catch(() => {});
+  localStorage.removeItem('ecofolio_jeton'); localStorage.removeItem('ecofolio_user');
+  location.replace('index.html');
+}
+
+async function charger() {
+  const r = await api('/banque/etat');
+  E = r.etat; VERSION = r.version;
+}
+
+/* Enregistrement sur le serveur : regroupé (300 ms), une requête à la fois, jamais silencieux en cas d'échec. */
+let enAttente = false, envoiEnCours = null, minuterie = null;
+function sauver() { enAttente = true; indiquerSauvegarde('en-cours'); clearTimeout(minuterie); minuterie = setTimeout(envoyer, 300); }
+async function envoyer() {
+  if (envoiEnCours) await envoiEnCours;
+  if (!enAttente || !E) return;
+  enAttente = false;
+  envoiEnCours = (async () => {
+    try {
+      const r = await api('/banque/etat', { method: 'PUT', body: JSON.stringify({ etat: E, version: VERSION }) });
+      VERSION = r.version;
+      indiquerSauvegarde(enAttente ? 'en-cours' : 'ok');
+    } catch (ex) {
+      if (ex.status === 409) {
+        // Modifié ailleurs : on recharge la version du serveur plutôt que de l'écraser
+        await charger(); if (E) { posterEcheances(); rafraichir(); } else ouvrirAssistant();
+        indiquerSauvegarde('ok');
+        toast('Modification non enregistrée : vos comptes avaient changé dans un autre onglet ou appareil. Version à jour rechargée, refaites la modification.');
+      } else { enAttente = true; indiquerSauvegarde('erreur', ex.message); }
+    } finally { envoiEnCours = null; }
+  })();
+  return envoiEnCours;
+}
+function indiquerSauvegarde(etat, message) {
+  const z = $('#sauvegarde'); if (!z) return;
+  z.classList.toggle('erreur-svg', etat === 'erreur');
+  z.innerHTML = etat === 'ok' ? 'Enregistré' : etat === 'en-cours' ? 'Enregistrement…'
+    : `Non enregistré <button class="btn-lien" id="svg-reessayer" title="${echap(message || '')}">Réessayer</button>`;
+  if (etat === 'erreur') $('#svg-reessayer').onclick = () => { indiquerSauvegarde('en-cours'); envoyer(); };
+}
+window.addEventListener('beforeunload', e => {
+  if (!enAttente) return;
+  // Dernière chance : envoi maintenu même si la page se ferme
+  fetch(API + '/banque/etat', { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + JETON }, body: JSON.stringify({ etat: E, version: VERSION }) });
+  e.preventDefault(); e.returnValue = '';
+});
+
+/* ════════════════════════════════════════════════════════════════════════
+   MOTEUR : opérations programmées, soldes, dettes
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Taux mensuel équivalent au TAEG annuel saisi (convention bancaire française : taux proportionnel). */
+const tauxMensuel = tauxAnnuelPct => tauxAnnuelPct / 100 / 12;
+
+/* Mensualité constante hors assurance qui solde `capital` en `n` échéances (formule d'annuité). */
+function mensualiteAnnuite(capital, tauxAnnuel, n) {
+  if (n < 1) return null;
+  const r = tauxMensuel(tauxAnnuel);
+  return r === 0 ? capital / n : capital * r / (1 - Math.pow(1 + r, -n));
+}
+/* Mois de la prochaine échéance : la première date « jour » strictement après `apres`. */
+function prochainMois(jour, apres = AUJ) {
+  const m = moisDe(apres);
+  return dateDansMois(m, jour) > apres ? m : decalerMois(m, 1);
+}
+/* Nombre d'échéances restantes, de la prochaine (à partir de `debut` inclus) au mois de la dernière inclus. */
+const echeancesRestantes = (echeance, jour, debut = decalerJours(AUJ, 1)) => ecartMois(prochainMois(jour, decalerJours(debut, -1)), echeance) + 1;
+/* Assurance emprunteur : montant fixe, ou taux annuel appliqué au capital emprunté à l'origine (usage en France). */
+const assuranceMensuelle = a => !a || !a.valeur ? 0 : a.mode === 'pct' ? a.valeur / 100 * (a.base || 0) / 12 : a.valeur;
+const assuranceDe = d => arrondi(assuranceMensuelle(d.assurance));
+
+/* Rejoue toutes les échéances d'une dette pour connaître son capital restant dû.
+   Chaque échéance normale = intérêts du mois + amortissement ; un remboursement anticipé = 100 % capital. */
+function etatDette(dette, jusquA = '9999-12-31') {
+  const r = tauxMensuel(dette.taux);
+  let capital = dette.capitalDepart, interets = 0, amorti = 0, nb = 0;
+  const recalages = (dette.recalages || []).map(r => ({ date: r.date, recalage: r.capital }));
+  E.operations
+    .filter(o => o.detteId === dette.id)
+    .concat(recalages)
+    .filter(o => o.date <= jusquA)
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.recalage != null) - (b.recalage != null))
+    .forEach(o => {
+      if (o.recalage != null) { capital = o.recalage; return; }   // capital corrigé par l'utilisateur
+      const paiement = -o.montant - (o.assurance || 0);          // l'assurance n'amortit rien
+      if (o.anticipe) { const p = Math.min(paiement, capital); capital -= p; amorti += p; return; }
+      const i = capital * r, p = Math.min(Math.max(paiement - i, 0), capital);
+      capital -= p; interets += i; amorti += p; nb++;
+    });
+  return { capital: Math.max(0, arrondi(capital)), interets, amorti, nb };
+}
+
+/* Projection d'amortissement à mensualité constante. */
+function projeter(capital, tauxAnnuel, mensualite, extra = 0) {
+  const r = tauxMensuel(tauxAnnuel), paiement = mensualite + extra;
+  if (capital <= 0.005) return { mois: 0, interets: 0, serie: [0] };
+  if (paiement <= capital * r + 0.005) return { impossible: true };
+  let c = capital, interets = 0, mois = 0; const serie = [c];
+  while (c > 0.005 && mois < 720) {
+    const i = c * r, p = Math.min(paiement, c + i);
+    c = c + i - p; interets += i; mois++; serie.push(Math.max(0, c));
+  }
+  return { mois, interets, serie };
+}
+
+/* Poste automatiquement les opérations programmées échues (salaire, loyer, mensualités, virement mensuel),
+   comme le ferait une banque. Idempotent : chaque occurrence porte une clé « id:AAAA-MM ». */
+function posterEcheances() {
+  const deja = new Set([...E.operations.filter(o => o.occurrence).map(o => o.occurrence), ...(E.ignorees || [])]);
+  const aPoster = [];
+  for (const rec of E.programmees) {
+    if (!rec.actif) continue;
+    let cle = moisDe(rec.debut);
+    while (cle <= moisDe(AUJ)) {
+      const date = dateDansMois(cle, rec.jour), occ = rec.id + ':' + cle;
+      if (date >= rec.debut && date <= AUJ && !deja.has(occ)) aPoster.push({ rec, date, occ });
+      cle = decalerMois(cle, 1);
+    }
+  }
+  aPoster.sort((a, b) => a.date.localeCompare(b.date));
+  let n = 0;
+  for (const { rec, date, occ } of aPoster) {
+    if (rec.type === 'VIREMENT') { creerVirement(rec.compte, rec.versCompte, rec.montant, date, rec.libelle, { occurrence: occ, programmeeId: rec.id }); n++; continue; }
+    if (rec.detteId) {
+      const dette = E.dettes.find(d => d.id === rec.detteId);
+      if (!dette) continue;
+      const etat = etatDette(dette, date);
+      if (etat.capital <= 0.005) { rec.actif = false; continue; }             // prêt soldé : on arrête le prélèvement
+      const credit = Math.min(dette.mensualite, arrondi(etat.capital * (1 + tauxMensuel(dette.taux)))), ass = assuranceDe(dette);
+      E.operations.push({ id: uid(), date, compte: rec.compte, montant: -arrondi(credit + ass), libelle: rec.libelle, categorie: 'credit',
+        occurrence: occ, programmeeId: rec.id, detteId: dette.id, ...(ass ? { assurance: ass } : {}) });
+      n++; continue;
+    }
+    E.operations.push({
+      id: uid(), date, compte: rec.compte, montant: rec.sens === 'ENTREE' ? rec.montant : -rec.montant,
+      libelle: rec.libelle, categorie: rec.categorie, occurrence: occ, programmeeId: rec.id,
+    });
+    n++;
+  }
+  if (n) sauver();
+  return n;
+}
+
+function creerVirement(de, vers, montant, date, libelle, extra = {}) {
+  const lien = uid();
+  E.operations.push(
+    { id: uid(), date, compte: de,   montant: -montant, libelle: libelle || `Virement vers ${COMPTES[vers].nom.toLowerCase()}`, categorie: 'virement', virementId: lien, ...extra },
+    { id: uid(), date, compte: vers, montant:  montant, libelle: libelle || `Virement depuis ${COMPTES[de].nom.toLowerCase()}`, categorie: 'virement', virementId: lien, ...(extra.occurrence ? { occurrence: extra.occurrence + ':recu' } : {}) },
+  );
+}
+
+const soldeCompte = (compte, jusquA = '9999-12-31') =>
+  E.comptes[compte].soldeInitial + E.operations.filter(o => o.compte === compte && o.date <= jusquA).reduce((s, o) => s + o.montant, 0);
+const affecteObjectifs = compte => E.objectifs.filter(o => o.compte === compte).reduce((s, o) => s + o.affecte, 0);
+const detteTotale = (jusquA) => E.dettes.reduce((s, d) => s + etatDette(d, jusquA).capital, 0);
+const patrimoineNet = (jusquA) => soldeCompte('courant', jusquA) + soldeCompte('invest', jusquA) - detteTotale(jusquA);
+const estFlux = o => o.categorie !== 'virement';
+
+/* Occurrences à venir des opérations programmées (hors dettes soldées). */
+function echeancesAVenir(jours = 30) {
+  const fin = decalerJours(AUJ, jours), res = [];
+  for (const rec of E.programmees) {
+    if (!rec.actif) continue;
+    if (rec.detteId) { const d = E.dettes.find(x => x.id === rec.detteId); if (!d || etatDette(d).capital <= 0.005) continue; }
+    for (let k = 0; k <= 2; k++) {
+      const date = dateDansMois(decalerMois(moisDe(AUJ), k), rec.jour);
+      if (date > AUJ && date <= fin && date >= rec.debut) res.push({ rec, date });
+    }
+  }
+  return res.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/* Plan mensuel déclaré : ce que l'utilisateur prévoit de gagner et de dépenser en moyenne. */
+function planMensuel() {
+  const soldee = r => { const d = r.detteId && E.dettes.find(x => x.id === r.detteId); return d ? etatDette(d).capital <= 0.005 : false; };
+  const actives = E.programmees.filter(r => r.actif && !soldee(r));
+  const revenus = actives.filter(r => r.sens === 'ENTREE').reduce((s, r) => s + r.montant, 0);
+  const fixes = actives.filter(r => r.sens === 'SORTIE' && !r.detteId).reduce((s, r) => s + r.montant, 0);
+  const credits = actives.filter(r => r.detteId).reduce((s, r) => s + r.montant, 0);
+  const variables = Object.values(E.budgets).reduce((s, v) => s + v, 0);
+  const virementInvest = actives.filter(r => r.type === 'VIREMENT' && r.versCompte === 'invest').reduce((s, r) => s + r.montant, 0);
+  const capacite = revenus - fixes - credits - variables;
+  return { revenus, fixes, credits, variables, capacite, virementInvest };
+}
+
+/* Flux réels d'un mois donné. */
+function fluxMois(cle) {
+  const ops = E.operations.filter(o => moisDe(o.date) === cle);
+  const flux = ops.filter(estFlux);
+  const entrees = flux.filter(o => o.montant > 0).reduce((s, o) => s + o.montant, 0);
+  const sorties = -flux.filter(o => o.montant < 0).reduce((s, o) => s + o.montant, 0);
+  const versInvest = ops.filter(o => o.categorie === 'virement' && o.compte === 'invest').reduce((s, o) => s + o.montant, 0);
+  const parCat = {};
+  flux.forEach(o => { parCat[o.categorie] = (parCat[o.categorie] || 0) + Math.abs(o.montant); });
+  const fixes = Math.abs(flux.filter(o => o.montant < 0 && o.programmeeId).reduce((s, o) => s + o.montant, 0));
+  return { ops, entrees, sorties, solde: entrees - sorties, versInvest, parCat, fixes };
+}
+
+/* Capacité d'épargne réellement constatée sur les N derniers mois complets. */
+function capaciteConstatee(n = 3) {
+  const debut = moisDe(E.creeLe);
+  const mois = [];
+  for (let k = 1; k <= n; k++) { const c = decalerMois(moisDe(AUJ), -k); if (c >= debut) mois.push(c); }
+  if (!mois.length) return null;
+  return { moyenne: mois.reduce((s, c) => s + fluxMois(c).solde, 0) / mois.length, nb: mois.length };
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ASSISTANT DE CONFIGURATION
+   ════════════════════════════════════════════════════════════════════════ */
+const ETAPES = ['Revenus', 'Dépenses', 'Dettes', 'Épargne', 'Récapitulatif'];
+let etapeCourante = -1;       // -1 = écran d'accueil
+let B = null;                 // brouillon de l'assistant
+
+function nouveauBrouillon() {
+  return {
+    revenus: [{ libelle: 'Salaire net', categorie: 'salaire', montant: '', jour: 28 }],
+    fixes: [{ libelle: 'Loyer', categorie: 'logement', montant: '', jour: 5 }],
+    budgets: { courses: '', transport: '', sorties: '', loisirs: '', shopping: '', sante: '', divers: '' },
+    dettes: [], sansDette: false,
+    soldeCourant: '', soldeInvest: '', virement: '', jourVirement: 1,
+    objectifPrecaution: true,
+  };
+}
+
+function ouvrirAssistant() {
+  $('#app').classList.add('cache'); $('#ecran-etat').classList.add('cache'); $('#assistant').classList.remove('cache');
+  B = nouveauBrouillon(); etapeCourante = -1; afficherEtape();
+}
+
+/* Liste de lignes éditables (revenus, dépenses fixes, dettes). */
+function lignesSaisie(liste, champs, nomListe) {
+  const grille = champs.map(c => c.largeur || '1fr').join(' ') + ' 40px';
+  return `<div class="lignes-saisie">${liste.map((l, i) => `
+    <div class="ligne-saisie" style="grid-template-columns:${grille}">
+      ${champs.map(c => `<div><label class="${i ? 'repete' : ''}">${c.label}</label>${
+        c.type === 'select'
+          ? `<select class="saisie" data-liste="${nomListe}" data-i="${i}" data-cle="${c.cle}" aria-label="${c.label}">${c.options.map(([v, t]) => `<option value="${v}" ${String(l[c.cle]) === String(v) ? 'selected' : ''}>${t}</option>`).join('')}</select>`
+          : `<input class="saisie" data-liste="${nomListe}" data-i="${i}" data-cle="${c.cle}" aria-label="${c.label}" value="${echap(l[c.cle])}" ${c.type === 'num' ? 'inputmode="decimal"' : ''} placeholder="${c.ph || ''}">`
+      }</div>`).join('')}
+      <button class="suppr" type="button" data-suppr="${nomListe}" data-i="${i}" aria-label="Supprimer la ligne">×</button>
+    </div>`).join('')}</div>`;
+}
+const OPTIONS_JOUR = Array.from({ length: 28 }, (_, i) => [i + 1, `le ${i + 1}`]);
+const optionsCat = liste => liste.map(k => [k, CATEGORIES[k].nom]);
+
+function afficherEtape() {
+  $('#assistant-erreur').classList.add('cache');
+  $('#etapes').innerHTML = etapeCourante < 0 ? '' :
+    ETAPES.map((e, i) => `<li class="${i < etapeCourante ? 'fait' : i === etapeCourante ? 'actif' : ''}">${e}</li>`).join('');
+  const zone = $('#etape'), pied = $('#pied-assistant');
+  const precedent = etapeCourante > 0 ? `<button class="btn btn-sec" id="ass-prec">Retour</button>` : '<span></span>';
+
+  if (etapeCourante === -1) {
+    zone.innerHTML = `
+      <h1>Organisons votre argent en deux comptes</h1>
+      <p class="intro">Un compte courant pour le quotidien et l'épargne disponible, un compte investissement pour l'argent destiné à votre portefeuille. Quelques minutes suffisent : vos revenus, vos charges, vos crédits, puis la répartition de ce que vous avez déjà mis de côté.</p>
+      <div class="accueil-choix">
+        <button id="ass-commencer"><strong>Configurer mes comptes</strong><span>Saisir mes propres chiffres, étape par étape.</span></button>
+        <button id="ass-exemple"><strong>Explorer avec un exemple</strong><span>Un profil fictif avec quatre mois d'historique, pour voir le module rempli.</span></button>
+        ${localStorage.getItem(ANCIENNE_CLE) ? `<button id="ass-import"><strong>Récupérer mes données</strong><span>Des comptes créés avec la version précédente sont enregistrés dans ce navigateur : les rattacher à votre compte.</span></button>` : ''}
+      </div>`;
+    pied.innerHTML = '';
+    $('#ass-commencer').onclick = () => { etapeCourante = 0; afficherEtape(); };
+    $('#ass-exemple').onclick = chargerExemple;
+    if ($('#ass-import')) $('#ass-import').onclick = () => {
+      try { E = JSON.parse(localStorage.getItem(ANCIENNE_CLE)); } catch { E = null; }
+      if (!E) return toast('Données illisibles : configurez vos comptes.');
+      E.ignorees = E.ignorees || [];
+      E.dettes.forEach(migrerDette);
+      sauver(); envoyer().then(() => { if (!enAttente) localStorage.removeItem(ANCIENNE_CLE); });
+      demarrer(); toast('Données récupérées et enregistrées sur votre compte');
+    };
+    return;
+  }
+
+  if (etapeCourante === 0) {
+    zone.innerHTML = `
+      <h1>Ce qui arrive chaque mois</h1>
+      <p class="intro">Vos revenus nets réguliers : salaire après impôt à la source, aides, loyers perçus… Ils seront crédités automatiquement sur le compte courant au jour indiqué.</p>
+      ${lignesSaisie(B.revenus, [
+        { cle: 'libelle', label: 'Libellé', largeur: '1.4fr' },
+        { cle: 'categorie', label: 'Type', type: 'select', options: optionsCat(CATS_ENTREE) },
+        { cle: 'montant', label: 'Montant net / mois', type: 'num', ph: '0,00', largeur: '.9fr' },
+        { cle: 'jour', label: 'Versé', type: 'select', options: OPTIONS_JOUR, largeur: '.7fr' },
+      ], 'revenus')}
+      <div class="puces"><button type="button" data-ajout="revenus">Ajouter un revenu</button></div>`;
+  }
+
+  if (etapeCourante === 1) {
+    const presets = [['Électricité et gaz', 'factures', 5], ['Internet et mobile', 'factures', 10], ['Assurance habitation', 'logement', 5], ['Streaming et musique', 'abonnements', 15], ['Abonnement transport', 'transport', 3], ['Salle de sport', 'loisirs', 2], ['Mutuelle', 'sante', 5]];
+    zone.innerHTML = `
+      <h1>Ce qui part chaque mois</h1>
+      <p class="intro">D'abord les charges fixes prélevées à date connue. Les crédits viennent à l'étape suivante, ne les mettez pas ici.</p>
+      ${lignesSaisie(B.fixes, [
+        { cle: 'libelle', label: 'Libellé', largeur: '1.4fr' },
+        { cle: 'categorie', label: 'Catégorie', type: 'select', options: optionsCat(CATS_SORTIE.filter(c => c !== 'credit')) },
+        { cle: 'montant', label: 'Montant / mois', type: 'num', ph: '0,00', largeur: '.9fr' },
+        { cle: 'jour', label: 'Prélevé', type: 'select', options: OPTIONS_JOUR, largeur: '.7fr' },
+      ], 'fixes')}
+      <div class="puces"><button type="button" data-ajout="fixes">Ajouter une charge</button>
+        ${presets.map(([l, c, j]) => `<button type="button" data-preset="${echap(l)}|${c}|${j}">${echap(l)}</button>`).join('')}</div>
+      <h3>Dépenses courantes, en moyenne par mois</h3>
+      <p class="discret" style="margin:-4px 0 12px">Une estimation suffit. Ces montants deviennent vos budgets mensuels, ajustables ensuite dans l'onglet Budget.</p>
+      <div class="grille-budgets">${CATS_VARIABLES.map(c => `
+        <div class="champ"><label for="bud-${c}">${CATEGORIES[c].nom}</label>
+        <input id="bud-${c}" data-budget="${c}" inputmode="decimal" placeholder="0" value="${echap(B.budgets[c])}"></div>`).join('')}</div>`;
+  }
+
+  if (etapeCourante === 2) {
+    zone.innerHTML = `
+      <h1>Vos crédits en cours</h1>
+      <p class="intro">Le capital restant dû, le taux nominal et la date de la dernière échéance figurent sur votre tableau d'amortissement. La mensualité en découle ; corrigez-la si elle diffère de votre contrat. Elle sera prélevée sur le compte courant et le capital restant se mettra à jour à chaque échéance.</p>
+      <label class="case"><input type="checkbox" id="sans-dette" ${B.sansDette ? 'checked' : ''}> Je n'ai aucun crédit en cours</label>
+      <div id="bloc-dettes" class="${B.sansDette ? 'cache' : ''}">
+        ${B.dettes.map((d, i) => `<div class="bloc-dette" data-bloc="${i}"><div class="tete-panneau"><strong style="font-weight:600">${echap(d.nom) || `Crédit ${i + 1}`}</strong>
+          <button class="mini-btn danger" type="button" data-suppr="dettes" data-i="${i}">Retirer</button></div>${champsDette(d)}</div>`).join('')}
+        <div class="puces"><button type="button" data-ajout="dettes">Ajouter un crédit</button></div>
+        <p class="discret" id="apercu-dettes" style="margin-top:14px"></p>
+      </div>`;
+    $('#sans-dette').onchange = e => { B.sansDette = e.target.checked; $('#bloc-dettes').classList.toggle('cache', B.sansDette); };
+    zone.querySelectorAll('[data-bloc]').forEach(bloc => {
+      bloc.onmaj = majApercus;
+      brancherDette(bloc, B.dettes[+bloc.dataset.bloc], afficherEtape);
+    });
+  }
+
+  if (etapeCourante === 3) {
+    zone.innerHTML = `
+      <h1>Répartir ce que vous avez déjà</h1>
+      <p class="intro">Indiquez les soldes d'aujourd'hui. Le compte investissement représente l'argent que vous destinez au portefeuille : il pourra alimenter le compte-titres.</p>
+      <div class="deux-col">
+        <div class="champ"><label for="solde-courant">Compte courant aujourd'hui</label><input id="solde-courant" inputmode="decimal" placeholder="0" value="${echap(B.soldeCourant)}"></div>
+        <div class="champ"><label for="solde-invest">Compte investissement aujourd'hui</label><input id="solde-invest" inputmode="decimal" placeholder="0" value="${echap(B.soldeInvest)}"></div>
+      </div>
+      <h3>Virement mensuel vers l'investissement</h3>
+      <div class="deux-col">
+        <div class="champ"><label for="virement">Montant par mois</label><input id="virement" inputmode="decimal" placeholder="0" value="${echap(B.virement)}"></div>
+        <div class="champ"><label for="jour-virement">Exécuté</label><select id="jour-virement">${OPTIONS_JOUR.map(([v, t]) => `<option value="${v}" ${+B.jourVirement === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      </div>
+      <div class="bilan" id="bilan-epargne"></div>`;
+  }
+
+  if (etapeCourante === 4) {
+    const p = calculBrouillon();
+    zone.innerHTML = `
+      <h1>Tout est prêt</h1>
+      <p class="intro">Voici ce que le module va créer. Tout reste modifiable ensuite.</p>
+      <div class="bilan">
+        <div class="ligne"><span>Compte courant</span><strong>${argent(p.soldeCourant)}</strong></div>
+        <div class="ligne"><span>Compte investissement</span><strong>${argent(p.soldeInvest)}</strong></div>
+        <div class="ligne"><span>Dettes (${p.dettes.length})</span><strong class="perte">${argent(-p.totalDettes)}</strong></div>
+        <div class="ligne total"><span>Patrimoine net de départ</span><strong>${argent(p.soldeCourant + p.soldeInvest - p.totalDettes)}</strong></div>
+      </div>
+      <div class="bilan">
+        <div class="ligne"><span>Opérations programmées</span><strong>${p.revenus.length + p.fixes.length + p.dettes.length + (p.virement > 0 ? 1 : 0)}</strong></div>
+        <div class="ligne"><span>Budgets de dépenses courantes</span><strong>${argent(p.variables)} / mois</strong></div>
+        <div class="ligne"><span>Épargne restante chaque mois, après virement</span><strong class="${classe(p.capacite - p.virement)}">${argent(p.capacite - p.virement, true)}</strong></div>
+      </div>
+      <label class="case"><input type="checkbox" id="obj-precaution" ${B.objectifPrecaution ? 'checked' : ''}>
+        <span>Créer l'objectif « Épargne de précaution » : six mois de dépenses, soit ${argent0(p.precaution)}, à constituer sur le compte courant d'ici deux ans. Ce qui dépasse un mois de dépenses sur votre compte courant y est réservé dès maintenant.</span></label>`;
+    $('#obj-precaution').onchange = e => { B.objectifPrecaution = e.target.checked; };
+  }
+
+  pied.innerHTML = `${precedent}<button class="btn" id="ass-suiv">${etapeCourante === 4 ? 'Créer mes comptes' : 'Continuer'}</button>`;
+  if ($('#ass-prec')) $('#ass-prec').onclick = () => { etapeCourante--; afficherEtape(); };
+  $('#ass-suiv').onclick = () => {
+    const err = validerEtape();
+    if (err) { const z = $('#assistant-erreur'); z.textContent = err; z.classList.remove('cache'); return; }
+    if (etapeCourante === 4) return terminerAssistant();
+    etapeCourante++; afficherEtape(); window.scrollTo(0, 0);
+  };
+  brancherAssistant();
+  majApercus();
+}
+
+function brancherAssistant() {
+  const zone = $('#etape');
+  zone.querySelectorAll('[data-liste]').forEach(el => el.addEventListener('input', () => {
+    B[el.dataset.liste][+el.dataset.i][el.dataset.cle] = el.value; majApercus();
+  }));
+  zone.querySelectorAll('[data-suppr]').forEach(b => b.onclick = () => { B[b.dataset.suppr].splice(+b.dataset.i, 1); afficherEtape(); });
+  zone.querySelectorAll('[data-ajout]').forEach(b => b.onclick = () => {
+    const l = b.dataset.ajout;
+    B[l].push(l === 'revenus' ? { libelle: '', categorie: 'complement', montant: '', jour: 1 }
+      : l === 'fixes' ? { libelle: '', categorie: 'divers', montant: '', jour: 1 }
+      : nouveauCredit());
+    afficherEtape();
+    const champs = zone.querySelectorAll(l === 'dettes' ? '[data-d="nom"]' : `[data-liste="${l}"][data-cle="libelle"]`);
+    champs[champs.length - 1]?.focus();
+  });
+  zone.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => {
+    const [libelle, categorie, jour] = b.dataset.preset.split('|');
+    B.fixes.push({ libelle, categorie, montant: '', jour: +jour }); afficherEtape();
+    const champs = zone.querySelectorAll('[data-liste="fixes"][data-cle="montant"]'); champs[champs.length - 1]?.focus();
+  });
+  zone.querySelectorAll('[data-budget]').forEach(el => el.addEventListener('input', () => { B.budgets[el.dataset.budget] = el.value; }));
+  [['#solde-courant', 'soldeCourant'], ['#solde-invest', 'soldeInvest'], ['#virement', 'virement'], ['#jour-virement', 'jourVirement']]
+    .forEach(([s, k]) => { const el = $(s); if (el) el.addEventListener('input', () => { B[k] = el.value; majApercus(); }); });
+}
+
+function calculBrouillon() {
+  const revenus = B.revenus.filter(r => lireNombre(r.montant) > 0);
+  const fixes = B.fixes.filter(r => lireNombre(r.montant) > 0);
+  const dettes = B.sansDette ? [] : B.dettes.map(d => ({ b: d, c: calcDette(d) })).filter(x => x.c.capital > 0);
+  const totRev = revenus.reduce((s, r) => s + lireNombre(r.montant), 0);
+  const totFixes = fixes.reduce((s, r) => s + lireNombre(r.montant), 0);
+  const totCredits = dettes.reduce((s, x) => s + x.c.total, 0);          // assurance comprise
+  const variables = Object.values(B.budgets).reduce((s, v) => s + lireNombre(v), 0);
+  const capacite = totRev - totFixes - totCredits - variables;
+  return {
+    revenus, fixes, dettes, totRev, totFixes, totCredits, variables, capacite,
+    totalDettes: dettes.reduce((s, x) => s + x.c.capital, 0),
+    soldeCourant: lireNombre(B.soldeCourant), soldeInvest: lireNombre(B.soldeInvest), virement: lireNombre(B.virement),
+    precaution: Math.round((totFixes + totCredits + variables) * 6 / 100) * 100,   // six mois de dépenses
+  };
+}
+
+function majApercus() {
+  const p = calculBrouillon();
+  const ap = $('#apercu-dettes');
+  if (ap) ap.textContent = p.totRev > 0 && p.dettes.length
+    ? `Mensualités, assurance comprise : ${argent(p.totCredits)}, soit un taux d'endettement de ${pct(p.totCredits / p.totRev * 100)} (seuil bancaire : ${SEUIL_ENDETTEMENT} %).` : '';
+  const bilan = $('#bilan-epargne');
+  if (bilan) {
+    const reste = p.capacite - p.virement, depensesMois = p.totFixes + p.totCredits + p.variables;
+    const coussin = depensesMois > 0 ? p.soldeCourant / depensesMois : null;
+    bilan.innerHTML = `
+      <div class="ligne"><span>Revenus</span><span>${argent(p.totRev)}</span></div>
+      <div class="ligne"><span>Charges fixes</span><span>${argent(-p.totFixes)}</span></div>
+      <div class="ligne"><span>Mensualités de crédit, assurance comprise</span><span>${argent(-p.totCredits)}</span></div>
+      <div class="ligne"><span>Dépenses courantes estimées</span><span>${argent(-p.variables)}</span></div>
+      <div class="ligne total"><span>Capacité d'épargne mensuelle</span><span class="${classe(p.capacite)}">${argent(p.capacite, true)}</span></div>
+      <div class="ligne"><span>Virement vers l'investissement</span><span>${argent(-p.virement)}</span></div>
+      <div class="ligne"><span>Reste sur le compte courant chaque mois</span><strong class="${classe(reste)}">${argent(reste, true)}</strong></div>
+      ${reste < 0 ? `<p class="note danger" style="margin:10px 0 0">Le virement dépasse votre capacité d'épargne : le compte courant baisserait de ${argent(-reste)} par mois.</p>` : ''}
+      ${coussin != null && coussin < 6 && p.virement > 0 ? `<p class="note alerte" style="margin:10px 0 0">Votre compte courant couvre ${nombre(coussin, 1)} mois de dépenses. Avant d'investir, une épargne de précaution de six mois (${argent0(depensesMois * 6)}) limite le risque de devoir vendre au mauvais moment.</p>` : ''}
+      ${p.capacite > 0 && !p.virement ? `<p class="discret" style="margin:10px 0 0">Suggestion : un virement de ${argent0(Math.floor(p.capacite * 0.5 / 10) * 10)} par mois garde la moitié de votre capacité d'épargne disponible.</p>` : ''}`;
+  }
+}
+
+function validerEtape() {
+  const p = calculBrouillon();
+  if (etapeCourante === 0 && !p.revenus.length) return 'Indiquez au moins un revenu mensuel, même approximatif.';
+  if (etapeCourante === 0 && p.revenus.some(r => !String(r.libelle).trim())) return 'Donnez un libellé à chaque revenu.';
+  if (etapeCourante === 1 && p.fixes.some(r => !String(r.libelle).trim())) return 'Donnez un libellé à chaque charge fixe.';
+  if (etapeCourante === 2 && !B.sansDette) {
+    if (!B.dettes.length) return 'Ajoutez vos crédits ou cochez « Je n\'ai aucun crédit en cours ».';
+    for (const d of B.dettes) {
+      if (!String(d.nom).trim()) return 'Donnez un nom à chaque crédit.';
+      const c = calcDette(d);
+      if (c.erreur) return `${d.nom.trim()} : ${c.erreur}`;
+    }
+  }
+  if (etapeCourante === 3 && (lireNombre(B.soldeCourant) < 0 || lireNombre(B.soldeInvest) < 0 || lireNombre(B.virement) < 0))
+    return 'Les montants doivent être positifs. Un découvert se saisit comme une dette.';
+  return null;
+}
+
+function terminerAssistant() {
+  const p = calculBrouillon(), demain = decalerJours(AUJ, 1);
+  E = {
+    version: 1, creeLe: AUJ, utilisateur: UTILISATEUR,
+    comptes: { courant: { soldeInitial: p.soldeCourant }, invest: { soldeInitial: p.soldeInvest } },
+    operations: [], programmees: [], dettes: [], objectifs: [],
+    budgets: Object.fromEntries(Object.entries(B.budgets).map(([k, v]) => [k, lireNombre(v)]).filter(([, v]) => v > 0)),
+  };
+  // Les soldes saisis valent « aujourd'hui » : les échéances démarrent demain.
+  p.revenus.forEach(r => E.programmees.push({ id: uid(), libelle: r.libelle.trim(), sens: 'ENTREE', categorie: r.categorie, compte: 'courant', montant: lireNombre(r.montant), jour: +r.jour, debut: demain, actif: true }));
+  p.fixes.forEach(r => E.programmees.push({ id: uid(), libelle: r.libelle.trim(), sens: 'SORTIE', categorie: r.categorie, compte: 'courant', montant: lireNombre(r.montant), jour: +r.jour, debut: demain, actif: true }));
+  p.dettes.forEach(({ b, c }) => ajouterDette({ nom: b.nom.trim(), type: b.type, capital: c.capital, taux: c.taux, mensualite: c.mensualite, jour: +b.jour, echeance: b.echeance, assurance: c.assurance }, demain));
+  if (p.virement > 0) E.programmees.push({ id: uid(), type: 'VIREMENT', libelle: 'Virement mensuel vers l\'investissement', sens: 'INTERNE', categorie: 'virement', compte: 'courant', versCompte: 'invest', montant: p.virement, jour: +B.jourVirement, debut: demain, actif: true });
+  if (B.objectifPrecaution && p.precaution > 0)
+    E.objectifs.push({ id: uid(), nom: 'Épargne de précaution', cible: p.precaution, echeance: decalerMois(moisDe(AUJ), 24), compte: 'courant', affecte: Math.min(p.precaution, Math.max(0, p.soldeCourant - (p.totFixes + p.totCredits + p.variables))) });
+  sauver(); demarrer();
+  toast('Comptes créés');
+}
+
+function ajouterDette({ nom, type, capital, taux, mensualite, jour, echeance, assurance }, debut) {
+  const d = { id: uid(), nom, type, capitalDepart: capital, taux, mensualite, jour, echeance, assurance: assurance || null, dateDepart: debut };
+  E.dettes.push(d);
+  E.programmees.push({ id: uid(), libelle: `Échéance ${nom}`, sens: 'SORTIE', categorie: 'credit', compte: 'courant', montant: arrondi(mensualite + assuranceDe(d)), jour, debut, actif: true, detteId: d.id });
+  return d;
+}
+/* Dettes créées avant l'ajout de la maturité et de l'assurance : on déduit la dernière échéance du rythme actuel. */
+function migrerDette(d) {
+  if (d.assurance === undefined) d.assurance = null;
+  if (!d.echeance) {
+    const p = projeter(etatDette(d).capital, d.taux, d.mensualite);
+    d.echeance = decalerMois(prochainMois(d.jour), p.impossible ? 119 : Math.max(0, p.mois - 1));
+  }
+}
+
+/* ── Saisie d'un crédit (assistant et tiroir) : maturité → mensualité calculée, modifiable ── */
+const OPTIONS_ASSURANCE = [['aucune', 'Sans assurance'], ['euros', 'Montant fixe par mois'], ['pct', 'Taux annuel sur le capital emprunté']];
+function calcDette(b, permettreZero = false) {
+  const capital = lireNombre(b.capital), taux = lireNombre(b.taux);
+  const n = b.echeance ? echeancesRestantes(b.echeance, +b.jour) : 0;
+  const calc = capital > 0 && n >= 1 ? arrondi(mensualiteAnnuite(capital, taux, n)) : null;
+  const mensualite = b.manuelle ? arrondi(lireNombre(b.mensualite)) : (calc || 0);
+  const assurance = b.assMode === 'aucune' ? null : { mode: b.assMode, valeur: lireNombre(b.assValeur), base: lireNombre(b.assBase) || capital };
+  const ass = arrondi(assuranceMensuelle(assurance));
+  let erreur = null;
+  if (capital < 0 || (!capital && !permettreZero)) erreur = 'indiquez le capital restant dû.';
+  else if (taux < 0 || taux > 30) erreur = 'le taux doit être compris entre 0 et 30 %.';
+  else if (capital > 0 && !b.echeance) erreur = 'indiquez le mois de la dernière échéance.';
+  else if (capital > 0 && n < 1) erreur = 'la dernière échéance doit tomber après la prochaine date de prélèvement.';
+  else if (capital > 0 && mensualite <= capital * tauxMensuel(taux)) erreur = `une mensualité de ${argent(mensualite)} ne couvre pas les ${argent(capital * tauxMensuel(taux))} d'intérêts du mois.`;
+  else if (assurance && !assurance.valeur) erreur = 'indiquez le montant ou le taux de l\'assurance, ou choisissez « Sans assurance ».';
+  const proj = erreur || !capital ? null : projeter(capital, taux, mensualite);
+  return { capital, taux, n, calc, mensualite, assurance, ass, total: arrondi(mensualite + ass), proj, erreur };
+}
+function champsDette(b) {
+  const opt = (liste, v) => liste.map(([k, l]) => `<option value="${k}" ${String(k) === String(v) ? 'selected' : ''}>${l}</option>`).join('');
+  return `
+    <div class="deux-col">
+      <label class="champ"><span class="lib">Nom</span><input data-d="nom" maxlength="60" value="${echap(b.nom)}" placeholder="Prêt auto"></label>
+      <label class="champ"><span class="lib">Type</span><select data-d="type">${opt(Object.entries(TYPES_DETTE), b.type)}</select></label>
+    </div>
+    <div class="deux-col">
+      <label class="champ"><span class="lib">Capital restant dû (€)</span><input data-d="capital" inputmode="decimal" value="${echap(b.capital)}" placeholder="0"></label>
+      <label class="champ"><span class="lib">Taux nominal annuel (%)</span><input data-d="taux" inputmode="decimal" value="${echap(b.taux)}" placeholder="0,0" title="Le taux débiteur de votre contrat, hors assurance. Le TAEG, qui inclut l'assurance et les frais, surestimerait les intérêts."></label>
+    </div>
+    <div class="deux-col">
+      <label class="champ"><span class="lib">Dernière échéance</span><input data-d="echeance" type="month" min="${decalerMois(moisDe(AUJ), 1)}" value="${echap(b.echeance)}"></label>
+      <label class="champ"><span class="lib">Prélevée</span><select data-d="jour">${opt(OPTIONS_JOUR, b.jour)}</select></label>
+    </div>
+    <div class="deux-col">
+      <div class="champ"><label><span class="lib">Mensualité hors assurance (€)</span><input class="saisie" data-d="mensualite" inputmode="decimal" value="${echap(b.mensualite)}"></label><span class="discret" data-mode-mens></span></div>
+      <label class="champ"><span class="lib">Assurance emprunteur</span><select data-d="assMode">${opt(OPTIONS_ASSURANCE, b.assMode)}</select></label>
+    </div>
+    ${b.assMode === 'aucune' ? '' : `<div class="deux-col">
+      <label class="champ"><span class="lib">${b.assMode === 'pct' ? 'Taux d\'assurance annuel (%)' : 'Assurance par mois (€)'}</span><input data-d="assValeur" inputmode="decimal" value="${echap(b.assValeur)}" placeholder="${b.assMode === 'pct' ? '0,30' : '0'}"></label>
+      ${b.assMode === 'pct' ? `<label class="champ"><span class="lib">Capital emprunté à l'origine (€)</span><input data-d="assBase" inputmode="decimal" value="${echap(b.assBase)}" placeholder="capital restant par défaut"></label>` : ''}
+    </div>`}
+    <p class="note" data-resume style="margin:0"></p>`;
+}
+/* Relie les champs d'un formulaire de crédit à l'objet `b` ; `rerendre` est appelé quand la structure change. */
+function brancherDette(racine, b, rerendre, permettreZero = false) {
+  const maj = () => {
+    const c = calcDette(b, permettreZero), mens = racine.querySelector('[data-d="mensualite"]');
+    if (!b.manuelle) { b.mensualite = c.calc != null ? String(c.calc).replace('.', ',') : ''; mens.value = b.mensualite; }
+    racine.querySelector('[data-mode-mens]').innerHTML = b.manuelle
+      ? `Saisie manuelle${c.calc != null ? ` · <button type="button" class="btn-lien" data-recalc>recalculer (${argent(c.calc)})</button>` : ''}`
+      : 'Calculée d\'après la dernière échéance';
+    const r = racine.querySelector('[data-recalc]'); if (r) r.onclick = () => { b.manuelle = false; maj(); };
+    let texte;
+    if (c.erreur) texte = `<span class="perte">${c.erreur.charAt(0).toUpperCase() + c.erreur.slice(1)}</span>`;
+    else if (!c.capital) texte = 'Crédit soldé : le prélèvement sera arrêté.';
+    else {
+      const finReelle = c.proj.mois, decalage = finReelle - c.n;
+      texte = `${finReelle} mensualité${finReelle > 1 ? 's' : ''} restante${finReelle > 1 ? 's' : ''}, ${argent0(c.proj.interets)} d'intérêts${c.ass ? ` et ${argent0(c.ass * finReelle)} d'assurance` : ''}. Prélevé chaque mois : <strong>${argent(c.total)}</strong>${c.ass ? ` dont ${argent(c.ass)} d'assurance` : ''}.`
+        + (b.manuelle && Math.abs(decalage) >= 1 ? `<br>Avec cette mensualité, le crédit se termine en ${libelleMois(decalerMois(prochainMois(+b.jour), finReelle - 1))}, ${dureeTexte(Math.abs(decalage))} ${decalage > 0 ? 'après' : 'avant'} l'échéance indiquée.` : '');
+    }
+    racine.querySelector('[data-resume]').innerHTML = texte;
+  };
+  racine.querySelectorAll('[data-d]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+    b[el.dataset.d] = el.value;
+    if (el.dataset.d === 'mensualite') b.manuelle = true;
+    if (el.dataset.d === 'assMode') return rerendre();
+    maj(); if (racine.onmaj) racine.onmaj();
+  }));
+  maj();
+}
+const nouveauCredit = () => ({ nom: '', type: 'conso', capital: '', taux: '', echeance: decalerMois(moisDe(AUJ), 36), jour: 5, mensualite: '', manuelle: false, assMode: 'aucune', assValeur: '', assBase: '' });
+
+/* ── Profil d'exemple, avec historique généré ──────────── */
+function chargerExemple() {
+  let graine = 20260922;
+  const alea = () => { graine |= 0; graine = graine + 0x6D2B79F5 | 0; let t = Math.imul(graine ^ graine >>> 15, 1 | graine); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const entre = (a, b) => arrondi(a + alea() * (b - a));
+  const debutMois = decalerMois(moisDe(AUJ), -4), debut = debutMois + '-01';
+  E = {
+    version: 1, creeLe: debut, utilisateur: UTILISATEUR, exemple: true,
+    comptes: { courant: { soldeInitial: 2850 }, invest: { soldeInitial: 11500 } },
+    operations: [], programmees: [], dettes: [], objectifs: [],
+    budgets: { courses: 330, transport: 45, sorties: 170, loisirs: 90, shopping: 100, sante: 30, divers: 40 },
+  };
+  const prog = (libelle, sens, categorie, montant, jour) => E.programmees.push({ id: uid(), libelle, sens, categorie, compte: 'courant', montant, jour, debut, actif: true });
+  prog('Salaire net', 'ENTREE', 'salaire', 2850, 27);
+  prog('Loyer', 'SORTIE', 'logement', 780, 5);
+  prog('Assurance habitation', 'SORTIE', 'logement', 16.9, 5);
+  prog('Électricité', 'SORTIE', 'factures', 68, 10);
+  prog('Box internet et mobile', 'SORTIE', 'factures', 44.98, 12);
+  prog('Streaming vidéo', 'SORTIE', 'abonnements', 13.49, 18);
+  prog('Musique en ligne', 'SORTIE', 'abonnements', 11.12, 20);
+  prog('Pass transport', 'SORTIE', 'transport', 86.4, 3);
+  prog('Salle de sport', 'SORTIE', 'loisirs', 34.9, 2);
+  const credit = (nom, type, capital, taux, mensualite, jour, assurance) => {
+    const premier = dateDansMois(debutMois, jour) >= debut ? debutMois : decalerMois(debutMois, 1);
+    const echeance = decalerMois(premier, projeter(capital, taux, mensualite).mois - 1);
+    ajouterDette({ nom, type, capital, taux, mensualite, jour, echeance, assurance }, debut);
+  };
+  credit('Prêt étudiant', 'etudiant', 9800, 0.9, 215, 8, { mode: 'euros', valeur: 4.5 });
+  credit('Crédit auto', 'auto', 7400, 4.9, 229, 10, { mode: 'pct', valeur: 0.36, base: 12000 });
+  credit('Crédit renouvelable', 'renouvelable', 1350, 19.5, 60, 15, null);
+  E.programmees.push({ id: uid(), type: 'VIREMENT', libelle: 'Virement mensuel vers l\'investissement', sens: 'INTERNE', categorie: 'virement', compte: 'courant', versCompte: 'invest', montant: 150, jour: 28, debut, actif: true });
+
+  const commerces = {
+    courses: [['Carrefour Market', 22, 68], ['Monoprix', 12, 42], ['Biocoop', 15, 38], ['Marché du samedi', 14, 30], ['Boulangerie', 3, 9]],
+    sorties: [['Brasserie du Port', 18, 46], ['Cinéma', 10, 22], ['Bar Le Comptoir', 9, 28], ['Livraison de repas', 16, 34]],
+    shopping: [['Fnac', 20, 85], ['Decathlon', 25, 70], ['Uniqlo', 30, 80]],
+    loisirs: [['Concert', 35, 60], ['Musée', 9, 16], ['Librairie', 12, 30]],
+    transport: [['SNCF', 18, 64], ['Station-service', 38, 62], ['VTC', 12, 24]],
+    sante: [['Pharmacie', 6, 24], ['Médecin généraliste', 30, 30]],
+    divers: [['Pressing', 8, 18], ['Cadeau anniversaire', 25, 45]],
+  };
+  const frequence = { courses: [9, 12], sorties: [4, 7], shopping: [1, 2], loisirs: [1, 3], transport: [1, 2], sante: [0, 2], divers: [0, 2] };
+  for (let k = 0; k <= 4; k++) {
+    const cle = decalerMois(debutMois, k), [a, m] = cle.split('-').map(Number), nbJ = joursDansMois(a, m);
+    for (const [cat, [fmin, fmax]] of Object.entries(frequence)) {
+      const n = Math.round(fmin + alea() * (fmax - fmin));
+      for (let i = 0; i < n; i++) {
+        const [libelle, mn, mx] = commerces[cat][Math.floor(alea() * commerces[cat].length)];
+        const date = dateDansMois(cle, 1 + Math.floor(alea() * nbJ));
+        if (date <= AUJ) E.operations.push({ id: uid(), date, compte: 'courant', montant: -entre(mn, mx), libelle, categorie: cat });
+      }
+    }
+    const remb = dateDansMois(cle, 12 + Math.floor(alea() * 10));
+    if (alea() > 0.4 && remb <= AUJ) E.operations.push({ id: uid(), date: remb, compte: 'courant', montant: entre(8, 26), libelle: 'Remboursement Assurance maladie', categorie: 'rembours' });
+  }
+  const mission = dateDansMois(decalerMois(debutMois, 2), 14);
+  E.operations.push({ id: uid(), date: mission, compte: 'courant', montant: 420, libelle: 'Mission de traduction', categorie: 'complement' });
+  E.operations.push({ id: uid(), date: dateDansMois(decalerMois(debutMois, 1), 22), compte: 'courant', montant: -318, libelle: 'Billets de train, vacances', categorie: 'loisirs' });
+  E.operations.push({ id: uid(), date: dateDansMois(debutMois, 15), compte: 'courant', montant: -142, libelle: 'Impôt sur le revenu, solde', categorie: 'impots' });
+
+  E.objectifs.push({ id: uid(), nom: 'Épargne de précaution', cible: 14000, echeance: decalerMois(moisDe(AUJ), 36), compte: 'courant', affecte: 2200 });
+  E.objectifs.push({ id: uid(), nom: 'Voyage au Japon', cible: 3200, echeance: decalerMois(moisDe(AUJ), 14), compte: 'courant', affecte: 550 });
+  E.objectifs.push({ id: uid(), nom: 'Apport immobilier', cible: 15000, echeance: decalerMois(moisDe(AUJ), 60), compte: 'invest', affecte: 3000 });
+  sauver(); demarrer();
+  toast('Exemple chargé : quatre mois d\'historique');
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   APPLICATION
+   ════════════════════════════════════════════════════════════════════════ */
+let ongletActif = 'synthese', compteVu = 'courant', moisBudget = moisDe(AUJ), graphiques = {};
+let filtre = { mois: 'tous', sens: 'tous', texte: '', categorie: '' }, limiteOps = 80;
+
+function demarrer() {
+  $('#assistant').classList.add('cache'); $('#app').classList.remove('cache');
+  // Budget : on ouvre sur le dernier mois complet, plus parlant qu'un mois entamé
+  moisBudget = decalerMois(moisDe(AUJ), -1) >= moisDe(E.creeLe) ? decalerMois(moisDe(AUJ), -1) : moisDe(AUJ);
+  $('#nom-utilisateur').textContent = UTILISATEUR;
+  indiquerSauvegarde('ok');
+  E.ignorees = E.ignorees || [];
+  E.dettes.forEach(migrerDette);
+  const n = posterEcheances();
+  if (n && !E.exemple) toast(`${n} opération${n > 1 ? 's' : ''} programmée${n > 1 ? 's' : ''} enregistrée${n > 1 ? 's' : ''} depuis votre dernière visite`);
+  rafraichir();
+}
+
+function rafraichir() {
+  afficherReleve();
+  ouvrirOnglet(ongletActif);
+}
+document.querySelectorAll('nav.onglets button').forEach(b => b.onclick = () => ouvrirOnglet(b.dataset.onglet));
+function ouvrirOnglet(nom) {
+  ongletActif = nom;
+  document.querySelectorAll('nav.onglets button').forEach(b => b.setAttribute('aria-selected', b.dataset.onglet === nom));
+  document.querySelectorAll('[data-vue]').forEach(v => v.classList.toggle('cache', v.dataset.vue !== nom));
+  ({ synthese: vueSynthese, comptes: vueComptes, budget: vueBudget, dettes: vueDettes })[nom]();
+}
+
+function afficherReleve() {
+  const net = patrimoineNet(), il30 = decalerJours(AUJ, -30);
+  $('#r-net').textContent = argent(net);
+  $('#r-courant').textContent = argent(soldeCompte('courant'));
+  $('#r-invest').textContent = argent(soldeCompte('invest'));
+  $('#r-dettes').textContent = argent(-detteTotale());
+  if (il30 >= E.creeLe) {
+    const v = net - patrimoineNet(il30);
+    $('#r-evol').innerHTML = `<span class="${classe(v)}">${argent(v, true)}</span> <span class="discret">sur 30 jours</span>`;
+  } else $('#r-evol').innerHTML = `<span class="discret">Suivi depuis le ${dateLongue(E.creeLe)}</span>`;
+}
+
+/* ── Graphiques (Chart.js) ─────────────────────────────── */
+function graphique(id, config) {
+  if (!window.Chart) return;
+  graphiques[id]?.destroy();
+  const el = document.getElementById(id); if (!el) return;
+  Chart.defaults.font.family = "'IBM Plex Sans', system-ui, sans-serif";
+  Chart.defaults.color = '#5B6A61';
+  graphiques[id] = new Chart(el, config);
+}
+const axeEuros = { ticks: { callback: v => argent0(v) }, grid: { color: '#EDF0EC' }, border: { display: false } };
+
+/* ═════════════ Onglet 1 : Synthèse ═════════════ */
+function vueSynthese() {
+  const vue = $('[data-vue="synthese"]');
+  const plan = planMensuel(), constatee = capaciteConstatee(), mois = fluxMois(moisDe(AUJ));
+  const [a, m] = moisDe(AUJ).split('-').map(Number), avance = +AUJ.slice(8) / joursDansMois(a, m);
+  const budgetMois = plan.fixes + plan.credits + plan.variables;
+  const il30 = decalerJours(AUJ, -30);
+  const carte = cpt => {
+    const s = soldeCompte(cpt), aff = affecteObjectifs(cpt), v = il30 >= E.creeLe ? s - soldeCompte(cpt, il30) : null;
+    const lignes = cpt === 'courant'
+      ? `<span>Entrées ce mois</span><span class="gain">${argent(mois.ops.filter(o => o.compte === 'courant' && o.montant > 0 && estFlux(o)).reduce((x, o) => x + o.montant, 0), true)}</span>
+         <span>Sorties ce mois</span><span>${argent(mois.ops.filter(o => o.compte === 'courant' && o.montant < 0 && estFlux(o)).reduce((x, o) => x + o.montant, 0))}</span>`
+      : `<span>Versé ce mois</span><span>${argent(mois.versInvest, true)}</span>
+         <span>Virement programmé</span><span>${plan.virementInvest ? argent(plan.virementInvest) + ' / mois' : 'aucun'}</span>`;
+    return `<div class="compte ${cpt === 'invest' ? 'invest' : ''}">
+      <div><div class="nom">${COMPTES[cpt].nom}</div><div class="role">${COMPTES[cpt].role}</div></div>
+      <div><div class="solde">${argent(s)}</div>${v != null ? `<div class="discret"><span class="${classe(v)}">${argent(v, true)}</span> sur 30 jours</div>` : ''}</div>
+      <div class="lignes">${lignes}
+        <span>Réservé aux objectifs</span><span>${argent(aff)}</span>
+        <span>Disponible</span><strong>${argent(s - aff)}</strong></div>
+      <div class="actions">
+        <button class="mini-btn" data-voir="${cpt}">Voir les opérations</button>
+        <button class="mini-btn" data-virer="${cpt}">${cpt === 'courant' ? 'Virer vers l\'investissement' : 'Rapatrier sur le courant'}</button>
+      </div></div>`;
+  };
+
+  const courant = Math.max(0, soldeCompte('courant')), invest = Math.max(0, soldeCompte('invest')), dettes = detteTotale();
+  const echelle = Math.max(courant + invest, dettes, 1);
+  const pctC = courant / echelle * 100, pctI = invest / echelle * 100, pctD = dettes / echelle * 100;
+
+  const echeances = echeancesAVenir(30);
+  const soldePrevu = soldeCompte('courant') + echeances.filter(e => e.rec.compte === 'courant')
+    .reduce((s, { rec }) => s + (rec.type === 'VIREMENT' ? -rec.montant : rec.sens === 'ENTREE' ? rec.montant : -rec.montant), 0);
+
+  vue.innerHTML = `
+    <div class="comptes">${carte('courant')}${carte('invest')}</div>
+
+    <div class="panneau repartition">
+      <h2>Où se trouve votre argent</h2>
+      <p class="sous-titre">Les deux comptes à la même échelle que ce qui reste dû sur vos crédits.</p>
+      <div class="rep-barre">
+        <div style="width:${pctC}%;background:var(--foret)" title="Compte courant">${pctC > 14 ? argent0(courant) : ''}</div>
+        <div style="width:${pctI}%;background:var(--invest)" title="Compte investissement">${pctI > 14 ? argent0(invest) : ''}</div>
+      </div>
+      ${dettes > 0 ? `<div class="rep-barre dette"><div style="width:${pctD}%;background:var(--perte);border-radius:4px" title="Dettes"></div></div>` : ''}
+      <div class="rep-legende">
+        <span><i class="pastille" style="background:var(--foret)"></i>Courant ${pct(courant / Math.max(courant + invest, 1) * 100, 0)}</span>
+        <span><i class="pastille" style="background:var(--invest)"></i>Investissement ${pct(invest / Math.max(courant + invest, 1) * 100, 0)}</span>
+        ${dettes > 0 ? `<span><i class="pastille" style="background:var(--perte)"></i>Dettes ${argent0(dettes)}, soit ${pct(dettes / Math.max(courant + invest, 1) * 100, 0)} de vos avoirs</span>` : ''}
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div><div class="nom">Capacité d'épargne prévue</div><div class="valeur ${classe(plan.capacite)}">${argent0(plan.capacite, true)}</div><div class="aide">par mois, d'après vos revenus, charges, crédits et budgets</div></div>
+      <div><div class="nom">Épargne constatée</div><div class="valeur ${constatee ? classe(constatee.moyenne) : ''}">${constatee ? argent0(constatee.moyenne, true) : '—'}</div><div class="aide">${constatee ? `moyenne des ${constatee.nb} dernier${constatee.nb > 1 ? 's' : ''} mois complet${constatee.nb > 1 ? 's' : ''}` : 'disponible après un premier mois complet'}</div></div>
+      <div><div class="nom">Dépensé en ${libelleMois(moisDe(AUJ), true)}</div><div class="valeur">${argent0(mois.sorties)}</div>
+        <div class="progres" style="margin:6px 0"><i class="${mois.sorties > budgetMois ? 'depasse' : mois.sorties > budgetMois * avance * 1.1 ? 'proche' : ''}" style="width:${Math.min(100, mois.sorties / Math.max(budgetMois, 1) * 100)}%"></i><b style="left:${avance * 100}%" title="Avancement du mois"></b></div>
+        <div class="aide">sur ${argent0(budgetMois)} prévus, le trait marque l'avancement du mois</div></div>
+      <div><div class="nom">Courant dans 30 jours</div><div class="valeur ${classe(soldePrevu)}">${argent0(soldePrevu)}</div><div class="aide">solde actuel et opérations programmées, hors dépenses courantes</div></div>
+    </div>
+
+    <div class="grille-large">
+      <div class="panneau">
+        <div class="tete-panneau"><div><h2>Objectifs d'épargne</h2>
+          <p class="sous-titre">L'argent réservé reste sur son compte ; il n'est simplement plus compté comme disponible.</p></div>
+          <button class="mini-btn" id="btn-objectif">Nouvel objectif</button></div>
+        <div id="liste-objectifs"></div>
+      </div>
+      <div class="panneau">
+        <h2>Prochaines échéances</h2>
+        <p class="sous-titre">Opérations programmées des 30 prochains jours.</p>
+        ${echeances.length ? echeances.slice(0, 9).map(({ rec, date }) => {
+          const signe = rec.type === 'VIREMENT' ? 0 : rec.sens === 'ENTREE' ? 1 : -1;
+          return `<div class="echeance"><div class="jour"><strong>${+date.slice(8)}</strong><small>${libelleMois(moisDe(date), true)}</small></div>
+            <div>${echap(rec.libelle)}<span class="sous">${CATEGORIES[rec.categorie].nom}</span></div>
+            <div class="num ${signe > 0 ? 'gain' : ''}">${signe === 0 ? '' : signe > 0 ? '+' : '−'}${argent(rec.montant)}</div></div>`;
+        }).join('') : '<div class="vide"><p>Aucune opération programmée dans les 30 jours.</p></div>'}
+      </div>
+    </div>`;
+
+  afficherObjectifs(plan, constatee);
+  vue.querySelectorAll('[data-voir]').forEach(b => b.onclick = () => { compteVu = b.dataset.voir; ouvrirOnglet('comptes'); });
+  vue.querySelectorAll('[data-virer]').forEach(b => b.onclick = () => tiroirOperation({ type: 'VIREMENT', compte: b.dataset.virer }));
+  $('#btn-objectif').onclick = () => tiroirObjectif();
+}
+
+function afficherObjectifs(plan, constatee) {
+  const zone = $('#liste-objectifs');
+  if (!E.objectifs.length) {
+    zone.innerHTML = `<div class="vide"><p>Un objectif transforme votre capacité d'épargne en un montant à réserver chaque mois.</p><button class="btn" onclick="tiroirObjectif()">Créer un objectif</button></div>`;
+    return;
+  }
+  // Capacité pour les objectifs, tous comptes confondus : la plus prudente entre épargne prévue et constatée
+  const capacite = Math.min(plan.capacite, constatee ? constatee.moyenne : Infinity);
+  const besoins = E.objectifs.map(o => {
+    const reste = Math.max(0, o.cible - o.affecte), mois = Math.max(1, ecartMois(moisDe(AUJ), o.echeance));
+    return { o, reste, mois, parMois: reste / mois };
+  });
+  const totalBesoin = besoins.reduce((s, b) => s + b.parMois, 0);
+  zone.innerHTML = besoins.map(({ o, reste, mois, parMois }) => {
+    const part = o.affecte / o.cible * 100;
+    const statut = reste <= 0 ? ['fini', 'Atteint']
+      : o.echeance < moisDe(AUJ) ? ['ko', 'Échéance passée']
+      : totalBesoin <= capacite ? ['ok', 'En bonne voie']
+      : parMois <= capacite ? ['serre', 'Serré'] : ['ko', 'Hors de portée'];
+    return `<div class="objectif">
+      <div><span class="titre">${echap(o.nom)}</span> <span class="etiquette ${o.compte}">${COMPTES[o.compte].court}</span></div>
+      <div style="display:flex;gap:8px;align-items:center"><span class="statut ${statut[0]}">${statut[1]}</span>
+        <button class="mini-btn" data-reserver="${o.id}">Réserver</button><button class="mini-btn" data-modif-obj="${o.id}">Modifier</button></div>
+      <div class="progres"><i style="width:${Math.min(100, part)}%"></i></div>
+      <div class="detail"><span>${argent0(o.affecte)} sur ${argent0(o.cible)} (${pct(part, 0)})</span>
+        <span>${reste > 0 ? `${argent0(parMois)} / mois pendant ${dureeTexte(mois)}, jusqu'en ${libelleMois(o.echeance)}` : 'Objectif atteint'}</span></div>
+    </div>`;
+  }).join('') + `<p class="note ${totalBesoin > capacite ? 'alerte' : ''}" style="margin:12px 0 0">
+      Vos objectifs demandent ${argent0(totalBesoin)} par mois, pour une capacité d'épargne de ${argent0(capacite)}${capacite < plan.capacite ? ' (la plus prudente entre prévue et constatée)' : ''}.
+      ${totalBesoin > capacite ? `Il manque ${argent0(totalBesoin - capacite)} : repousser une échéance ou réduire un budget rééquilibre le plan.` : `Il reste ${argent0(capacite - totalBesoin)} de marge.`}</p>`;
+  zone.querySelectorAll('[data-reserver]').forEach(b => b.onclick = () => tiroirReserver(b.dataset.reserver));
+  zone.querySelectorAll('[data-modif-obj]').forEach(b => b.onclick = () => tiroirObjectif(b.dataset.modifObj));
+}
+
+/* ═════════════ Onglet 2 : Comptes ═════════════ */
+function vueComptes() {
+  const vue = $('[data-vue="comptes"]');
+  const ops = E.operations.filter(o => o.compte === compteVu).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  // Solde après chaque opération (calculé du plus ancien au plus récent)
+  let courant = E.comptes[compteVu].soldeInitial; const soldeApres = {};
+  [...ops].reverse().forEach(o => { courant += o.montant; soldeApres[o.id] = courant; });
+  const moisDispo = [...new Set(ops.map(o => moisDe(o.date)))];
+  const f = filtre;
+  const visibles = ops.filter(o =>
+    (f.mois === 'tous' || moisDe(o.date) === f.mois) &&
+    (f.sens === 'tous' || (f.sens === 'entrees' ? o.montant > 0 : o.montant < 0)) &&
+    (!f.categorie || o.categorie === f.categorie) &&
+    (!f.texte || o.libelle.toLowerCase().includes(f.texte.toLowerCase())));
+  const totE = visibles.filter(o => o.montant > 0).reduce((s, o) => s + o.montant, 0);
+  const totS = visibles.filter(o => o.montant < 0).reduce((s, o) => s + o.montant, 0);
+  const progs = E.programmees.filter(r => r.compte === compteVu || r.versCompte === compteVu);
+
+  vue.innerHTML = `
+    <div class="filtres" style="justify-content:space-between">
+      <div class="segments" role="group" aria-label="Compte affiché">
+        ${Object.entries(COMPTES).map(([k, c]) => `<button data-compte="${k}" aria-pressed="${k === compteVu}">${c.nom}</button>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px"><button class="btn btn-sec" data-virer-ici>Faire un virement</button><button class="btn" data-ajout-ici>Ajouter une opération</button></div>
+    </div>
+    ${compteVu === 'invest' ? `<p class="note" style="margin:0 0 18px">Ce solde correspond aux liquidités que vous destinez au portefeuille. À l'étape suivante, il alimentera les espèces du compte-titres : chaque virement ici deviendra un dépôt là-bas.</p>` : ''}
+    <div class="panneau">
+      <div class="tete-panneau"><div><h2>Évolution du solde</h2><p class="sous-titre">Solde en fin de journée, sur les 120 derniers jours.</p></div>
+        <div style="text-align:right"><div class="discret">Solde actuel</div><div style="font-size:22px;font-weight:500">${argent(soldeCompte(compteVu))}</div></div></div>
+      <div class="courbe"><canvas id="c-solde"></canvas></div>
+    </div>
+    <div class="panneau">
+      <h2>Opérations</h2>
+      <div class="filtres" style="margin-top:10px">
+        <select class="saisie" id="f-mois" aria-label="Mois"><option value="tous">Tous les mois</option>${moisDispo.map(c => `<option value="${c}" ${c === f.mois ? 'selected' : ''}>${libelleMois(c)}</option>`).join('')}</select>
+        <div class="segments" role="group" aria-label="Sens">
+          ${[['tous', 'Tout'], ['entrees', 'Entrées'], ['sorties', 'Sorties']].map(([v, t]) => `<button data-sens="${v}" aria-pressed="${f.sens === v}">${t}</button>`).join('')}
+        </div>
+        <select class="saisie" id="f-cat" aria-label="Catégorie"><option value="">Toutes catégories</option>${Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}" ${k === f.categorie ? 'selected' : ''}>${c.nom}</option>`).join('')}</select>
+        <input class="saisie" id="f-texte" type="search" placeholder="Rechercher un libellé" value="${echap(f.texte)}" style="flex:1;min-width:160px">
+      </div>
+      <p class="discret" style="margin:0 0 8px">${visibles.length} opération${visibles.length > 1 ? 's' : ''} · entrées <span class="gain">${argent(totE, true)}</span> · sorties ${argent(totS)}</p>
+      <div class="defile">${visibles.length ? `<table>
+        <thead><tr><th>Date</th><th>Libellé</th><th>Catégorie</th><th class="num">Montant</th><th class="num">Solde</th><th></th></tr></thead>
+        <tbody>${visibles.slice(0, limiteOps).map((o, i, l) => `${i === 0 || moisDe(l[i - 1].date) !== moisDe(o.date) ? `<tr><td colspan="6" style="background:var(--papier);font-weight:500;text-transform:capitalize;padding:6px 10px">${libelleMois(moisDe(o.date))}</td></tr>` : ''}<tr>
+          <td style="white-space:nowrap">${dateCourte(o.date)}</td>
+          <td>${echap(o.libelle)} ${o.programmeeId ? '<span class="etiquette auto" title="Opération programmée">auto</span>' : ''}${o.anticipe ? ' <span class="etiquette">anticipé</span>' : ''}</td>
+          <td>${o.categorie === 'virement' || o.detteId ? `<span class="discret">${CATEGORIES[o.categorie].nom}</span>` :
+              `<select class="cat-inline" data-recat="${o.id}" aria-label="Catégorie">${(o.montant > 0 ? CATS_ENTREE : CATS_SORTIE.filter(c => c !== 'credit')).map(c => `<option value="${c}" ${c === o.categorie ? 'selected' : ''}>${CATEGORIES[c].nom}</option>`).join('')}</select>`}</td>
+          <td class="num ${o.montant > 0 ? 'gain' : ''}">${argent(o.montant, true)}</td>
+          <td class="num discret">${argent(soldeApres[o.id])}</td>
+          <td class="num"><button class="mini-btn" data-modif="${o.id}">Modifier</button></td></tr>`).join('')}</tbody></table>
+        ${visibles.length > limiteOps ? `<div style="text-align:center;margin-top:12px"><button class="btn btn-sec" id="plus-ops">Afficher les ${Math.min(80, visibles.length - limiteOps)} suivantes</button></div>` : ''}`
+        : `<div class="vide"><p>${ops.length ? 'Aucune opération ne correspond à ces filtres.' : 'Aucune opération sur ce compte pour l\'instant.'}</p>${ops.length ? '<button class="btn btn-sec" id="f-raz">Effacer les filtres</button>' : ''}</div>`}</div>
+    </div>
+    <div class="panneau">
+      <div class="tete-panneau"><div><h2>Opérations programmées</h2><p class="sous-titre">Enregistrées automatiquement chaque mois au jour indiqué.</p></div>
+        <button class="mini-btn" id="btn-prog">Programmer une opération</button></div>
+      <div class="defile">${progs.length ? `<table><thead><tr><th>Libellé</th><th>Catégorie</th><th>Jour</th><th class="num">Montant</th><th></th></tr></thead><tbody>
+        ${progs.map(r => {
+          const signe = r.type === 'VIREMENT' ? (r.versCompte === compteVu ? 1 : -1) : r.sens === 'ENTREE' ? 1 : -1;
+          const solde = r.detteId && !r.actif;
+          return `<tr><td>${echap(r.libelle)}${solde ? ' <span class="etiquette">prêt soldé</span>' : !r.actif ? ' <span class="etiquette">suspendue</span>' : ''}</td>
+          <td>${CATEGORIES[r.categorie].nom}</td><td>le ${r.jour}</td>
+          <td class="num ${signe > 0 ? 'gain' : ''}">${signe > 0 ? '+' : '−'}${argent(r.montant)}</td>
+          <td class="num">${r.detteId ? '<span class="discret">géré dans Dettes</span>' : `<button class="mini-btn" data-modif-prog="${r.id}">Modifier</button>`}</td></tr>`;
+        }).join('')}</tbody></table>` : '<div class="vide"><p>Aucune opération programmée sur ce compte.</p></div>'}</div>
+    </div>`;
+
+  vue.querySelectorAll('[data-compte]').forEach(b => b.onclick = () => { compteVu = b.dataset.compte; filtre = { mois: 'tous', sens: 'tous', texte: '', categorie: '' }; vueComptes(); });
+  vue.querySelectorAll('[data-sens]').forEach(b => b.onclick = () => { filtre.sens = b.dataset.sens; vueComptes(); });
+  $('#f-mois').onchange = e => { filtre.mois = e.target.value; vueComptes(); };
+  $('#f-cat').onchange = e => { filtre.categorie = e.target.value; vueComptes(); };
+  $('#f-texte').oninput = e => { filtre.texte = e.target.value; clearTimeout(vueComptes.t); vueComptes.t = setTimeout(() => { vueComptes(); const el = $('#f-texte'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 250); };
+  if ($('#plus-ops')) $('#plus-ops').onclick = () => { limiteOps += 80; vueComptes(); };
+  if ($('#f-raz')) $('#f-raz').onclick = () => { filtre = { mois: 'tous', sens: 'tous', texte: '', categorie: '' }; vueComptes(); };
+  vue.querySelector('[data-ajout-ici]').onclick = () => tiroirOperation({ compte: compteVu });
+  vue.querySelector('[data-virer-ici]').onclick = () => tiroirOperation({ type: 'VIREMENT', compte: compteVu });
+  vue.querySelectorAll('[data-modif]').forEach(b => b.onclick = () => tiroirOperation({ id: b.dataset.modif }));
+  vue.querySelectorAll('[data-recat]').forEach(s => s.onchange = () => { E.operations.find(o => o.id === s.dataset.recat).categorie = s.value; sauver(); toast('Catégorie modifiée'); });
+  vue.querySelectorAll('[data-modif-prog]').forEach(b => b.onclick = () => tiroirProgrammee(b.dataset.modifProg));
+  $('#btn-prog').onclick = () => tiroirProgrammee();
+
+  // Courbe du solde
+  const debut = [decalerJours(AUJ, -120), E.creeLe].sort().pop(), jours = [], soldes = [];
+  let s = soldeCompte(compteVu, decalerJours(debut, -1));
+  const parJour = {}; E.operations.filter(o => o.compte === compteVu && o.date >= debut).forEach(o => parJour[o.date] = (parJour[o.date] || 0) + o.montant);
+  for (let d = debut; d <= AUJ; d = decalerJours(d, 1)) { s += parJour[d] || 0; jours.push(d); soldes.push(arrondi(s)); }
+  const couleur = COMPTES[compteVu].couleur;
+  graphique('c-solde', {
+    type: 'line',
+    data: { labels: jours.map(dateCourte), datasets: [{ data: soldes, borderColor: couleur, backgroundColor: couleur + '1A', fill: true, stepped: true, pointRadius: 0, borderWidth: 2 }] },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => argent(c.parsed.y) } } },
+      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: axeEuros } },
+  });
+}
+
+/* ═════════════ Onglet 3 : Budget ═════════════ */
+function vueBudget() {
+  const vue = $('[data-vue="budget"]');
+  const F = fluxMois(moisBudget), plan = planMensuel();
+  const premier = moisDe(E.creeLe), estCourant = moisBudget === moisDe(AUJ);
+  const [a, m] = moisBudget.split('-').map(Number), avance = estCourant ? +AUJ.slice(8) / joursDansMois(a, m) : 1;
+  const tauxEpargne = F.entrees > 0 && F.entrees >= F.sorties * 0.25 ? F.solde / F.entrees * 100 : null;
+  const aVenir = estCourant ? echeancesAVenir(joursDansMois(a, m) - +AUJ.slice(8)).filter(e => moisDe(e.date) === moisBudget && e.rec.sens === 'ENTREE') : [];
+
+  // Prévu par catégorie = budget variable + opérations programmées de la catégorie
+  const prevu = {};
+  CATS_SORTIE.forEach(c => prevu[c] = E.budgets[c] || 0);
+  E.programmees.filter(r => r.actif && r.sens === 'SORTIE').forEach(r => prevu[r.categorie] = (prevu[r.categorie] || 0) + r.montant);
+  const lignesCat = CATS_SORTIE.filter(c => (F.parCat[c] || 0) > 0 || prevu[c] > 0)
+    .map(c => ({ c, reel: F.parCat[c] || 0, prevu: prevu[c] || 0 })).sort((x, y) => y.reel - x.reel);
+  const entreesCat = CATS_ENTREE.filter(c => F.parCat[c] > 0).map(c => ({ c, v: F.parCat[c] })).sort((x, y) => y.v - x.v);
+  const depassements = lignesCat.filter(l => CATS_VARIABLES.includes(l.c) && l.prevu > 0 && l.reel > l.prevu + 1);
+
+  vue.innerHTML = `
+    <div class="filtres" style="justify-content:space-between">
+      <div class="nav-mois">
+        <button class="mini-btn" id="m-prec" ${moisBudget <= premier ? 'disabled' : ''} aria-label="Mois précédent">‹</button>
+        <strong>${libelleMois(moisBudget)}</strong>
+        <button class="mini-btn" id="m-suiv" ${estCourant ? 'disabled' : ''} aria-label="Mois suivant">›</button>
+      </div>
+      <button class="mini-btn" id="btn-budgets">Ajuster les budgets</button>
+    </div>
+    <div class="kpis">
+      <div><div class="nom">Entrées</div><div class="valeur gain">${argent0(F.entrees)}</div><div class="aide">hors virements entre vos comptes</div></div>
+      <div><div class="nom">Sorties</div><div class="valeur">${argent0(F.sorties)}</div><div class="aide">dont ${argent0(F.fixes)} de charges programmées (${pct(F.sorties ? F.fixes / F.sorties * 100 : 0, 0)})</div></div>
+      <div><div class="nom">Solde du mois</div><div class="valeur ${classe(F.solde)}">${argent0(F.solde, true)}</div><div class="aide">${F.versInvest ? `dont ${argent0(F.versInvest)} placés sur l'investissement` : 'rien placé sur l\'investissement'}</div></div>
+      <div><div class="nom">Taux d'épargne</div><div class="valeur ${classe(tauxEpargne ?? 0)}">${tauxEpargne == null ? '—' : pct(tauxEpargne, 0)}</div><div class="aide">${tauxEpargne == null ? 'pas assez d\'entrées ce mois-ci pour être parlant' : 'part des entrées non dépensée'}</div></div>
+    </div>
+    ${aVenir.length ? `<p class="note" style="margin:-4px 0 18px">Mois en cours : ${aVenir.map(e => `${echap(e.rec.libelle.toLowerCase())} de ${argent0(e.rec.montant)} attendu le ${+e.date.slice(8)}`).join(', ')}. D'ici là, le solde du mois reste mécaniquement négatif.</p>` : ''}
+
+    <div class="panneau">
+      <h2>D'où vient l'argent, où il va</h2>
+      <p class="sous-titre">Les entrées du mois à gauche, leur destination à droite. Les virements entre vos deux comptes n'apparaissent qu'au titre de l'épargne placée.</p>
+      <div class="defile" id="sankey"></div>
+    </div>
+
+    <div class="grille-large">
+      <div class="panneau">
+        <h2>Dépenses par catégorie</h2>
+        <p class="sous-titre">${estCourant ? `Le trait vertical marque l'avancement du mois (${pct(avance * 100, 0)}). ` : ''}Cliquez une ligne pour voir ses opérations.</p>
+        ${depassements.length ? `<p class="note alerte" style="margin:0 0 12px">Budget dépassé : ${depassements.map(l => `${CATEGORIES[l.c].nom} (+${argent0(l.reel - l.prevu)})`).join(', ')}.</p>` : ''}
+        <div class="defile">${lignesCat.length ? `<table><thead><tr><th>Catégorie</th><th style="width:34%">Consommé</th><th class="num">Réel</th><th class="num">Prévu</th><th class="num">Écart</th></tr></thead><tbody>
+          ${lignesCat.map(l => {
+            const taux = l.prevu ? l.reel / l.prevu : (l.reel > 0 ? 2 : 0);
+            const cls = taux > 1 ? 'depasse' : taux > avance * 1.1 && CATS_VARIABLES.includes(l.c) ? 'proche' : '';
+            return `<tr class="cat-ligne cliquable" data-cat="${l.c}"><td><i class="pastille" style="background:${CATEGORIES[l.c].couleur}"></i>${CATEGORIES[l.c].nom}</td>
+              <td><div class="progres"><i class="${cls}" style="width:${Math.min(100, taux * 100)}%"></i>${estCourant && l.prevu ? `<b style="left:${avance * 100}%"></b>` : ''}</div></td>
+              <td class="num">${argent0(l.reel)}</td><td class="num discret">${l.prevu ? argent0(l.prevu) : '—'}</td>
+              <td class="num ${l.prevu ? classe(l.prevu - l.reel) : ''}">${l.prevu ? argent0(l.prevu - l.reel, true) : ''}</td></tr>`;
+          }).join('')}</tbody></table>` : '<div class="vide"><p>Aucune dépense ce mois-ci.</p></div>'}</div>
+      </div>
+      <div class="panneau">
+        <h2>Entrées par origine</h2>
+        ${entreesCat.length ? `<table><tbody>${entreesCat.map(l => `<tr class="cliquable" data-cat="${l.c}"><td><i class="pastille" style="background:${CATEGORIES[l.c].couleur}"></i> ${CATEGORIES[l.c].nom}</td><td class="num gain">${argent(l.v)}</td></tr>`).join('')}</tbody></table>` : '<div class="vide"><p>Aucune entrée ce mois-ci.</p></div>'}
+        <h2 style="margin-top:22px">Plan mensuel</h2>
+        <p class="sous-titre">Ce que vous avez déclaré, pour comparer.</p>
+        <table><tbody>
+          <tr><td>Revenus programmés</td><td class="num gain">${argent0(plan.revenus)}</td></tr>
+          <tr><td>Charges fixes</td><td class="num">${argent0(-plan.fixes)}</td></tr>
+          <tr><td>Mensualités de crédit</td><td class="num">${argent0(-plan.credits)}</td></tr>
+          <tr><td>Budgets courants</td><td class="num">${argent0(-plan.variables)}</td></tr>
+          <tr><td><strong>Capacité d'épargne</strong></td><td class="num"><strong class="${classe(plan.capacite)}">${argent0(plan.capacite, true)}</strong></td></tr>
+        </tbody></table>
+      </div>
+    </div>
+
+    <div class="panneau">
+      <h2>Six derniers mois</h2>
+      <p class="sous-titre">Entrées, sorties et solde de chaque mois.</p>
+      <div class="courbe"><canvas id="c-6mois"></canvas></div>
+    </div>`;
+
+  $('#m-prec').onclick = () => { moisBudget = decalerMois(moisBudget, -1); vueBudget(); };
+  $('#m-suiv').onclick = () => { moisBudget = decalerMois(moisBudget, 1); vueBudget(); };
+  $('#btn-budgets').onclick = tiroirBudgets;
+  vue.querySelectorAll('[data-cat]').forEach(tr => tr.onclick = () => {
+    filtre = { mois: moisBudget, sens: 'tous', texte: '', categorie: tr.dataset.cat }; compteVu = 'courant'; ouvrirOnglet('comptes');
+  });
+  dessinerSankey(F, entreesCat);
+
+  const mois6 = Array.from({ length: 6 }, (_, k) => decalerMois(moisDe(AUJ), k - 5)).filter(c => c >= premier);
+  const f6 = mois6.map(fluxMois);
+  graphique('c-6mois', {
+    data: { labels: mois6.map(c => libelleMois(c, true)), datasets: [
+      { type: 'bar', label: 'Entrées', data: f6.map(f => arrondi(f.entrees)), backgroundColor: '#9CC5A9', borderRadius: 4 },
+      { type: 'bar', label: 'Sorties', data: f6.map(f => arrondi(f.sorties)), backgroundColor: '#D8DED8', borderRadius: 4 },
+      { type: 'line', label: 'Solde du mois', data: f6.map(f => arrondi(f.solde)), borderColor: '#15261D', backgroundColor: '#15261D', pointRadius: 3, borderWidth: 2 },
+    ] },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.y)}` } } },
+      scales: { x: { grid: { display: false } }, y: axeEuros } },
+  });
+}
+
+/* Diagramme de flux en trois colonnes : entrées → mois → destinations. */
+function dessinerSankey(F, entreesCat) {
+  const zone = $('#sankey');
+  if (F.entrees <= 0 && F.sorties <= 0) { zone.innerHTML = '<div class="vide"><p>Aucun mouvement ce mois-ci.</p></div>'; return; }
+  const sources = entreesCat.map(l => ({ nom: CATEGORIES[l.c].nom, v: l.v, couleur: CATEGORIES[l.c].couleur }));
+  if (F.solde < 0) sources.push({ nom: 'Puisé dans l\'épargne', v: -F.solde, couleur: '#B23A2E' });
+  const destinations = CATS_SORTIE.filter(c => F.parCat[c] > 0).map(c => ({ nom: CATEGORIES[c].nom, v: F.parCat[c], couleur: CATEGORIES[c].couleur })).sort((a, b) => b.v - a.v);
+  if (F.solde > 0) {
+    const place = Math.min(Math.max(F.versInvest, 0), F.solde);
+    if (place > 0) destinations.push({ nom: 'Placé sur l\'investissement', v: place, couleur: '#2B5680' });
+    if (F.solde - place > 0.5) destinations.push({ nom: 'Resté sur le courant', v: F.solde - place, couleur: '#1D7A4B' });
+  }
+  const total = Math.max(sources.reduce((s, n) => s + n.v, 0), destinations.reduce((s, n) => s + n.v, 0));
+  const L = 820, ecart = 8, n = Math.max(sources.length, destinations.length);
+  const H = Math.max(260, n * 40), utile = H - ecart * (n - 1);
+  const X = { g: 190, m: 402, d: 614 }, larg = 12, k = utile / total;
+  const empiler = noeuds => { let y = (H - (noeuds.reduce((s, x) => s + x.v * k, 0) + ecart * (noeuds.length - 1))) / 2; noeuds.forEach(x => { x.y = y; x.h = Math.max(2, x.v * k); y += x.h + ecart; }); };
+  empiler(sources); empiler(destinations);
+  const mH = total * k, mY = (H - mH) / 2;
+  const bande = (x1, y1, x2, y2, h, couleur, titre) => {
+    const cx = (x1 + x2) / 2;
+    return `<path d="M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2} L${x2},${y2 + h} C${cx},${y2 + h} ${cx},${y1 + h} ${x1},${y1 + h} Z" fill="${couleur}"><title>${echap(titre)}</title></path>`;
+  };
+  let svg = '', yM = mY;
+  sources.forEach(s => { svg += bande(X.g + larg, s.y, X.m, yM, s.h, s.couleur, `${s.nom} : ${argent(s.v)}`); yM += s.h; });
+  yM = mY;
+  destinations.forEach(d => { svg += bande(X.m + larg, yM, X.d, d.y, d.h, d.couleur, `${d.nom} : ${argent(d.v)} (${pct(d.v / total * 100, 0)})`); yM += d.h; });
+  const etiquette = (x, y, h, noeud, ancre) => h >= 26
+    ? `<text x="${x}" y="${y + h / 2 - 7}" text-anchor="${ancre}" dominant-baseline="middle">${echap(noeud.nom)}</text><text class="m" x="${x}" y="${y + h / 2 + 8}" text-anchor="${ancre}" dominant-baseline="middle">${argent0(noeud.v)}</text>`
+    : h >= 9 ? `<text x="${x}" y="${y + h / 2}" text-anchor="${ancre}" dominant-baseline="middle">${echap(noeud.nom)} <tspan class="m">${argent0(noeud.v)}</tspan></text>` : '';
+  sources.forEach(s => { svg += `<rect x="${X.g}" y="${s.y}" width="${larg}" height="${s.h}" rx="2" fill="${s.couleur}"/>` + etiquette(X.g - 8, s.y, s.h, s, 'end'); });
+  destinations.forEach(d => { svg += `<rect x="${X.d}" y="${d.y}" width="${larg}" height="${d.h}" rx="2" fill="${d.couleur}"/>` + etiquette(X.d + larg + 8, d.y, d.h, d, 'start'); });
+  svg += `<rect x="${X.m}" y="${mY}" width="${larg}" height="${mH}" rx="2" fill="#15261D"/>`;
+  zone.innerHTML = `<svg class="sankey" viewBox="0 0 ${L} ${H + 22}" role="img" aria-label="Flux du mois : ${argent0(F.entrees)} d'entrées, ${argent0(F.sorties)} de sorties">${svg}</svg>`;
+}
+
+/* ═════════════ Onglet 4 : Dettes ═════════════ */
+let simu = { detteId: null, extra: 100, anticipe: 0 }, strategieExtra = 100;
+
+/* Situation d'un crédit aujourd'hui et projection au rythme actuel. */
+function ligneDette(d) {
+  const etat = etatDette(d), ass = assuranceDe(d), proj = projeter(etat.capital, d.taux, d.mensualite);
+  const premier = prochainMois(d.jour);
+  const fin = proj.impossible || etat.capital <= 0.005 ? null : decalerMois(premier, proj.mois - 1);
+  return {
+    d, etat, ass, proj, fin, total: arrondi(d.mensualite + ass),
+    coutAss: proj.impossible ? 0 : ass * proj.mois,
+    ecartContrat: fin && d.echeance ? ecartMois(d.echeance, fin) : 0,     // > 0 : fin plus tardive que le contrat
+    part: d.capitalDepart ? Math.max(0, 1 - etat.capital / d.capitalDepart) : 1,
+  };
+}
+
+function vueDettes() {
+  const vue = $('[data-vue="dettes"]');
+  if (!E.dettes.length) {
+    vue.innerHTML = `<div class="panneau"><div class="vide"><p>Aucun crédit enregistré. Ajoutez-en un pour suivre son capital restant, son coût et simuler un remboursement anticipé.</p><button class="btn" id="btn-dette">Ajouter un crédit</button></div></div>`;
+    $('#btn-dette').onclick = () => tiroirDette();
+    return;
+  }
+  const plan = planMensuel();
+  const lignes = E.dettes.map(ligneDette);
+  const enCours = lignes.filter(l => l.etat.capital > 0.005);
+  const totalCapital = enCours.reduce((s, l) => s + l.etat.capital, 0);
+  const totalMens = enCours.reduce((s, l) => s + l.total, 0);
+  const totalAss = enCours.reduce((s, l) => s + l.ass, 0);
+  const totalInt = enCours.reduce((s, l) => s + (l.proj.interets || 0), 0);
+  const totalCoutAss = enCours.reduce((s, l) => s + l.coutAss, 0);
+  const endettement = plan.revenus > 0 ? totalMens / plan.revenus * 100 : null;
+  const tauxMoyen = totalCapital ? enCours.reduce((s, l) => s + l.etat.capital * l.d.taux, 0) / totalCapital : 0;
+  const derniere = enCours.map(l => l.fin).filter(Boolean).sort().pop();
+  const decales = enCours.filter(l => Math.abs(l.ecartContrat) >= 2);
+  if (!simu.detteId || !enCours.some(l => l.d.id === simu.detteId)) simu.detteId = [...enCours].sort((a, b) => b.d.taux - a.d.taux)[0]?.d.id || null;
+
+  vue.innerHTML = `
+    <div class="kpis">
+      <div><div class="nom">Capital restant dû</div><div class="valeur">${argent0(totalCapital)}</div><div class="aide">${enCours.length} crédit${enCours.length > 1 ? 's' : ''} en cours, taux nominal moyen pondéré ${pct(tauxMoyen, 2)}</div></div>
+      <div><div class="nom">Prélevé chaque mois</div><div class="valeur">${argent0(totalMens)}</div><div class="aide">${totalAss ? `dont ${argent(totalAss)} d'assurance` : 'aucune assurance emprunteur saisie'}</div></div>
+      <div><div class="nom">Coût restant des crédits</div><div class="valeur perte">${argent0(totalInt + totalCoutAss)}</div><div class="aide">${argent0(totalInt)} d'intérêts${totalCoutAss ? ` et ${argent0(totalCoutAss)} d'assurance` : ''}, au rythme actuel</div></div>
+      <div><div class="nom">Fin du dernier crédit</div><div class="valeur" style="text-transform:capitalize">${derniere ? libelleMois(derniere) : '—'}</div><div class="aide">${derniere ? `dans ${dureeTexte(ecartMois(moisDe(AUJ), derniere))}` : ''}</div></div>
+    </div>
+
+    <div class="grille-2">
+      <div class="panneau">
+        <h2>Taux d'endettement</h2>
+        <p class="sous-titre">Mensualités, assurance comprise, rapportées à vos revenus nets programmés.</p>
+        <div style="font-size:28px;font-weight:500" class="${endettement > SEUIL_ENDETTEMENT ? 'perte' : ''}">${endettement == null ? '—' : pct(endettement)}</div>
+        <div class="jauge"><div class="progres"><i class="${endettement > SEUIL_ENDETTEMENT ? 'depasse' : endettement > 30 ? 'proche' : ''}" style="width:${Math.min(100, (endettement || 0) / 50 * 100)}%"></i><b style="left:${SEUIL_ENDETTEMENT / 50 * 100}%"></b></div>
+          <div class="graduation"><span>0 %</span><span>seuil ${SEUIL_ENDETTEMENT} %</span><span>50 %</span></div></div>
+        <p class="discret" style="margin:12px 0 0">${endettement == null ? '' : endettement > SEUIL_ENDETTEMENT
+          ? 'Au-delà de 35 %, assurance comprise, les banques françaises accordent rarement un nouveau crédit. Solder un crédit court est le levier le plus rapide.'
+          : `Marge avant le seuil : ${argent0(plan.revenus * SEUIL_ENDETTEMENT / 100 - totalMens)} de mensualités. C'est l'indicateur qu'une banque regarde en premier pour un prêt immobilier.`}</p>
+      </div>
+      <div class="panneau">
+        <h2>Capital restant dû dans le temps</h2>
+        <p class="sous-titre">Projection au rythme des mensualités actuelles.</p>
+        <div class="courbe" style="height:220px"><canvas id="c-dettes"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panneau">
+      <div class="tete-panneau"><div><h2>Vos crédits</h2><p class="sous-titre">À chaque échéance : les intérêts du mois d'abord, le reste amortit le capital. L'assurance s'ajoute sans rien amortir.</p></div>
+        <button class="mini-btn" id="btn-dette">Ajouter un crédit</button></div>
+      <div class="defile"><table>
+        <thead><tr><th>Crédit</th><th style="width:15%">Remboursé</th><th class="num">Capital restant</th><th class="num">Taux</th><th class="num">Mensualité</th><th class="num">Dont intérêts ce mois</th><th class="num">Fin</th><th class="num">Coût restant</th><th></th></tr></thead>
+        <tbody>${[...lignes].sort((a, b) => b.d.taux - a.d.taux).map(({ d, etat, ass, proj, fin, total, coutAss, ecartContrat, part }) => `<tr>
+          <td><strong style="font-weight:500">${echap(d.nom)}</strong><span class="sous">${TYPES_DETTE[d.type]} · prélevé le ${d.jour}</span></td>
+          <td><div class="progres"><i style="width:${Math.min(100, part * 100)}%"></i></div><span class="sous">${pct(part * 100, 0)} depuis le suivi</span></td>
+          <td class="num">${etat.capital > 0.005 ? argent(etat.capital) : '<span class="statut fini">Soldé</span>'}</td>
+          <td class="num">${pct(d.taux, 2)}</td>
+          <td class="num">${argent(total)}${ass ? `<span class="sous">dont assurance ${argent(ass)}</span>` : ''}</td>
+          <td class="num discret">${etat.capital > 0.005 ? argent(etat.capital * tauxMensuel(d.taux)) : '—'}</td>
+          <td class="num">${proj.impossible ? '<span class="perte">jamais</span>' : fin ? `${libelleMois(fin, true)} ${fin.slice(0, 4)}<span class="sous ${Math.abs(ecartContrat) >= 2 ? 'perte' : ''}">${Math.abs(ecartContrat) >= 2 ? `contrat : ${libelleMois(d.echeance, true)} ${d.echeance.slice(0, 4)}` : dureeTexte(proj.mois)}</span>` : '—'}</td>
+          <td class="num perte">${proj.impossible || etat.capital <= 0.005 ? '—' : argent0(proj.interets + coutAss)}${coutAss ? `<span class="sous">dont assurance ${argent0(coutAss)}</span>` : ''}</td>
+          <td class="num"><button class="mini-btn" data-modif-dette="${d.id}">Modifier</button></td></tr>`).join('')}</tbody></table></div>
+      ${lignes.some(l => l.proj.impossible) ? '<p class="note danger" style="margin:12px 0 0">Une mensualité ne couvre pas les intérêts : ce crédit ne se rembourse jamais au rythme actuel. C\'est typique d\'un crédit renouvelable au remboursement minimal.</p>' : ''}
+      ${decales.length ? `<p class="note alerte" style="margin:12px 0 0">Au rythme actuel, ${decales.map(l => `${echap(l.d.nom)} se termine ${dureeTexte(Math.abs(l.ecartContrat))} ${l.ecartContrat > 0 ? 'après' : 'avant'} l'échéance du contrat`).join(' ; ')}. Vérifiez la mensualité, le taux ou la date de dernière échéance sur votre tableau d'amortissement.</p>` : ''}
+    </div>
+
+    <div class="grille-2">
+      <div class="panneau" id="bloc-simu"></div>
+      <div class="panneau" id="bloc-strategie"></div>
+    </div>`;
+
+  $('#btn-dette').onclick = () => tiroirDette();
+  vue.querySelectorAll('[data-modif-dette]').forEach(b => b.onclick = () => tiroirDette(b.dataset.modifDette));
+  afficherSimulateur();
+  afficherStrategie(enCours);
+
+  // Projection empilée du capital restant
+  const horizon = Math.min(360, Math.max(12, ...enCours.map(l => l.proj.impossible ? 120 : l.proj.mois)));
+  const pas = horizon > 120 ? 3 : 1, labels = [];
+  for (let k = 0; k <= horizon; k += pas) { const c = decalerMois(moisDe(AUJ), k); labels.push(libelleMois(c, true) + ' ' + c.slice(0, 4)); }
+  const couleurs = ['#B23A2E', '#C08A3E', '#8E6BA8', '#2B5680', '#5F8F8B'];
+  graphique('c-dettes', {
+    type: 'line',
+    data: { labels, datasets: enCours.map((l, i) => ({
+      label: l.d.nom, fill: i === 0 ? 'origin' : '-1', pointRadius: 0, borderWidth: 1.5,
+      borderColor: couleurs[i % 5], backgroundColor: couleurs[i % 5] + '33',
+      data: labels.map((_, j) => { const s = l.proj.impossible ? null : l.proj.serie; return s ? arrondi(s[Math.min(j * pas, s.length - 1)]) : arrondi(l.etat.capital); }),
+    })) },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent0(c.parsed.y)}` } } },
+      scales: { x: { grid: { display: false }, ticks: { autoSkip: true, maxRotation: 0, maxTicksLimit: 8 } }, y: { ...axeEuros, stacked: true } } },
+  });
+}
+
+function afficherSimulateur() {
+  const zone = $('#bloc-simu');
+  const d = E.dettes.find(x => x.id === simu.detteId);
+  if (!d) { zone.innerHTML = '<h2>Rembourser plus vite</h2><div class="vide"><p>Tous vos crédits sont soldés.</p></div>'; return; }
+  const etat = etatDette(d), ass = assuranceDe(d);
+  const base = projeter(etat.capital, d.taux, d.mensualite);
+  const apres = projeter(Math.max(0, etat.capital - simu.anticipe), d.taux, d.mensualite, simu.extra);
+  const gainMois = base.impossible || apres.impossible ? null : base.mois - apres.mois;
+  const gainInt = base.impossible || apres.impossible ? null : base.interets - apres.interets;
+  const gainAss = gainMois ? ass * gainMois : 0;   // l'assurance cesse avec le crédit
+  // Indemnités de remboursement anticipé (plafonds légaux français)
+  let ira = 0, noteIra = '';
+  if (simu.anticipe > 0) {
+    if (d.type === 'immobilier') { ira = Math.min(simu.anticipe * d.taux / 100 / 2, etat.capital * 0.03); noteIra = 'Prêt immobilier : indemnités plafonnées à six mois d\'intérêts sur la somme remboursée et à 3 % du capital restant, sauf clause plus favorable.'; }
+    else if (d.type !== 'renouvelable' && simu.anticipe > 10000) { ira = simu.anticipe * (base.mois > 12 ? 0.01 : 0.005); noteIra = 'Crédit à la consommation : indemnités de 1 % au plus (0,5 % s\'il reste moins d\'un an), jamais dues sous 10 000 € remboursés sur douze mois.'; }
+    else noteIra = 'Pas d\'indemnité due pour ce montant sur ce type de crédit.';
+  }
+  const dispo = soldeCompte('courant') - affecteObjectifs('courant');
+  zone.innerHTML = `
+    <h2>Rembourser plus vite</h2>
+    <p class="sous-titre">Mensualité augmentée, somme versée en une fois, ou les deux.</p>
+    <div class="champ"><label for="s-dette">Crédit</label><select id="s-dette">${E.dettes.filter(x => etatDette(x).capital > 0.005).map(x => `<option value="${x.id}" ${x.id === d.id ? 'selected' : ''}>${echap(x.nom)} · ${argent0(etatDette(x).capital)} à ${pct(x.taux, 2)}</option>`).join('')}</select></div>
+    <div class="deux-col">
+      <div class="champ"><label for="s-extra">En plus chaque mois</label><input id="s-extra" inputmode="decimal" value="${simu.extra}"></div>
+      <div class="champ"><label for="s-anticipe">Versement unique</label><input id="s-anticipe" inputmode="decimal" value="${simu.anticipe}"></div>
+    </div>
+    <div class="resultat">
+      <div><span>Fin du crédit</span><strong>${apres.impossible ? '—' : dureeTexte(apres.mois)}</strong><span>${gainMois ? `${dureeTexte(gainMois)} plus tôt` : 'inchangée'}</span></div>
+      <div><span>Économie nette</span><strong class="gain">${gainInt == null ? '—' : argent0(gainInt + gainAss - ira)}</strong><span>${argent0(gainInt || 0)} d'intérêts${gainAss ? ` et ${argent0(gainAss)} d'assurance` : ''}${ira ? `, moins ${argent0(ira)} d'indemnités` : ''}</span></div>
+      <div><span>Rendement équivalent</span><strong>${pct(d.taux, 2)}</strong><span>garanti et sans risque</span></div>
+    </div>
+    ${noteIra ? `<p class="discret" style="margin:12px 0 0">${noteIra}</p>` : ''}
+    <p class="note" style="margin:12px 0 0">Chaque euro remboursé rapporte le taux du crédit, sans risque. Un placement ne fait mieux qu'en espérance, et avec de la volatilité : au-dessus de 4 à 5 %, rembourser est presque toujours le meilleur « investissement ».${ass && d.assurance?.mode === 'pct' ? ' L\'assurance calculée sur le capital emprunté ne baisse pas quand le capital restant baisse : seul le raccourcissement de la durée la réduit.' : ''}</p>
+    ${simu.anticipe > 0 ? `<div class="actions-tiroir" style="margin-top:14px"><button class="btn" id="s-appliquer" ${simu.anticipe > dispo ? 'disabled' : ''}>Enregistrer le versement de ${argent0(simu.anticipe)}</button></div>
+      ${simu.anticipe > dispo ? `<p class="discret">Le compte courant n'a que ${argent0(dispo)} disponibles hors objectifs.</p>` : ''}` : ''}`;
+  $('#s-dette').onchange = e => { simu.detteId = e.target.value; afficherSimulateur(); };
+  const brancher = (id, cle) => $(id).addEventListener('change', e => { simu[cle] = Math.max(0, lireNombre(e.target.value)); afficherSimulateur(); });
+  brancher('#s-extra', 'extra'); brancher('#s-anticipe', 'anticipe');
+  if ($('#s-appliquer')) $('#s-appliquer').onclick = () => {
+    const montant = Math.min(simu.anticipe, etat.capital);
+    E.operations.push({ id: uid(), date: AUJ, compte: 'courant', montant: -montant, libelle: `Remboursement anticipé ${d.nom}`, categorie: 'credit', detteId: d.id, anticipe: true });
+    if (ira > 0) E.operations.push({ id: uid(), date: AUJ, compte: 'courant', montant: -arrondi(ira), libelle: `Indemnités de remboursement anticipé ${d.nom}`, categorie: 'credit' });
+    if (etatDette(d).capital <= 0.005) E.programmees.filter(r => r.detteId === d.id).forEach(r => r.actif = false);
+    simu.anticipe = 0; sauver(); rafraichir(); toast('Remboursement anticipé enregistré');
+  };
+}
+
+/* Avalanche (taux le plus élevé d'abord) contre boule de neige (plus petit capital d'abord).
+   Avec report, la mensualité et l'assurance d'un crédit soldé sont reversées sur le suivant. */
+function simulerStrategie(lignes, extra, ordre, report = true) {
+  const etats = lignes.map(l => ({ nom: l.d.nom, c: l.etat.capital, r: tauxMensuel(l.d.taux), m: l.d.mensualite, ass: l.ass, taux: l.d.taux, fin: null }));
+  const trier = ordre === 'avalanche' ? (a, b) => b.taux - a.taux : (a, b) => a.c - b.c;
+  let mois = 0, interets = 0, assurance = 0; const ordreFin = [];
+  while (etats.some(e => e.c > 0.005) && mois < 720) {
+    mois++;
+    let reserve = extra;
+    etats.forEach(e => {
+      if (e.c <= 0.005) { if (report) reserve += e.m + e.ass; return; }
+      const i = e.c * e.r; interets += i; assurance += e.ass;
+      const p = Math.min(e.m, e.c + i); e.c = e.c + i - p;
+      if (e.c <= 0.005 && !e.fin) { e.fin = mois; ordreFin.push(e.nom); }
+    });
+    for (const e of etats.filter(x => x.c > 0.005).sort(trier)) {
+      const p = Math.min(reserve, e.c); e.c -= p; reserve -= p;
+      if (e.c <= 0.005 && !e.fin) { e.fin = mois; ordreFin.push(e.nom); }
+      if (reserve <= 0) break;
+    }
+  }
+  return { mois, interets, assurance, cout: interets + assurance, ordreFin, impossible: mois >= 720 };
+}
+
+function afficherStrategie(enCours) {
+  const zone = $('#bloc-strategie');
+  if (enCours.length < 2) {
+    zone.innerHTML = `<h2>Par où commencer</h2><p class="sous-titre">Avec plusieurs crédits, ce bloc compare deux méthodes pour affecter un surplus mensuel.</p><div class="vide"><p>${enCours.length ? 'Un seul crédit en cours : tout surplus va naturellement sur celui-ci.' : 'Aucun crédit en cours.'}</p></div>`;
+    return;
+  }
+  const base = simulerStrategie(enCours, 0, 'avalanche', false);
+  const av = simulerStrategie(enCours, strategieExtra, 'avalanche'), bn = simulerStrategie(enCours, strategieExtra, 'boule');
+  const ligne = (nom, s, aide) => `<tr><td><strong style="font-weight:500">${nom}</strong><span class="sous">${aide}</span></td>
+    <td class="num">${s.impossible ? '—' : dureeTexte(s.mois)}</td><td class="num perte">${argent0(s.cout)}</td><td class="num gain">${argent0(base.cout - s.cout)}</td></tr>`;
+  zone.innerHTML = `
+    <h2>Par où commencer</h2>
+    <p class="sous-titre">Un surplus mensuel fixe ; la mensualité d'un crédit soldé est reportée sur le suivant.</p>
+    <div class="champ" style="max-width:220px"><label for="st-extra">Surplus mensuel consacré aux dettes</label><input id="st-extra" inputmode="decimal" value="${strategieExtra}"></div>
+    <div class="defile"><table><thead><tr><th>Méthode</th><th class="num">Durée totale</th><th class="num">Coût restant</th><th class="num">Économie</th></tr></thead><tbody>
+      ${ligne('Rythme actuel', base, 'mensualités actuelles, sans report')}
+      ${ligne('Avalanche', av, 'le taux le plus élevé d\'abord : ' + av.ordreFin.map(echap).join(', '))}
+      ${ligne('Boule de neige', bn, 'le plus petit capital d\'abord : ' + bn.ordreFin.map(echap).join(', '))}
+    </tbody></table></div>
+    <p class="discret" style="margin:12px 0 0">Coût restant : intérêts et assurance. ${av.cout <= bn.cout - 1
+      ? `L'avalanche coûte ${argent0(bn.cout - av.cout)} de moins. La boule de neige solde plus vite un premier crédit, ce qui libère une mensualité et aide à tenir l'effort.`
+      : 'Les deux méthodes reviennent au même ici : choisissez celle qui vous motive le plus.'}</p>`;
+  $('#st-extra').addEventListener('change', e => { strategieExtra = Math.max(0, lireNombre(e.target.value)); afficherStrategie(enCours); });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   TIROIRS DE SAISIE
+   ════════════════════════════════════════════════════════════════════════ */
+function ouvrirTiroir(html) {
+  const t = $('#tiroir'); t.innerHTML = html;
+  $('#voile').classList.remove('cache'); t.classList.add('ouvert'); t.setAttribute('aria-hidden', 'false');
+  t.querySelector('[data-fermer]').onclick = fermerTiroir;
+  setTimeout(() => t.querySelector('input:not([type=hidden]), select')?.focus(), 60);
+}
+function fermerTiroir() { $('#tiroir').classList.remove('ouvert'); $('#tiroir').setAttribute('aria-hidden', 'true'); $('#voile').classList.add('cache'); }
+$('#voile').onclick = fermerTiroir;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fermerTiroir(); });
+const enteteTiroir = titre => `<div class="entete"><h2>${titre}</h2><button class="mini-btn" data-fermer aria-label="Fermer">Fermer</button></div>`;
+function erreurTiroir(msg) { const z = $('#t-erreur'); z.textContent = msg; z.classList.remove('cache'); }
+const optionsComptes = sel => Object.entries(COMPTES).map(([k, c]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${c.nom}</option>`).join('');
+
+/* Opération ponctuelle : dépense, revenu ou virement. */
+function tiroirOperation({ id, type, compte } = {}) {
+  const op = id ? E.operations.find(o => o.id === id) : null;
+  let t = op ? (op.categorie === 'virement' ? 'VIREMENT' : op.montant > 0 ? 'REVENU' : 'DEPENSE') : (type || 'DEPENSE');
+  let de = compte || 'courant';
+  if (op?.virementId) de = E.operations.find(o => o.virementId === op.virementId && o.montant < 0).compte;
+  const verrou = op && (op.detteId || op.programmeeId);   // échéances : suppression seulement
+  const rendre = () => {
+    ouvrirTiroir(`${enteteTiroir(op ? 'Modifier l\'opération' : 'Nouvelle opération')}
+      ${op ? '' : `<div class="types" id="t-types">${[['DEPENSE', 'Dépense'], ['REVENU', 'Revenu'], ['VIREMENT', 'Virement']].map(([v, l]) => `<button data-t="${v}" aria-pressed="${v === t}">${l}</button>`).join('')}</div>`}
+      ${verrou ? `<p class="note" style="margin:0 0 14px">Opération ${op.detteId ? 'liée à un crédit' : 'programmée'} : vous pouvez corriger sa catégorie${op.detteId ? '' : ' ou son montant'}, ou la supprimer.</p>` : ''}
+      <div id="t-erreur" class="erreur cache"></div>
+      <form id="t-form">
+        ${t === 'VIREMENT'
+          ? `<div class="deux-col"><div class="champ"><label for="t-de">Depuis</label><select id="t-de">${optionsComptes(de)}</select></div>
+             <div class="champ"><label for="t-vers">Vers</label><select id="t-vers">${optionsComptes(de === 'courant' ? 'invest' : 'courant')}</select></div></div>`
+          : `<div class="champ"><label for="t-compte">Compte</label><select id="t-compte" ${op ? 'disabled' : ''}>${optionsComptes(op?.compte || de)}</select></div>`}
+        <div class="deux-col">
+          <div class="champ"><label for="t-montant">Montant (€)</label><input id="t-montant" inputmode="decimal" required value="${op ? Math.abs(op.montant) : ''}" ${op?.detteId ? 'disabled' : ''}></div>
+          <div class="champ"><label for="t-date">Date</label><input id="t-date" type="date" max="${AUJ}" value="${op?.date || AUJ}" ${verrou ? 'disabled' : ''}></div>
+        </div>
+        <div class="champ"><label for="t-libelle">Libellé</label><input id="t-libelle" maxlength="80" value="${echap(op?.libelle || '')}" placeholder="${t === 'REVENU' ? 'Prime, remboursement…' : t === 'VIREMENT' ? 'Facultatif' : 'Commerçant ou description'}" ${op?.detteId ? 'disabled' : ''}></div>
+        ${t === 'VIREMENT' ? '' : `<div class="champ"><label for="t-cat">Catégorie</label><select id="t-cat" ${op?.detteId ? 'disabled' : ''}>${(t === 'REVENU' ? CATS_ENTREE : CATS_SORTIE.filter(c => c !== 'credit' || op?.categorie === 'credit')).map(c => `<option value="${c}" ${c === (op?.categorie || (t === 'REVENU' ? 'complement' : 'courses')) ? 'selected' : ''}>${CATEGORIES[c].nom}</option>`).join('')}</select></div>`}
+        <div class="actions-tiroir"><button class="btn" type="submit">${op ? 'Enregistrer' : t === 'VIREMENT' ? 'Effectuer le virement' : t === 'REVENU' ? 'Ajouter le revenu' : 'Ajouter la dépense'}</button>
+          ${op ? '<button class="btn btn-danger" type="button" id="t-suppr">Supprimer</button>' : ''}</div>
+      </form>`);
+    $('#t-types')?.querySelectorAll('button').forEach(b => b.onclick = () => { t = b.dataset.t; rendre(); });
+    if ($('#t-de')) $('#t-de').onchange = e => { $('#t-vers').value = e.target.value === 'courant' ? 'invest' : 'courant'; };
+    $('#t-form').onsubmit = e => {
+      e.preventDefault();
+      const montant = arrondi(lireNombre($('#t-montant').value)), date = $('#t-date').value, libelle = $('#t-libelle').value.trim();
+      if (montant <= 0) return erreurTiroir('Indiquez un montant supérieur à zéro.');
+      if (!date || date > AUJ) return erreurTiroir('La date doit être aujourd\'hui ou dans le passé. Pour une opération future, programmez-la.');
+      if (t === 'VIREMENT') {
+        const a = $('#t-de').value, b = $('#t-vers').value;
+        if (a === b) return erreurTiroir('Choisissez deux comptes différents.');
+        let garde = {};
+        if (op) {
+          const envoi = E.operations.find(o => o.virementId === op.virementId && o.montant < 0);
+          if (envoi?.occurrence) garde = { occurrence: envoi.occurrence, programmeeId: envoi.programmeeId };
+          E.operations = E.operations.filter(o => o.virementId !== op.virementId);
+        }
+        creerVirement(a, b, montant, garde.occurrence ? op.date : date, libelle || null, garde);
+      } else if (op) {
+        if (!op.detteId) { op.montant = t === 'REVENU' ? montant : -montant; op.libelle = libelle || op.libelle; op.date = op.programmeeId ? op.date : date; }
+        op.categorie = $('#t-cat').value;
+      } else {
+        if (!libelle) return erreurTiroir('Ajoutez un libellé pour retrouver cette opération.');
+        E.operations.push({ id: uid(), date, compte: $('#t-compte').value, montant: t === 'REVENU' ? montant : -montant, libelle, categorie: $('#t-cat').value });
+      }
+      sauver(); fermerTiroir(); rafraichir();
+      toast(op ? 'Opération modifiée' : t === 'VIREMENT' ? 'Virement effectué' : t === 'REVENU' ? 'Revenu ajouté' : 'Dépense ajoutée');
+    };
+    if ($('#t-suppr')) $('#t-suppr').onclick = () => {
+      if (op.programmeeId && !confirm('Cette échéance programmée ne sera pas recréée ce mois-ci. Supprimer ?')) return;
+      // L'occurrence supprimée est mémorisée pour ne pas être re-postée au prochain chargement
+      const occ = op.virementId ? E.operations.find(o => o.virementId === op.virementId && o.montant < 0)?.occurrence : op.occurrence;
+      if (occ) (E.ignorees = E.ignorees || []).push(occ);
+      E.operations = E.operations.filter(o => op.virementId ? o.virementId !== op.virementId : o.id !== op.id);
+      sauver(); fermerTiroir(); rafraichir(); toast('Opération supprimée');
+    };
+  };
+  rendre();
+}
+
+function tiroirProgrammee(id) {
+  const r = id ? E.programmees.find(x => x.id === id) : null;
+  let t = r ? (r.type === 'VIREMENT' ? 'VIREMENT' : r.sens === 'ENTREE' ? 'REVENU' : 'DEPENSE') : 'DEPENSE';
+  const rendre = () => {
+    ouvrirTiroir(`${enteteTiroir(r ? 'Opération programmée' : 'Programmer une opération')}
+      ${r ? '' : `<div class="types" id="p-types">${[['DEPENSE', 'Prélèvement'], ['REVENU', 'Revenu'], ['VIREMENT', 'Virement']].map(([v, l]) => `<button data-t="${v}" aria-pressed="${v === t}">${l}</button>`).join('')}</div>`}
+      <div id="t-erreur" class="erreur cache"></div>
+      <form id="p-form">
+        <div class="champ"><label for="p-libelle">Libellé</label><input id="p-libelle" maxlength="80" value="${echap(r?.libelle || '')}"></div>
+        ${t === 'VIREMENT' ? `<div class="deux-col"><div class="champ"><label for="p-de">Depuis</label><select id="p-de">${optionsComptes(r?.compte || 'courant')}</select></div>
+            <div class="champ"><label for="p-vers">Vers</label><select id="p-vers">${optionsComptes(r?.versCompte || 'invest')}</select></div></div>`
+          : `<div class="champ"><label for="p-compte">Compte</label><select id="p-compte">${optionsComptes(r?.compte || compteVu)}</select></div>
+             <div class="champ"><label for="p-cat">Catégorie</label><select id="p-cat">${(t === 'REVENU' ? CATS_ENTREE : CATS_SORTIE.filter(c => c !== 'credit')).map(c => `<option value="${c}" ${c === r?.categorie ? 'selected' : ''}>${CATEGORIES[c].nom}</option>`).join('')}</select></div>`}
+        <div class="deux-col">
+          <div class="champ"><label for="p-montant">Montant mensuel (€)</label><input id="p-montant" inputmode="decimal" value="${r?.montant ?? ''}"></div>
+          <div class="champ"><label for="p-jour">Chaque mois</label><select id="p-jour">${OPTIONS_JOUR.map(([v, l]) => `<option value="${v}" ${v === (r?.jour || 1) ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        </div>
+        ${r ? `<label class="case"><input type="checkbox" id="p-actif" ${r.actif ? 'checked' : ''}> Active</label>` : '<p class="discret">Première exécution à partir de demain. Les opérations passées ne sont pas recréées.</p>'}
+        <div class="actions-tiroir"><button class="btn" type="submit">${r ? 'Enregistrer' : 'Programmer'}</button>${r ? '<button class="btn btn-danger" type="button" id="p-suppr">Supprimer</button>' : ''}</div>
+      </form>`);
+    $('#p-types')?.querySelectorAll('button').forEach(b => b.onclick = () => { t = b.dataset.t; rendre(); });
+    $('#p-form').onsubmit = e => {
+      e.preventDefault();
+      const libelle = $('#p-libelle').value.trim(), montant = arrondi(lireNombre($('#p-montant').value)), jour = +$('#p-jour').value;
+      if (!libelle) return erreurTiroir('Ajoutez un libellé.');
+      if (montant <= 0) return erreurTiroir('Indiquez un montant supérieur à zéro.');
+      const champs = t === 'VIREMENT'
+        ? { type: 'VIREMENT', sens: 'INTERNE', categorie: 'virement', compte: $('#p-de').value, versCompte: $('#p-vers').value }
+        : { sens: t === 'REVENU' ? 'ENTREE' : 'SORTIE', categorie: $('#p-cat').value, compte: $('#p-compte').value };
+      if (champs.versCompte && champs.versCompte === champs.compte) return erreurTiroir('Choisissez deux comptes différents.');
+      if (r) {
+        const reactive = !r.actif && $('#p-actif').checked;
+        Object.assign(r, champs, { libelle, montant, jour, actif: $('#p-actif').checked });
+        if (reactive) r.debut = decalerJours(AUJ, 1);         // pas de rattrapage des mois suspendus
+      } else E.programmees.push({ id: uid(), libelle, montant, jour, debut: decalerJours(AUJ, 1), actif: true, ...champs });
+      sauver(); fermerTiroir(); rafraichir(); toast(r ? 'Opération programmée modifiée' : 'Opération programmée');
+    };
+    if ($('#p-suppr')) $('#p-suppr').onclick = () => {
+      if (!confirm('Supprimer cette opération programmée ? Les opérations déjà passées restent dans l\'historique.')) return;
+      E.programmees = E.programmees.filter(x => x.id !== r.id); sauver(); fermerTiroir(); rafraichir(); toast('Opération programmée supprimée');
+    };
+  };
+  rendre();
+}
+
+function tiroirObjectif(id) {
+  const o = id ? E.objectifs.find(x => x.id === id) : null;
+  const plan = planMensuel();
+  ouvrirTiroir(`${enteteTiroir(o ? 'Modifier l\'objectif' : 'Nouvel objectif')}
+    <div id="t-erreur" class="erreur cache"></div>
+    <form id="o-form">
+      <div class="champ"><label for="o-nom">Nom</label><input id="o-nom" maxlength="60" value="${echap(o?.nom || '')}" placeholder="Voyage, apport, voiture…"></div>
+      <div class="deux-col">
+        <div class="champ"><label for="o-cible">Montant visé (€)</label><input id="o-cible" inputmode="decimal" value="${o?.cible ?? ''}"></div>
+        <div class="champ"><label for="o-echeance">À atteindre en</label><input id="o-echeance" type="month" min="${decalerMois(moisDe(AUJ), 1)}" value="${o?.echeance || decalerMois(moisDe(AUJ), 12)}"></div>
+      </div>
+      <div class="champ"><label for="o-compte">Sur le compte</label><select id="o-compte">${optionsComptes(o?.compte || 'courant')}</select></div>
+      <p class="discret" style="margin-top:-6px">Horizon court ou argent qu'on ne peut pas risquer : compte courant. Au-delà de cinq ans : le compte investissement se justifie.</p>
+      <div class="note" id="o-calcul" style="margin-bottom:14px"></div>
+      <div class="actions-tiroir"><button class="btn" type="submit">${o ? 'Enregistrer' : 'Créer l\'objectif'}</button>${o ? '<button class="btn btn-danger" type="button" id="o-suppr">Supprimer</button>' : ''}</div>
+    </form>`);
+  const calcul = () => {
+    const cible = lireNombre($('#o-cible').value), ech = $('#o-echeance').value;
+    if (!cible || !ech) { $('#o-calcul').textContent = 'Indiquez un montant et une échéance pour voir l\'effort mensuel.'; return; }
+    const mois = Math.max(1, ecartMois(moisDe(AUJ), ech)), besoin = Math.max(0, cible - (o?.affecte || 0)) / mois;
+    const autres = E.objectifs.filter(x => x.id !== o?.id).reduce((s, x) => s + Math.max(0, x.cible - x.affecte) / Math.max(1, ecartMois(moisDe(AUJ), x.echeance)), 0);
+    $('#o-calcul').innerHTML = `${argent0(besoin)} à réserver par mois pendant ${dureeTexte(mois)}. Avec vos autres objectifs (${argent0(autres)} / mois), cela représente <strong>${pct((besoin + autres) / Math.max(plan.capacite, 1) * 100, 0)}</strong> de votre capacité d'épargne de ${argent0(plan.capacite)}.`;
+  };
+  $('#o-cible').oninput = calcul; $('#o-echeance').oninput = calcul; calcul();
+  $('#o-form').onsubmit = e => {
+    e.preventDefault();
+    const nom = $('#o-nom').value.trim(), cible = arrondi(lireNombre($('#o-cible').value)), echeance = $('#o-echeance').value, compte = $('#o-compte').value;
+    if (!nom) return erreurTiroir('Donnez un nom à l\'objectif.');
+    if (cible <= 0) return erreurTiroir('Indiquez le montant visé.');
+    if (!echeance || echeance <= moisDe(AUJ)) return erreurTiroir('L\'échéance doit être dans un mois futur.');
+    if (o) {
+      if (o.compte !== compte && o.affecte > soldeCompte(compte) - affecteObjectifs(compte)) return erreurTiroir(`Le ${COMPTES[compte].nom.toLowerCase()} n'a pas assez de disponible pour accueillir les ${argent0(o.affecte)} déjà réservés.`);
+      Object.assign(o, { nom, cible, echeance, compte, affecte: Math.min(o.affecte, cible) });
+    } else E.objectifs.push({ id: uid(), nom, cible, echeance, compte, affecte: 0 });
+    sauver(); fermerTiroir(); rafraichir(); toast(o ? 'Objectif modifié' : 'Objectif créé');
+  };
+  if ($('#o-suppr')) $('#o-suppr').onclick = () => {
+    if (!confirm('Supprimer cet objectif ? L\'argent réservé redevient disponible, rien n\'est débité.')) return;
+    E.objectifs = E.objectifs.filter(x => x.id !== o.id); sauver(); fermerTiroir(); rafraichir(); toast('Objectif supprimé');
+  };
+}
+
+function tiroirReserver(id) {
+  const o = E.objectifs.find(x => x.id === id);
+  const dispo = soldeCompte(o.compte) - affecteObjectifs(o.compte);
+  const suggestion = Math.min(Math.max(0, dispo), Math.ceil(Math.max(0, o.cible - o.affecte) / Math.max(1, ecartMois(moisDe(AUJ), o.echeance))));
+  ouvrirTiroir(`${enteteTiroir(echap(o.nom))}
+    <p class="discret" style="margin-top:-8px">Réserver ne déplace pas d'argent : le montant reste sur le ${COMPTES[o.compte].nom.toLowerCase()} mais n'est plus compté comme disponible.</p>
+    <div class="resultat" style="margin-bottom:16px">
+      <div><span>Déjà réservé</span><strong>${argent0(o.affecte)}</strong></div>
+      <div><span>Disponible sur le compte</span><strong>${argent0(dispo)}</strong></div>
+    </div>
+    <div id="t-erreur" class="erreur cache"></div>
+    <form id="r-form">
+      <div class="types" style="grid-template-columns:1fr 1fr" id="r-sens"><button type="button" data-s="1" aria-pressed="true">Réserver</button><button type="button" data-s="-1" aria-pressed="false">Libérer</button></div>
+      <div class="champ"><label for="r-montant">Montant (€)</label><input id="r-montant" inputmode="decimal" value="${suggestion || ''}"></div>
+      <div class="actions-tiroir"><button class="btn" type="submit" id="r-ok">Réserver</button></div>
+    </form>`);
+  let sens = 1;
+  $('#r-sens').querySelectorAll('button').forEach(b => b.onclick = () => { sens = +b.dataset.s; $('#r-sens').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); $('#r-ok').textContent = sens > 0 ? 'Réserver' : 'Libérer'; });
+  $('#r-form').onsubmit = e => {
+    e.preventDefault();
+    const m = arrondi(lireNombre($('#r-montant').value));
+    if (m <= 0) return erreurTiroir('Indiquez un montant supérieur à zéro.');
+    if (sens > 0 && m > dispo + 0.004) return erreurTiroir(`Seuls ${argent(dispo)} sont disponibles sur ce compte. Faites d'abord un virement, ou libérez un autre objectif.`);
+    if (sens < 0 && m > o.affecte + 0.004) return erreurTiroir(`Seuls ${argent(o.affecte)} sont réservés pour cet objectif.`);
+    o.affecte = arrondi(Math.min(o.cible, o.affecte + sens * m));
+    sauver(); fermerTiroir(); rafraichir(); toast(sens > 0 ? `${argent0(m)} réservés` : `${argent0(m)} libérés`);
+  };
+}
+
+function tiroirDette(id, brouillon) {
+  const d = id ? E.dettes.find(x => x.id === id) : null;
+  const b = brouillon || (d ? {
+    nom: d.nom, type: d.type, capital: String(etatDette(d).capital).replace('.', ','), taux: String(d.taux).replace('.', ','),
+    echeance: d.echeance, jour: d.jour, mensualite: String(d.mensualite).replace('.', ','), manuelle: true,
+    assMode: d.assurance?.mode || 'aucune', assValeur: d.assurance ? String(d.assurance.valeur).replace('.', ',') : '',
+    assBase: d.assurance?.base ? String(d.assurance.base).replace('.', ',') : '',
+  } : nouveauCredit());
+  ouvrirTiroir(`${enteteTiroir(d ? 'Modifier le crédit' : 'Ajouter un crédit')}
+    <div id="t-erreur" class="erreur cache"></div>
+    <form id="d-form">
+      ${champsDette(b)}
+      <p class="discret" style="margin:12px 0 14px">${d ? 'Corriger le capital restant recale le suivi à aujourd\'hui ; l\'historique des échéances passées est conservé. Un capital de 0 marque le crédit comme soldé.' : 'La première mensualité sera prélevée sur le compte courant au prochain jour indiqué.'}</p>
+      <div class="actions-tiroir"><button class="btn" type="submit">${d ? 'Enregistrer' : 'Ajouter le crédit'}</button>${d ? '<button class="btn btn-danger" type="button" id="d-suppr">Supprimer</button>' : ''}</div>
+    </form>`);
+  brancherDette($('#d-form'), b, () => tiroirDette(id, b), !!d);
+  $('#d-form').onsubmit = e => {
+    e.preventDefault();
+    const nom = String(b.nom).trim(), c = calcDette(b, !!d);
+    if (!nom) return erreurTiroir('Donnez un nom au crédit.');
+    if (c.erreur) return erreurTiroir(c.erreur.charAt(0).toUpperCase() + c.erreur.slice(1));
+    if (d) {
+      // Recalage daté d'aujourd'hui : l'historique des échéances passées reste intact
+      if (Math.abs(etatDette(d).capital - c.capital) > 0.005) (d.recalages = d.recalages || []).push({ date: AUJ, capital: c.capital });
+      Object.assign(d, { nom, type: b.type, taux: c.taux, mensualite: c.mensualite, jour: +b.jour, echeance: b.echeance || d.echeance, assurance: c.assurance });
+      E.programmees.filter(r => r.detteId === d.id).forEach(r => Object.assign(r, { libelle: `Échéance ${nom}`, montant: c.total, jour: +b.jour, actif: c.capital > 0.005 }));
+    } else ajouterDette({ nom, type: b.type, capital: c.capital, taux: c.taux, mensualite: c.mensualite, jour: +b.jour, echeance: b.echeance, assurance: c.assurance }, decalerJours(AUJ, 1));
+    sauver(); fermerTiroir(); rafraichir(); toast(d ? 'Crédit modifié' : 'Crédit ajouté');
+  };
+  if ($('#d-suppr')) $('#d-suppr').onclick = () => {
+    if (!confirm('Supprimer ce crédit et son prélèvement programmé ? Les échéances passées restent dans l\'historique du compte courant.')) return;
+    E.dettes = E.dettes.filter(x => x.id !== d.id);
+    E.programmees = E.programmees.filter(r => r.detteId !== d.id);
+    E.operations.forEach(op => { if (op.detteId === d.id) delete op.detteId; });
+    sauver(); fermerTiroir(); rafraichir(); toast('Crédit supprimé');
+  };
+}
+
+function tiroirBudgets() {
+  const moyenne = c => { const m = [1, 2, 3].map(k => decalerMois(moisDe(AUJ), -k)).filter(x => x >= moisDe(E.creeLe)); return m.length ? m.reduce((s, x) => s + (fluxMois(x).parCat[c] || 0), 0) / m.length : null; };
+  ouvrirTiroir(`${enteteTiroir('Budgets mensuels')}
+    <p class="discret" style="margin-top:-8px">Pour les dépenses courantes. Les charges programmées et les crédits sont déjà comptés à leur montant réel.</p>
+    <form id="b-form">
+      ${CATS_VARIABLES.map(c => { const moy = moyenne(c); return `<div class="champ"><label for="b-${c}">${CATEGORIES[c].nom}${moy != null ? ` · moyenne récente ${argent0(moy)}` : ''}</label><input id="b-${c}" data-b="${c}" inputmode="decimal" value="${E.budgets[c] || ''}" placeholder="0"></div>`; }).join('')}
+      <div class="actions-tiroir"><button class="btn" type="submit">Enregistrer les budgets</button></div>
+    </form>`);
+  $('#b-form').onsubmit = e => {
+    e.preventDefault();
+    document.querySelectorAll('[data-b]').forEach(el => { const v = lireNombre(el.value); if (v > 0) E.budgets[el.dataset.b] = arrondi(v); else delete E.budgets[el.dataset.b]; });
+    sauver(); fermerTiroir(); rafraichir(); toast('Budgets enregistrés');
+  };
+}
+
+/* ── Boutons d'en-tête ─────────────────────────────────── */
+$('#btn-operation').onclick = () => tiroirOperation({ compte: ongletActif === 'comptes' ? compteVu : 'courant' });
+$('#btn-reinit').onclick = async () => {
+  if (!confirm('Effacer toutes les données du module Budget et comptes et relancer la configuration ? Le compte-titres n\'est pas concerné.')) return;
+  try {
+    clearTimeout(minuterie); enAttente = false; if (envoiEnCours) await envoiEnCours;
+    await api('/banque/etat', { method: 'DELETE' });
+    E = null; VERSION = 0; ongletActif = 'synthese'; ouvrirAssistant();
+  } catch (ex) { toast(ex.message); }
+};
+$('#btn-deconnexion').onclick = async () => { if (enAttente) await envoyer(); enAttente = false; deconnecter(); };
+
+/* ── Démarrage ─────────────────────────────────────────── */
+function ecranEtat(titre, texte, actions = '') {
+  ['#app', '#assistant'].forEach(s => $(s).classList.add('cache')); $('#ecran-etat').classList.remove('cache');
+  $('#etat-titre').textContent = titre; $('#etat-texte').textContent = texte; $('#etat-actions').innerHTML = actions;
+}
+async function lancer() {
+  if (!JETON) return;
+  ecranEtat('Chargement de vos comptes…', '');
+  try {
+    await charger();
+    $('#ecran-etat').classList.add('cache');
+    if (E) demarrer(); else ouvrirAssistant();
+  } catch (ex) {
+    if (/Session expirée/.test(ex.message)) return;
+    ecranEtat('Impossible de charger vos comptes', ex.message, '<button class="btn" id="etat-reessayer">Réessayer</button>');
+    $('#etat-reessayer').onclick = lancer;
+  }
+}
+lancer();
+</script>
+</body>
+</html>

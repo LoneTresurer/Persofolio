@@ -6,6 +6,7 @@ API du suivi de portefeuille (façon compte-titres de courtier).
 Connexion
   POST   /auth/inscription          créer un compte          → jeton
   POST   /auth/connexion            se connecter             → jeton
+  GET    /auth/moi                  vérifier un jeton             → nom d'utilisateur
   POST   /auth/deconnexion
 Titres
   GET    /titres/{ticker}           fiche + dernier cours (aperçu avant un ordre)
@@ -87,6 +88,12 @@ def connexion(ids: Identifiants):
     if not pdb.verifier_mdp(ids.username, ids.mdp):
         raise HTTPException(status_code=401, detail="Identifiant ou mot de passe incorrect.")
     return {"username": ids.username, "jeton": pdb.creer_jeton(ids.username)}
+
+
+@router.get("/auth/moi")
+def moi(user: str = Depends(utilisateur_courant)):
+    """Vérifie un jeton conservé par le navigateur (reprise de session au rechargement)."""
+    return {"username": user}
 
 
 @router.post("/auth/deconnexion")

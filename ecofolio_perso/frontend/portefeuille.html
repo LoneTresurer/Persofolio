@@ -166,7 +166,7 @@
 <body>
 
 <!-- ═════════════ Connexion ═════════════ -->
-<section id="ecran-connexion">
+<section id="ecran-connexion" class="cache">
   <div class="boite-connexion">
     <h1>EcoFolio</h1>
     <p>Suivi de votre compte-titres : positions, plus-values, risque et actualités.</p>
@@ -190,6 +190,8 @@
       <div class="marque">Eco<span>Folio</span></div>
       <div class="espace"></div>
       <span class="utilisateur" id="nom-utilisateur"></span>
+      <a class="mini-btn" href="index.html" style="text-decoration:none">Accueil</a>
+      <a class="mini-btn" href="banque.html" style="text-decoration:none">Budget et comptes</a>
       <button class="btn" id="btn-ordre">Passer un ordre</button>
       <button class="mini-btn" id="btn-deconnexion">Déconnexion</button>
     </div>
@@ -329,7 +331,7 @@
 </aside>
 
 <script>
-  const API = 'http://localhost:8000';
+  const API = /:8000$/.test(location.host) ? location.origin : 'http://localhost:8000';
   const LIBELLES = { ACHAT: "Valider l'achat", VENTE: 'Valider la vente', DEPOT: 'Enregistrer le dépôt', RETRAIT: 'Enregistrer le retrait', DIVIDENDE: 'Enregistrer le dividende' };
   const NOMS_TYPE = { ACHAT: 'Achat', VENTE: 'Vente', DEPOT: 'Dépôt', RETRAIT: 'Retrait', DIVIDENDE: 'Dividende' };
   const PALETTE = ['#1E6A48', '#4F9A74', '#9CC5A9', '#2B5680', '#7FA7CB', '#C08A3E', '#8E6BA8', '#B23A2E', '#6B7A70', '#D5C9A1'];
@@ -404,7 +406,7 @@
     if (jeton) fetch(API + '/auth/deconnexion', { method: 'POST', headers: { Authorization: 'Bearer ' + jeton } }).catch(() => {});
     jeton = null; utilisateur = null;
     localStorage.removeItem('ecofolio_jeton'); localStorage.removeItem('ecofolio_user');
-    $('#ecran-app').classList.add('cache'); $('#ecran-connexion').classList.remove('cache');
+    location.replace('index.html');       // connexion unique : page d'accueil d'EcoFolio
   }
   $('#btn-deconnexion').onclick = deconnecter;
 
@@ -698,7 +700,8 @@
   };
 
   /* ── Lancement ───────────────────────────────────────── */
-  if (jeton) demarrer();
+  // Connexion unique sur index.html : sans jeton, on y renvoie.
+  if (jeton) demarrer(); else location.replace('index.html');
 </script>
 </body>
 </html>
