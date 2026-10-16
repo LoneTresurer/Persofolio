@@ -76,7 +76,12 @@ backend/
 ├── core/
 │   ├── portfolio_calc.py     ← Positions, PnL, performance, risque
 │   ├── portfolio_db.py       ← Utilisateurs, jetons, opérations de bourse
-│   └── banque_db.py          ← État du module Budget et comptes
+│   ├── banque_db.py          ← État du module Budget et comptes
+│   ├── releve.py             ← Lecture des relevés PDF (toutes banques)
+│   ├── categorisation.py     ← Catégorie d'une opération d'après son libellé
+│   └── habitudes.py          ← Récurrences et budgets déduits des relevés
+├── tests/
+│   └── test_releve.py        ← Contrôle d'équilibre sur vos propres relevés
 ├── archive_optimiseur/       ← Optimiseur ESG retiré de l'application (voir son README)
 └── data/
     └── portefeuille.db       ← Base SQLite, créée au premier lancement

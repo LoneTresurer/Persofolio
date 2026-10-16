@@ -256,6 +256,20 @@
   .accueil-choix strong { display: block; font-size: 16px; margin-bottom: 4px; }
   .accueil-choix span { color: var(--encre-2); font-size: 13.5px; }
 
+  /* ── Import de relevés ─────────────────────────────────── */
+  .barre-import { display: flex; align-items: center; gap: 12px; max-width: 1240px; margin: 0 auto; padding: 16px 24px; }
+  #import main { max-width: 1240px; margin: 0 auto; padding: 8px 24px 60px; }
+  .depot {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    border: 2px dashed var(--filet); border-radius: var(--rayon); padding: 44px 20px; cursor: pointer;
+    background: var(--papier); text-align: center; transition: .15s;
+  }
+  .depot:hover, .depot.survol { border-color: var(--foret); background: var(--foret-clair); }
+  .depot strong { font-size: 16px; font-weight: 600; }
+  .depot span { color: var(--encre-2); font-size: 13.5px; }
+  tr.a-classer td { background: #FBF7EE; }
+  tr.a-classer td:first-child { box-shadow: inset 3px 0 0 var(--ambre); }
+
   /* ── Tiroir ────────────────────────────────────────────── */
   .voile { position: fixed; inset: 0; background: rgba(21, 38, 29, .35); z-index: 20; }
   .tiroir { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100%); background: var(--carte); z-index: 21; padding: 22px 24px; overflow-y: auto; box-shadow: -8px 0 30px rgba(21, 38, 29, .12); transform: translateX(100%); transition: transform .22s ease; }
@@ -305,6 +319,16 @@
   </div>
 </section>
 
+<!-- ═════════════ Import de relevés bancaires ═════════════ -->
+<section id="import" class="cache">
+  <div class="barre-import">
+    <div class="marque">Eco<span>Folio</span> <span class="discret" style="font-weight:400">· Import de relevés</span></div>
+    <div class="espace"></div>
+    <button class="mini-btn" id="imp-fermer">Fermer</button>
+  </div>
+  <main id="imp-corps"></main>
+</section>
+
 <!-- ═════════════ Application ═════════════ -->
 <section id="app" class="cache">
   <header>
@@ -316,6 +340,7 @@
       <span class="utilisateur" id="nom-utilisateur"></span>
       <a class="mini-btn" href="index.html">Accueil</a>
       <a class="mini-btn" href="portefeuille.html">Compte-titres</a>
+      <button class="mini-btn" id="btn-import">Importer un relevé</button>
       <button class="btn" id="btn-operation">Ajouter une opération</button>
       <button class="mini-btn" id="btn-reinit" title="Effacer les données de ce module et relancer la configuration">Réinitialiser</button>
       <button class="mini-btn" id="btn-deconnexion">Déconnexion</button>
@@ -385,6 +410,8 @@ const CATEGORIES = {
   loisirs:     { nom: 'Loisirs et voyages',       sens: 'SORTIE', couleur: '#5F8F8B' },
   credit:      { nom: 'Remboursements de crédit', sens: 'SORTIE', couleur: '#B23A2E' },
   impots:      { nom: 'Impôts et taxes',          sens: 'SORTIE', couleur: '#6B7A70' },
+  frais:       { nom: 'Frais bancaires',          sens: 'SORTIE', couleur: '#8A5412' },
+  especes:     { nom: 'Retraits d\'espèces',       sens: 'SORTIE', couleur: '#B7A98C' },
   divers:      { nom: 'Divers',                   sens: 'SORTIE', couleur: '#A8B2AB' },
   // Entrées
   salaire:     { nom: 'Salaire',                  sens: 'ENTREE', couleur: '#1D7A4B' },
@@ -394,10 +421,12 @@ const CATEGORIES = {
   autre_rev:   { nom: 'Autres revenus',           sens: 'ENTREE', couleur: '#A8B2AB' },
   // Mouvement interne, jamais compté comme revenu ou dépense
   virement:    { nom: 'Virement entre comptes',   sens: 'INTERNE', couleur: '#2B5680' },
+  // Ce que la lecture des relevés n'a pas su classer : visible, jamais deviné.
+  inconnu:     { nom: 'Non catégorisé',           sens: 'TOUS',    couleur: '#C3CCC5' },
 };
-const CATS_SORTIE = Object.keys(CATEGORIES).filter(k => CATEGORIES[k].sens === 'SORTIE');
-const CATS_ENTREE = Object.keys(CATEGORIES).filter(k => CATEGORIES[k].sens === 'ENTREE');
-const CATS_VARIABLES = ['courses', 'transport', 'sorties', 'loisirs', 'shopping', 'sante', 'divers'];
+const CATS_SORTIE = Object.keys(CATEGORIES).filter(k => ['SORTIE', 'TOUS'].includes(CATEGORIES[k].sens));
+const CATS_ENTREE = Object.keys(CATEGORIES).filter(k => ['ENTREE', 'TOUS'].includes(CATEGORIES[k].sens));
+const CATS_VARIABLES = ['courses', 'transport', 'sorties', 'loisirs', 'shopping', 'sante', 'especes', 'divers'];
 const COMPTES = {
   courant: { nom: 'Compte courant', court: 'Courant', couleur: '#1E6A48', role: 'Dépenses du quotidien et épargne disponible' },
   invest:  { nom: 'Compte investissement', court: 'Investissement', couleur: '#2B5680', role: 'Liquidités disponibles pour le compte-titres' },
@@ -703,7 +732,8 @@ function nouveauBrouillon() {
 }
 
 function ouvrirAssistant() {
-  $('#app').classList.add('cache'); $('#ecran-etat').classList.add('cache'); $('#assistant').classList.remove('cache');
+  $('#app').classList.add('cache'); $('#ecran-etat').classList.add('cache');
+  $('#import').classList.add('cache'); $('#assistant').classList.remove('cache');
   B = nouveauBrouillon(); etapeCourante = -1; afficherEtape();
 }
 
@@ -737,11 +767,13 @@ function afficherEtape() {
       <div class="accueil-choix">
         <button id="ass-commencer"><strong>Configurer mes comptes</strong><span>Saisir mes propres chiffres, étape par étape.</span></button>
         <button id="ass-exemple"><strong>Explorer avec un exemple</strong><span>Un profil fictif avec quatre mois d'historique, pour voir le module rempli.</span></button>
+        <button id="ass-releves"><strong>Importer mes relevés bancaires</strong><span>Deux ou trois mois de PDF : vos charges, vos budgets et votre historique en sont déduits.</span></button>
         ${localStorage.getItem(ANCIENNE_CLE) ? `<button id="ass-import"><strong>Récupérer mes données</strong><span>Des comptes créés avec la version précédente sont enregistrés dans ce navigateur : les rattacher à votre compte.</span></button>` : ''}
       </div>`;
     pied.innerHTML = '';
     $('#ass-commencer').onclick = () => { etapeCourante = 0; afficherEtape(); };
     $('#ass-exemple').onclick = chargerExemple;
+    $('#ass-releves').onclick = () => ouvrirImport('assistant');
     if ($('#ass-import')) $('#ass-import').onclick = () => {
       try { E = JSON.parse(localStorage.getItem(ANCIENNE_CLE)); } catch { E = null; }
       if (!E) return toast('Données illisibles : configurez vos comptes.');
@@ -1117,7 +1149,8 @@ let ongletActif = 'synthese', compteVu = 'courant', moisBudget = moisDe(AUJ), gr
 let filtre = { mois: 'tous', sens: 'tous', texte: '', categorie: '' }, limiteOps = 80;
 
 function demarrer() {
-  $('#assistant').classList.add('cache'); $('#app').classList.remove('cache');
+  $('#assistant').classList.add('cache'); $('#import').classList.add('cache');
+  $('#ecran-etat').classList.add('cache'); $('#app').classList.remove('cache');
   // Budget : on ouvre sur le dernier mois complet, plus parlant qu'un mois entamé
   moisBudget = decalerMois(moisDe(AUJ), -1) >= moisDe(E.creeLe) ? decalerMois(moisDe(AUJ), -1) : moisDe(AUJ);
   $('#nom-utilisateur').textContent = UTILISATEUR;
@@ -1914,6 +1947,453 @@ function afficherStrategie(enCours) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+   IMPORT DE RELEVÉS BANCAIRES
+   Le serveur lit les PDF et renvoie ce qu'il a compris ; rien n'est enregistré
+   avant que l'utilisateur ait relu. On relit par tiers et non par ligne : trois
+   cents opérations tiennent en une quinzaine de commerçants qui pèsent
+   l'essentiel des euros.
+   ════════════════════════════════════════════════════════════════════════ */
+let IMP = null;           // proposition en cours de relecture
+let retourImport = 'assistant';
+
+function ouvrirImport(contexte) {
+  retourImport = contexte;
+  IMP = null;
+  $('#assistant').classList.add('cache'); $('#app').classList.add('cache');
+  $('#ecran-etat').classList.add('cache'); $('#import').classList.remove('cache');
+  rendreImport();
+  window.scrollTo(0, 0);
+}
+
+function fermerImport() {
+  $('#import').classList.add('cache');
+  if (retourImport === 'app' && E) { $('#app').classList.remove('cache'); rafraichir(); }
+  else { $('#assistant').classList.remove('cache'); etapeCourante = -1; afficherEtape(); }
+}
+
+/* ── Envoi des fichiers ─────────────────────────────────────────────────── */
+async function envoyerReleves(fichiers) {
+  if (!fichiers.length) return;
+  const zone = $('#imp-corps');
+  zone.innerHTML = `<div class="panneau"><div class="vide"><p>Lecture de ${fichiers.length} relevé${fichiers.length > 1 ? 's' : ''}…</p></div></div>`;
+  const form = new FormData();
+  [...fichiers].forEach(f => form.append('fichiers', f));
+  try {
+    const rep = await fetch(API + '/banque/releves', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + JETON }, body: form,
+    });
+    if (rep.status === 401) return deconnecter();
+    const data = await rep.json();
+    if (!rep.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Lecture impossible');
+    if (!data.proposition) {
+      zone.innerHTML = `<div class="panneau"><p class="note danger">Aucune opération exploitable.
+        ${data.fichiers.map(f => `<br>${echap(f.nom)} : ${echap(f.erreur || (f.anomalies || []).join(', ') || 'relevé déséquilibré')}`).join('')}</p>
+        <p class="discret" style="margin-top:12px">Si vos relevés sont des images scannées, le texte n'est pas lisible : téléchargez-les depuis l'espace client de votre banque plutôt que de les photographier.</p></div>`;
+      return;
+    }
+    const p = data.proposition;
+    IMP = {
+      fichiers: data.fichiers, p,
+      // Affectation par compte du relevé : le plus fourni devient le compte courant.
+      affectation: {}, cats: {}, garder: {}, budgets: { ...p.budgets },
+      solde: null, correction: 'ajustement',
+    };
+    let principal = null, maxOps = -1;
+    data.fichiers.forEach(f => (f.comptes || []).forEach(c => {
+      if (!c.equilibre) return;
+      if (c.nb_operations > maxOps) { maxOps = c.nb_operations; principal = c.numero; }
+      IMP.affectation[c.numero] = 'ignorer';
+    }));
+    if (principal !== null) IMP.affectation[principal] = 'courant';
+    p.tiers.forEach(t => { IMP.cats[t.cle] = t.categorie; });
+    p.recurrences.forEach(r => { IMP.garder[r.cle] = r.reguliere; });
+    // Solde proposé : la clôture du relevé le plus récent du compte retenu.
+    IMP.solde = soldeProposeImport();
+    rendreImport();
+  } catch (e) {
+    zone.innerHTML = `<div class="panneau"><p class="note danger">${echap(e.message)}</p></div>`;
+  }
+}
+
+function comptesImport() {
+  const liste = [];
+  (IMP?.fichiers || []).forEach(f => (f.comptes || []).forEach(c => liste.push({ ...c, banque: f.banque, fichier: f.nom })));
+  return liste;
+}
+
+function soldeProposeImport() {
+  // Compte déjà configuré : le solde du jour est celui de l'application, et l'écart
+  // avec la clôture du dernier relevé est précisément ce qu'il faut montrer.
+  if (E && retourImport === 'app') return arrondi(soldeCompte('courant'));
+  const retenus = comptesImport().filter(c => IMP.affectation[c.numero] === 'courant' && c.equilibre);
+  if (!retenus.length) return 0;
+  const dernier = retenus.sort((a, b) => (a.fin || '').localeCompare(b.fin || '')).pop();
+  return dernier.solde_cloture ?? 0;
+}
+
+/* Opérations retenues, avec la catégorie décidée par l'utilisateur. */
+function opsImport() {
+  const parCompte = {};
+  comptesImport().forEach(c => { parCompte[c.numero] = IMP.affectation[c.numero]; });
+  const vues = new Set(), ops = [];
+  comptesImport().forEach(c => {
+    const dest = parCompte[c.numero];
+    if (!c.equilibre || !dest || dest === 'ignorer') return;
+    c.operations.forEach(o => {
+      // Deux relevés qui se chevauchent contiennent deux fois la même opération.
+      const cle = `${dest}|${o.date}|${o.montant}|${o.libelle.slice(0, 40)}`;
+      if (vues.has(cle)) return;
+      vues.add(cle);
+      const t = IMP.p.operations.find(x => x.date === o.date && x.montant === o.montant && x.libelle === o.libelle);
+      ops.push({ ...o, compte: dest, tiers: t ? t.tiers : '' });
+    });
+  });
+  return ops.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/* ── Affichage ──────────────────────────────────────────────────────────── */
+function rendreImport() {
+  const zone = $('#imp-corps');
+  if (!IMP) {
+    zone.innerHTML = `
+      <div class="panneau">
+        <h2>Vos relevés, pour partir de vos vraies dépenses</h2>
+        <p class="sous-titre">Deux ou trois mois suffisent. Vos catégories, vos charges fixes et vos budgets
+          en sont déduits — vous n'avez plus qu'à relire.</p>
+        <label class="depot" id="depot">
+          <input type="file" id="imp-fichiers" accept="application/pdf,.pdf" multiple hidden>
+          <strong>Déposez vos relevés PDF ici</strong>
+          <span>ou cliquez pour les choisir · jusqu'à 24 fichiers</span>
+        </label>
+        <p class="discret" style="margin-top:14px">Téléchargez-les depuis l'espace client de votre banque, au format PDF.
+          Une photo ou un scan ne contient pas de texte et ne peut pas être lu. Les fichiers sont lus par le serveur
+          puis effacés : seules les opérations que vous validez sont enregistrées.</p>
+      </div>`;
+    const input = $('#imp-fichiers'), depot = $('#depot');
+    input.onchange = () => envoyerReleves(input.files);
+    depot.ondragover = e => { e.preventDefault(); depot.classList.add('survol'); };
+    depot.ondragleave = () => depot.classList.remove('survol');
+    depot.ondrop = e => { e.preventDefault(); depot.classList.remove('survol'); envoyerReleves(e.dataTransfer.files); };
+    return;
+  }
+
+  const p = IMP.p, comptes = comptesImport();
+  const ops = opsImport();
+  const total = ops.reduce((s, o) => s + o.montant, 0);
+  const inconnus = p.tiers.filter(t => IMP.cats[t.cle] === 'inconnu');
+  const eurosInconnus = inconnus.reduce((s, t) => s + Math.abs(t.total), 0);
+  const eurosTotal = p.tiers.reduce((s, t) => s + Math.abs(t.total), 0) || 1;
+
+  zone.innerHTML = `
+    ${blocFichiers(comptes)}
+    ${blocAffectation(comptes)}
+    ${ops.length ? `
+    ${blocTiers(p, inconnus, eurosInconnus, eurosTotal)}
+    ${blocRecurrences(p)}
+    ${blocBudgets(p)}
+    ${blocSolde(ops, total)}` : '<div class="panneau"><p class="note alerte">Aucun relevé retenu : choisissez au moins un compte à importer.</p></div>'}`;
+
+  brancherImport();
+}
+
+function blocFichiers(comptes) {
+  const lignes = [];
+  IMP.fichiers.forEach(f => {
+    if (f.erreur) { lignes.push(`<tr><td>${echap(f.nom)}</td><td colspan="4" class="perte">${echap(f.erreur)}</td></tr>`); return; }
+    (f.comptes || []).forEach(c => lignes.push(`<tr>
+      <td>${echap(f.nom.slice(0, 28))}<span class="sous">${echap(f.banque || 'banque non reconnue')}${c.libelle ? ' · ' + echap(c.libelle) : ''}</span></td>
+      <td style="white-space:nowrap">${c.debut ? dateCourte(c.debut) : '?'} → ${c.fin ? dateCourte(c.fin) : '?'}</td>
+      <td class="num">${c.nb_operations}</td>
+      <td class="num discret">${argent(c.solde_ouverture)} ${argent(c.mouvements, true)}</td>
+      <td class="num">${c.equilibre
+        ? `<span class="statut ok">${argent(c.solde_cloture)}</span>`
+        : `<span class="statut ko">écart ${argent(c.ecart)}</span>`}</td></tr>`));
+    (f.anomalies || []).forEach(a => lignes.push(`<tr><td colspan="5" class="discret">${echap(f.nom.slice(0, 28))} : ${echap(a)}</td></tr>`));
+  });
+  const casses = comptes.filter(c => !c.equilibre).length;
+  return `<div class="panneau">
+    <div class="tete-panneau"><div><h2>Relevés lus</h2>
+      <p class="sous-titre">Pour chaque compte : solde d'ouverture, somme des mouvements, solde de clôture.
+        S'ils ne se recalculent pas au centime, la lecture est fausse et le relevé est écarté.</p></div>
+      <button class="mini-btn" id="imp-autres">Ajouter des relevés</button></div>
+    <div class="defile"><table><thead><tr><th>Fichier</th><th>Période</th><th class="num">Opérations</th>
+      <th class="num">Ouverture + mouvements</th><th class="num">= clôture</th></tr></thead>
+      <tbody>${lignes.join('')}</tbody></table></div>
+    ${casses ? `<p class="note danger" style="margin-top:12px">${casses} compte${casses > 1 ? 's' : ''} écarté${casses > 1 ? 's' : ''} :
+      le total ne retombe pas sur le solde annoncé. Plutôt que d'importer des chiffres faux, envoyez-nous le fichier :
+      c'est une mise en page que le lecteur ne connaît pas encore.</p>` : ''}</div>`;
+}
+
+function blocAffectation(comptes) {
+  // Un même compte apparaît dans chaque relevé mensuel : on le regroupe par numéro,
+  // sinon l'utilisateur voit six lignes pour deux comptes.
+  const parNumero = {};
+  comptes.filter(c => c.equilibre && c.nb_operations).forEach(c => {
+    const u = parNumero[c.numero] || (parNumero[c.numero] = {
+      numero: c.numero, libelle: c.libelle, banque: c.banque, nb_operations: 0,
+      debut: c.debut, fin: c.fin, solde_cloture: c.solde_cloture,
+    });
+    u.nb_operations += c.nb_operations;
+    u.libelle = u.libelle || c.libelle;
+    if (c.debut && (!u.debut || c.debut < u.debut)) u.debut = c.debut;
+    if (c.fin && (!u.fin || c.fin > u.fin)) { u.fin = c.fin; u.solde_cloture = c.solde_cloture; }
+  });
+  const utiles = Object.values(parNumero);
+  if (utiles.length < 2) return '';
+  return `<div class="panneau">
+    <h2>Quel compte est lequel ?</h2>
+    <p class="sous-titre">Un même PDF contient souvent plusieurs comptes : compte courant, livret, prêt.</p>
+    <div class="defile"><table><tbody>${utiles.map(c => `<tr>
+      <td>${echap(c.libelle || c.numero)}<span class="sous">${echap(c.banque || '')}${c.banque ? ' · ' : ''}${c.nb_operations} opérations · ${c.debut ? dateCourte(c.debut) : ''} → ${c.fin ? dateCourte(c.fin) : ''}</span></td>
+      <td class="num">${argent(c.solde_cloture)}</td>
+      <td class="num"><select class="saisie" data-affect="${echap(c.numero)}" style="width:auto">
+        ${[['courant', COMPTES.courant.nom], ['invest', COMPTES.invest.nom], ['ignorer', 'Ne pas importer']]
+          .map(([v, l]) => `<option value="${v}" ${IMP.affectation[c.numero] === v ? 'selected' : ''}>${l}</option>`).join('')}
+      </select></td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+function blocTiers(p, inconnus, eurosInconnus, eurosTotal) {
+  const tri = [...p.tiers].sort((a, b) => {
+    const ia = IMP.cats[a.cle] === 'inconnu', ib = IMP.cats[b.cle] === 'inconnu';
+    return ia !== ib ? (ia ? -1 : 1) : Math.abs(b.total) - Math.abs(a.total);
+  });
+  const partConnue = 100 - eurosInconnus / eurosTotal * 100;
+  return `<div class="panneau">
+    <div class="tete-panneau"><div><h2>Classer vos dépenses</h2>
+      <p class="sous-titre">Une ligne par commerçant, la plus lourde d'abord. Classer un commerçant classe
+        toutes ses opérations, passées et à venir.</p></div>
+      <div style="text-align:right"><div class="discret">Euros reconnus</div>
+        <div style="font-size:22px;font-weight:500" id="imp-part">${pct(partConnue, 0)}</div></div></div>
+    <div class="progres" style="margin-bottom:14px"><i style="width:${Math.min(100, partConnue)}%"></i></div>
+    <p class="note ${inconnus.length ? 'alerte' : ''}" style="margin-bottom:14px" id="imp-reste">
+      ${inconnus.length
+        ? `${inconnus.length} commerçants non reconnus, ${argent0(eurosInconnus)} au total. Les ${p.mesure.tiers_a_relire_pour_80pct} premiers en expliquent déjà 80 %.`
+        : 'Tout est classé.'}</p>
+    <div class="defile" style="max-height:460px;overflow-y:auto">
+      <table><thead><tr><th>Commerçant ou tiers</th><th class="num">Opérations</th><th class="num">Total</th><th style="width:210px">Catégorie</th></tr></thead>
+      <tbody>${tri.map(t => {
+        const cats = t.sens === 'ENTREE' ? CATS_ENTREE : CATS_SORTIE;
+        const dou = IMP.cats[t.cle] === 'inconnu';
+        return `<tr class="${dou ? 'a-classer' : ''}">
+          <td>${echap(t.cle || '(sans libellé)')}<span class="sous">${echap(t.libelle.slice(0, 70))}</span></td>
+          <td class="num">${t.occurrences}<span class="sous">${t.mois.length} mois</span></td>
+          <td class="num ${t.total > 0 ? 'gain' : ''}">${argent(t.total, true)}</td>
+          <td><select class="saisie" data-cat-tiers="${echap(t.cle)}">
+            ${cats.map(c => `<option value="${c}" ${IMP.cats[t.cle] === c ? 'selected' : ''}>${CATEGORIES[c].nom}</option>`).join('')}
+          </select></td></tr>`;
+      }).join('')}</tbody></table></div></div>`;
+}
+
+function blocRecurrences(p) {
+  if (!p.recurrences.length) {
+    return `<div class="panneau"><h2>Opérations qui reviennent chaque mois</h2>
+      <div class="vide"><p>Aucune échéance régulière détectée. Avec un seul mois de relevés, c'est normal :
+        il en faut au moins deux pour qu'une habitude se voie.</p></div></div>`;
+  }
+  return `<div class="panneau">
+    <h2>Opérations qui reviennent chaque mois</h2>
+    <p class="sous-titre">Repérées parce qu'elles reviennent au même rythme, pas parce qu'on a reconnu leur nom.
+      Cochez celles à programmer : elles seront ensuite enregistrées automatiquement chaque mois.</p>
+    <div class="defile"><table><thead><tr><th style="width:34px"></th><th>Libellé</th><th class="num">Montant</th>
+      <th class="num">Jour</th><th>Régularité</th><th style="width:190px">Catégorie</th></tr></thead>
+      <tbody>${p.recurrences.map(r => `<tr>
+        <td><input type="checkbox" data-rec="${echap(r.cle)}" ${IMP.garder[r.cle] ? 'checked' : ''} style="accent-color:var(--foret)"></td>
+        <td>${echap(r.cle)}<span class="sous">${echap(r.libelle.slice(0, 64))}</span></td>
+        <td class="num ${r.sens === 'ENTREE' ? 'gain' : ''}">${argent(r.montant)}</td>
+        <td class="num">le ${r.jour}</td>
+        <td>${r.reguliere
+          ? '<span class="statut ok">même montant</span>'
+          : `<span class="statut serre">montant variable</span><span class="sous">±${pct(r.stabilite * 100, 0)} d'un mois à l'autre</span>`}
+          <span class="sous">vu ${r.occurrences} fois sur ${r.mois.length} mois</span></td>
+        <td><select class="saisie" data-cat-tiers="${echap(r.cle)}">
+          ${(r.sens === 'ENTREE' ? CATS_ENTREE : CATS_SORTIE).map(c => `<option value="${c}" ${IMP.cats[r.cle] === c ? 'selected' : ''}>${CATEGORIES[c].nom}</option>`).join('')}
+        </select></td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+function blocBudgets(p) {
+  const mois = p.mois_complets, ignores = p.mois_complets_ignores;
+  if (!mois.length) {
+    return `<div class="panneau"><h2>Budgets déduits</h2>
+      <p class="note alerte">Aucun mois civil n'est entièrement couvert par vos relevés : un relevé du 10 au 10
+        ne couvre aucun mois complet. Une moyenne mensuelle serait fausse — ajoutez le relevé suivant,
+        ou saisissez vos budgets à la main.</p></div>`;
+  }
+  const cats = Object.keys(IMP.budgets);
+  return `<div class="panneau">
+    <h2>Budgets déduits de vos relevés</h2>
+    <p class="sous-titre">Moyenne par mois sur ${mois.length} mois complet${mois.length > 1 ? 's' : ''}
+      (${mois.map(m => libelleMois(m)).join(', ')}), hors opérations programmées ci-dessus.</p>
+    ${ignores.length ? `<p class="discret" style="margin:-6px 0 12px">${ignores.length} autre${ignores.length > 1 ? 's' : ''} mois complet${ignores.length > 1 ? 's' : ''}
+      (${ignores.map(m => libelleMois(m)).join(', ')}) ${ignores.length > 1 ? 'sont écartés' : 'est écarté'} : trop éloigné${ignores.length > 1 ? 's' : ''} de la période récente pour qu'une moyenne ait un sens.</p>` : ''}
+    <div class="grille-budgets">${cats.length ? cats.map(c => `
+      <div class="champ"><label for="bud-i-${c}">${CATEGORIES[c] ? CATEGORIES[c].nom : c}</label>
+        <input id="bud-i-${c}" data-budget-imp="${c}" inputmode="decimal" value="${nombre(IMP.budgets[c], 2)}"></div>`).join('')
+      : '<p class="discret">Rien à proposer : toutes vos dépenses sont des opérations programmées.</p>'}</div></div>`;
+}
+
+/* Dernier relevé retenu pour le compte courant : c'est lui qui borne l'historique. */
+function dernierReleveCourant() {
+  const comptes = comptesImport().filter(c => IMP.affectation[c.numero] === 'courant' && c.equilibre);
+  return [...comptes].sort((a, b) => (a.fin || '').localeCompare(b.fin || '')).pop() || null;
+}
+
+/* Ce qui manque entre la clôture du dernier relevé et le solde d'aujourd'hui.
+   Les opérations déjà enregistrées après cette date expliquent une partie de l'écart :
+   sans les déduire, un deuxième import recréerait un ajustement déjà posé. */
+function ecartImport() {
+  const dernier = dernierReleveCourant();
+  if (!dernier || !dernier.fin) return 0;
+  const apres = E ? E.operations
+    .filter(o => o.compte === 'courant' && o.date > dernier.fin)
+    .reduce((s, o) => s + o.montant, 0) : 0;
+  const solde = IMP.solde == null ? dernier.solde_cloture : IMP.solde;
+  return arrondi(solde - dernier.solde_cloture - apres);
+}
+
+function blocSolde(ops, total) {
+  const dernier = dernierReleveCourant();
+  const fin = dernier ? dernier.fin : null, cloture = dernier ? dernier.solde_cloture : 0;
+  const solde = IMP.solde == null ? cloture : IMP.solde;
+  const ecart = ecartImport();
+  const jours = fin ? Math.round((versDate(AUJ) - versDate(fin)) / 86400000) : 0;
+  return `<div class="panneau">
+    <h2>Et aujourd'hui ?</h2>
+    <p class="sous-titre">${fin ? `Vos relevés s'arrêtent au ${dateLongue(fin)}, sur un solde de ${argent(cloture)}.` : ''}
+      ${E && retourImport === 'app'
+        ? 'Votre compte courant affiche aujourd\'hui ' + argent(soldeCompte('courant')) + ' dans EcoFolio. L\'historique importé vient se placer derrière ce solde, qui ne bouge pas.'
+        : 'Indiquez le solde réel de votre compte courant aujourd\'hui : c\'est lui qui fait foi, l\'historique se cale dessus.'}</p>
+    <div class="deux-col" style="max-width:520px">
+      <div class="champ"><label for="imp-solde">Solde du compte courant aujourd'hui</label>
+        <input id="imp-solde" inputmode="decimal" value="${nombre(solde, 2)}" ${E && retourImport === 'app' ? 'disabled' : ''}></div>
+      <div class="champ"><label>Opérations importées</label>
+        <div style="padding:9px 0">${ops.length} opérations · ${argent(total, true)}</div></div>
+    </div>
+    ${Math.abs(ecart) >= 0.01 ? `
+      <p class="note alerte" style="margin-top:4px">Entre le ${dateCourte(fin)} et aujourd'hui${jours > 0 ? ` (${jours} jour${jours > 1 ? 's' : ''})` : ''},
+        <strong>${argent(Math.abs(ecart))}</strong> ${ecart < 0 ? 'ont quitté le compte' : 'sont arrivés sur le compte'} sans être expliqués par vos relevés.</p>
+      <div class="types" style="grid-template-columns:1fr 1fr;max-width:520px" id="imp-correction">
+        <button type="button" data-corr="releve" aria-pressed="${IMP.correction === 'releve'}">J'ajoute le relevé manquant</button>
+        <button type="button" data-corr="ajustement" aria-pressed="${IMP.correction === 'ajustement'}">Enregistrer un ajustement</button>
+      </div>
+      <p class="discret">${IMP.correction === 'releve'
+        ? `Ajoutez le relevé du ${dateCourte(decalerJours(fin, 1))} à aujourd'hui, puis revenez ici : l'écart devrait tomber à zéro.`
+        : `Une ligne « Opérations non importées » de ${argent(ecart, true)} sera créée au ${dateCourte(decalerJours(fin, 1))}, en « Non catégorisé ».
+           Votre solde restera juste, et ce trou restera visible dans les graphiques au lieu d'être noyé dans vos moyennes.`}</p>`
+      : fin ? '<p class="discret">Le solde annoncé correspond exactement à la clôture du dernier relevé : rien ne manque.</p>' : ''}
+    <div class="actions-tiroir" style="margin-top:18px">
+      <button class="btn" id="imp-valider" style="flex:0 0 auto">${retourImport === 'app' ? 'Importer dans mes comptes' : 'Créer mes comptes avec cet historique'}</button>
+      <button class="btn btn-sec" id="imp-annuler">Annuler</button>
+    </div>
+    <div id="imp-erreur" class="erreur cache" style="margin-top:12px"></div></div>`;
+}
+
+function brancherImport() {
+  const z = $('#imp-corps');
+  if ($('#imp-autres')) $('#imp-autres').onclick = () => { IMP = null; rendreImport(); };
+  z.querySelectorAll('[data-affect]').forEach(s => s.onchange = () => {
+    IMP.affectation[s.dataset.affect] = s.value; IMP.solde = soldeProposeImport(); rendreImport();
+  });
+  z.querySelectorAll('[data-cat-tiers]').forEach(s => s.onchange = () => {
+    IMP.cats[s.dataset.catTiers] = s.value; rendreImport();
+  });
+  z.querySelectorAll('[data-rec]').forEach(c => c.onchange = () => { IMP.garder[c.dataset.rec] = c.checked; });
+  z.querySelectorAll('[data-budgetImp], [data-budget-imp]').forEach(el => el.onchange = () => {
+    IMP.budgets[el.dataset.budgetImp] = lireNombre(el.value);
+  });
+  if ($('#imp-solde')) $('#imp-solde').onchange = e => { IMP.solde = lireNombre(e.target.value); rendreImport(); };
+  if ($('#imp-correction')) $('#imp-correction').querySelectorAll('button').forEach(b => b.onclick = () => {
+    IMP.correction = b.dataset.corr; rendreImport();
+  });
+  if ($('#imp-annuler')) $('#imp-annuler').onclick = fermerImport;
+  if ($('#imp-valider')) $('#imp-valider').onclick = appliquerImport;
+}
+
+/* ── Application à l'état du module ─────────────────────────────────────── */
+function appliquerImport() {
+  const ops = opsImport();
+  if (!ops.length) { const z = $('#imp-erreur'); z.textContent = 'Aucune opération à importer.'; z.classList.remove('cache'); return; }
+
+  const neuf = !E;
+  if (neuf) {
+    E = {
+      version: 1, creeLe: ops[0].date, utilisateur: UTILISATEUR,
+      comptes: { courant: { soldeInitial: 0 }, invest: { soldeInitial: 0 } },
+      operations: [], programmees: [], dettes: [], objectifs: [], budgets: {}, regles: {}, ignorees: [],
+    };
+  }
+  E.regles = E.regles || {};
+  E.creeLe = [E.creeLe, ops[0].date].filter(Boolean).sort()[0];
+
+  // 1. Les corrections de catégorie deviennent des règles : elles vaudront aussi pour l'avenir.
+  // « inconnu » n'est pas une décision : l'enregistrer comme règle figerait ces tiers
+  // et les empêcherait d'être reconnus plus tard, dictionnaire enrichi.
+  Object.entries(IMP.cats).forEach(([cle, cat]) => { if (cle && cat && cat !== 'inconnu') E.regles[cle] = cat; });
+
+  // 2. Les opérations, dédoublonnées contre ce qui est déjà en base.
+  const connues = new Set(E.operations.map(o => `${o.compte}|${o.date}|${arrondi(o.montant)}|${(o.libelle || '').slice(0, 40)}`));
+  let ajoutees = 0, somme = 0;
+  ops.forEach(o => {
+    const cle = `${o.compte}|${o.date}|${arrondi(o.montant)}|${o.libelle.slice(0, 40)}`;
+    if (connues.has(cle)) return;
+    connues.add(cle);
+    E.operations.push({
+      id: uid(), date: o.date, compte: o.compte, montant: arrondi(o.montant),
+      libelle: o.libelle.slice(0, 120), categorie: IMP.cats[o.tiers] || 'inconnu',
+      tiers: o.tiers, importe: true,
+    });
+    ajoutees++; somme += o.montant;
+  });
+
+  // 3. L'écart entre le dernier relevé et aujourd'hui, rendu visible plutôt qu'absorbé.
+  const dernier = dernierReleveCourant();
+  const solde = IMP.solde == null ? (dernier ? dernier.solde_cloture : 0) : IMP.solde;
+  const ecart = ecartImport();
+  if (dernier && Math.abs(ecart) >= 0.01 && IMP.correction === 'ajustement') {
+    E.operations.push({
+      id: uid(), date: decalerJours(dernier.fin, 1), compte: 'courant', montant: ecart,
+      libelle: 'Opérations non importées', categorie: 'inconnu', ajustement: true,
+    });
+    somme += ecart;
+  }
+
+  // 4. Le solde initial se déduit du solde d'aujourd'hui : le relevé donne l'histoire,
+  //    l'utilisateur donne le point d'arrivée.
+  if (neuf) E.comptes.courant.soldeInitial = arrondi(solde - somme);
+  else E.comptes.courant.soldeInitial = arrondi(E.comptes.courant.soldeInitial - somme);
+
+  // 5. Les récurrences cochées deviennent des opérations programmées, à partir de demain :
+  //    les mois passés sont déjà dans l'historique importé, il ne faut pas les recréer.
+  let programmees = 0;
+  (IMP.p.recurrences || []).forEach(r => {
+    if (!IMP.garder[r.cle]) return;
+    const cat = IMP.cats[r.cle] || 'inconnu';
+    E.programmees.push({
+      id: uid(), libelle: r.libelle.slice(0, 60) || r.cle, sens: r.sens,
+      categorie: cat, compte: 'courant', montant: arrondi(r.montant), jour: r.jour,
+      debut: decalerJours(AUJ, 1), actif: true,
+    });
+    programmees++;
+  });
+
+  // 6. Budgets : seulement pour les catégories qui ne sont pas déjà programmées.
+  const catsProg = new Set(E.programmees.map(r => r.categorie));
+  Object.entries(IMP.budgets).forEach(([c, v]) => {
+    if (v > 0 && CATEGORIES[c] && !catsProg.has(c)) E.budgets[c] = arrondi(v);
+  });
+
+  sauver();
+  IMP = null;
+  if (retourImport === 'app') {
+    $('#import').classList.add('cache'); $('#app').classList.remove('cache');
+    posterEcheances(); rafraichir();
+  } else {
+    $('#import').classList.add('cache');
+    demarrer();
+  }
+  toast(`${ajoutees} opérations importées${programmees ? `, ${programmees} opérations programmées` : ''}`);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
    TIROIRS DE SAISIE
    ════════════════════════════════════════════════════════════════════════ */
 function ouvrirTiroir(html) {
@@ -2165,6 +2645,8 @@ function tiroirBudgets() {
 
 /* ── Boutons d'en-tête ─────────────────────────────────── */
 $('#btn-operation').onclick = () => tiroirOperation({ compte: ongletActif === 'comptes' ? compteVu : 'courant' });
+$('#btn-import').onclick = () => ouvrirImport('app');
+$('#imp-fermer').onclick = fermerImport;
 $('#btn-reinit').onclick = async () => {
   if (!confirm('Effacer toutes les données du module Budget et comptes et relancer la configuration ? Le compte-titres n\'est pas concerné.')) return;
   try {
@@ -2177,7 +2659,7 @@ $('#btn-deconnexion').onclick = async () => { if (enAttente) await envoyer(); en
 
 /* ── Démarrage ─────────────────────────────────────────── */
 function ecranEtat(titre, texte, actions = '') {
-  ['#app', '#assistant'].forEach(s => $(s).classList.add('cache')); $('#ecran-etat').classList.remove('cache');
+  ['#app', '#assistant', '#import'].forEach(s => $(s).classList.add('cache')); $('#ecran-etat').classList.remove('cache');
   $('#etat-titre').textContent = titre; $('#etat-texte').textContent = texte; $('#etat-actions').innerHTML = actions;
 }
 async function lancer() {
