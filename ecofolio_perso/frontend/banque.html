@@ -118,7 +118,29 @@
   .vide { text-align: center; padding: 30px 16px; color: var(--encre-2); }
   .vide p { margin: 0 0 14px; }
   .courbe { position: relative; height: 280px; }
-  .donut { position: relative; height: 220px; }
+  .donut { position: relative; height: 190px; }
+
+  /* Flux du mois : diagramme de flux + deux camemberts côte à côte */
+  .grille-flux { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 1080px) { .grille-flux { grid-template-columns: 1fr; } }
+  .bloc-part h3 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+  .bloc-part .sous-titre { margin-bottom: 8px; }
+  .legende-part { font-size: 13px; margin-top: 10px; }
+  .legende-part div { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; padding: 2px 0; }
+  .legende-part .part { color: var(--encre-2); font-variant-numeric: tabular-nums; }
+
+  /* Simulateur d'intérêts composés */
+  .grille-simu { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 26px; align-items: start; }
+  @media (max-width: 860px) { .grille-simu { grid-template-columns: 1fr; } }
+  .grille-simu input[type=range] { width: 100%; accent-color: var(--foret); padding: 0; border: none; background: none; }
+  .grille-simu .champ label { display: flex; flex-direction: row; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .grille-simu .champ label strong { color: var(--encre); font-weight: 600; }
+
+  /* Accroche du simulateur sur la synthèse */
+  .accroche { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 18px; align-items: center; }
+  @media (max-width: 720px) { .accroche { grid-template-columns: 1fr; } }
+  .accroche .chiffre { font-family: 'IBM Plex Serif', serif; font-size: 30px; line-height: 1.1; color: var(--invest); }
+  .accroche .mini { height: 92px; }
 
   /* ── Synthèse : les deux comptes ───────────────────────── */
   .comptes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 18px; margin-bottom: 18px; }
@@ -319,12 +341,14 @@
       <button role="tab" data-onglet="comptes">Comptes</button>
       <button role="tab" data-onglet="budget">Budget</button>
       <button role="tab" data-onglet="dettes">Dettes</button>
+      <button role="tab" data-onglet="simulateur">Simulateur</button>
     </nav>
 
     <div data-vue="synthese"></div>
     <div data-vue="comptes" class="cache"></div>
     <div data-vue="budget" class="cache"></div>
     <div data-vue="dettes" class="cache"></div>
+    <div data-vue="simulateur" class="cache"></div>
   </main>
 </section>
 
@@ -1114,7 +1138,7 @@ function ouvrirOnglet(nom) {
   ongletActif = nom;
   document.querySelectorAll('nav.onglets button').forEach(b => b.setAttribute('aria-selected', b.dataset.onglet === nom));
   document.querySelectorAll('[data-vue]').forEach(v => v.classList.toggle('cache', v.dataset.vue !== nom));
-  ({ synthese: vueSynthese, comptes: vueComptes, budget: vueBudget, dettes: vueDettes })[nom]();
+  ({ synthese: vueSynthese, comptes: vueComptes, budget: vueBudget, dettes: vueDettes, simulateur: vueSimulateur })[nom]();
 }
 
 function afficherReleve() {
@@ -1139,6 +1163,34 @@ function graphique(id, config) {
   graphiques[id] = new Chart(el, config);
 }
 const axeEuros = { ticks: { callback: v => argent0(v) }, grid: { color: '#EDF0EC' }, border: { display: false } };
+
+/* ════════════════════════════════════════════════════════════════════════
+   SIMULATEUR D'INTÉRÊTS COMPOSÉS
+   Versements en fin de mois, intérêts capitalisés mensuellement. Le taux saisi
+   est annuel : on utilise son équivalent mensuel géométrique (1+t)^(1/12)-1,
+   pour qu'un taux de 5 % produise réellement 5 % sur douze mois.
+   ════════════════════════════════════════════════════════════════════════ */
+let sim = null;   // initialisé à la première ouverture, à partir des comptes réels
+
+function simDefauts() {
+  const plan = planMensuel();
+  const mensuel = plan.virementInvest || Math.max(0, Math.round(plan.capacite / 2 / 10) * 10);
+  return {
+    initial: Math.round(soldeCompte('invest')), mensuel, annees: 20, taux: 5, inflation: 2, reel: false,
+  };
+}
+
+function projeterEpargne({ initial, mensuel, annees, taux }) {
+  const r = Math.pow(1 + taux / 100, 1 / 12) - 1, n = Math.round(annees * 12);
+  const serie = [{ mois: 0, verse: initial, total: initial }];
+  let total = initial, verse = initial;
+  for (let k = 1; k <= n; k++) {
+    total = total * (1 + r) + mensuel;
+    verse += mensuel;
+    if (k % 12 === 0 || k === n) serie.push({ mois: k, verse: arrondi(verse), total: arrondi(total) });
+  }
+  return { serie, verse: arrondi(verse), total: arrondi(total), interets: arrondi(total - verse), r, n };
+}
 
 /* ═════════════ Onglet 1 : Synthèse ═════════════ */
 function vueSynthese() {
@@ -1201,6 +1253,8 @@ function vueSynthese() {
       <div><div class="nom">Courant dans 30 jours</div><div class="valeur ${classe(soldePrevu)}">${argent0(soldePrevu)}</div><div class="aide">solde actuel et opérations programmées, hors dépenses courantes</div></div>
     </div>
 
+    <div class="panneau" id="accroche-simu"></div>
+
     <div class="grille-large">
       <div class="panneau">
         <div class="tete-panneau"><div><h2>Objectifs d'épargne</h2>
@@ -1221,6 +1275,7 @@ function vueSynthese() {
     </div>`;
 
   afficherObjectifs(plan, constatee);
+  afficherAccrocheSimu(plan);
   vue.querySelectorAll('[data-voir]').forEach(b => b.onclick = () => { compteVu = b.dataset.voir; ouvrirOnglet('comptes'); });
   vue.querySelectorAll('[data-virer]').forEach(b => b.onclick = () => tiroirOperation({ type: 'VIREMENT', compte: b.dataset.virer }));
   $('#btn-objectif').onclick = () => tiroirObjectif();
@@ -1258,6 +1313,126 @@ function afficherObjectifs(plan, constatee) {
       ${totalBesoin > capacite ? `Il manque ${argent0(totalBesoin - capacite)} : repousser une échéance ou réduire un budget rééquilibre le plan.` : `Il reste ${argent0(capacite - totalBesoin)} de marge.`}</p>`;
   zone.querySelectorAll('[data-reserver]').forEach(b => b.onclick = () => tiroirReserver(b.dataset.reserver));
   zone.querySelectorAll('[data-modif-obj]').forEach(b => b.onclick = () => tiroirObjectif(b.dataset.modifObj));
+}
+
+/* Accroche : ce que deviendrait l'épargne au rythme actuel, en petit, avec un lien vers le simulateur. */
+function afficherAccrocheSimu(plan) {
+  const zone = $('#accroche-simu'), d = sim || simDefauts();
+  const p = projeterEpargne({ initial: d.initial, mensuel: d.mensuel, annees: d.annees, taux: d.taux });
+  zone.innerHTML = `
+    <div class="accroche">
+      <div>
+        <h2>Ce que votre épargne peut devenir</h2>
+        <p class="sous-titre" style="margin-bottom:12px">${d.initial > 0 ? `${argent0(d.initial)} déjà placés` : 'En partant de zéro'}${d.mensuel > 0 ? `, ${argent0(d.mensuel)} ajoutés chaque mois` : ''}, à ${pct(d.taux, 0)} par an pendant ${d.annees} ans.</p>
+        <div class="chiffre">${argent0(p.total)}</div>
+        <p class="discret" style="margin:4px 0 14px">dont ${argent0(p.interets)} d'intérêts, pour ${argent0(p.verse)} réellement versés${p.verse > 0 ? ` — soit ${nombre(p.total / p.verse, 1)} fois votre effort` : ''}.</p>
+        <button class="btn btn-sec" id="btn-vers-simu">Ouvrir le simulateur</button>
+      </div>
+      <div class="mini"><canvas id="c-accroche"></canvas></div>
+    </div>
+    <p class="discret" style="margin:14px 0 0">${d.mensuel > 0 ? '' : 'Aucun virement mensuel vers l\'investissement n\'est programmé : le simulateur part de votre capacité d\'épargne. '}Hypothèse de rendement, pas une promesse : un placement peut baisser.</p>`;
+  $('#btn-vers-simu').onclick = () => ouvrirOnglet('simulateur');
+  graphique('c-accroche', {
+    type: 'line',
+    data: { labels: p.serie.map(x => x.mois / 12), datasets: [
+      { data: p.serie.map(x => x.total), borderColor: '#2B5680', backgroundColor: '#2B568022', fill: 'origin', pointRadius: 0, borderWidth: 2, tension: .25 },
+      { data: p.serie.map(x => x.verse), borderColor: '#9CC5A9', pointRadius: 0, borderWidth: 1.5, borderDash: [4, 3] },
+    ] },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false, beginAtZero: true } } },
+  });
+}
+
+/* ═════════════ Onglet 5 : Simulateur ═════════════ */
+function vueSimulateur() {
+  const vue = $('[data-vue="simulateur"]');
+  if (!sim) sim = simDefauts();
+  const p = projeterEpargne(sim);
+  // Valeur « en euros d'aujourd'hui » : on retire l'inflation du résultat nominal.
+  const deflateur = Math.pow(1 + sim.inflation / 100, sim.annees);
+  const aff = v => argent0(sim.reel ? v / deflateur : v);
+  const partInterets = p.total > 0 ? p.interets / p.total * 100 : 0;
+  const plan = planMensuel();
+
+  vue.innerHTML = `
+    <div class="panneau">
+      <h2>Simulateur d'intérêts composés</h2>
+      <p class="sous-titre">Ce que deviennent un capital de départ et des versements réguliers, si leur rendement est réinvesti. Les chiffres sont préremplis avec vos comptes.</p>
+      <div class="grille-simu">
+        <div>
+          <div class="champ"><label for="si-initial">Capital de départ (€)</label><input id="si-initial" inputmode="decimal" value="${sim.initial}"></div>
+          <div class="champ"><label for="si-mensuel">Versement mensuel (€)</label><input id="si-mensuel" inputmode="decimal" value="${sim.mensuel}"></div>
+          <div class="champ"><label for="si-annees"><span>Durée</span><strong>${sim.annees} ans</strong></label><input id="si-annees" type="range" min="1" max="40" step="1" value="${sim.annees}"></div>
+          <div class="champ"><label for="si-taux"><span>Rendement annuel</span><strong>${pct(sim.taux, 1)}</strong></label><input id="si-taux" type="range" min="0" max="12" step="0.5" value="${sim.taux}"></div>
+          <div class="champ"><label for="si-inflation"><span>Inflation supposée</span><strong>${pct(sim.inflation, 1)}</strong></label><input id="si-inflation" type="range" min="0" max="6" step="0.5" value="${sim.inflation}"></div>
+          <label class="case"><input type="checkbox" id="si-reel" ${sim.reel ? 'checked' : ''}> Afficher en euros d'aujourd'hui</label>
+          <div class="puces" style="margin-top:14px">
+            <button type="button" data-preset="prudent">Prudent · 3 %</button>
+            <button type="button" data-preset="equilibre">Équilibré · 5 %</button>
+            <button type="button" data-preset="actions">Actions · 7 %</button>
+          </div>
+          ${plan.virementInvest ? `<p class="discret" style="margin-top:14px">Votre virement mensuel programmé est de ${argent(plan.virementInvest)}.</p>` : ''}
+        </div>
+        <div>
+          <div class="resultat" style="margin:0 0 16px">
+            <div><span>Au bout de ${sim.annees} ans</span><strong style="color:var(--invest)">${aff(p.total)}</strong><span>${sim.reel ? 'en euros d\'aujourd\'hui' : 'en euros courants'}</span></div>
+            <div><span>Versé par vous</span><strong>${aff(p.verse)}</strong><span>${argent0(sim.mensuel)} × ${sim.annees * 12} mois${sim.initial ? ` + ${argent0(sim.initial)}` : ''}</span></div>
+            <div><span>Produit par les intérêts</span><strong class="gain">${aff(p.interets)}</strong><span>${pct(partInterets, 0)} du capital final</span></div>
+          </div>
+          <div class="courbe"><canvas id="c-simu"></canvas></div>
+        </div>
+      </div>
+      <p class="note" style="margin-top:16px">${phraseSimu(p, sim)}</p>
+      <p class="discret" style="margin-top:12px">Versements en fin de mois, intérêts réinvestis chaque mois, rendement constant. Le taux saisi est annuel : un rendement de 5 % par an produit exactement 5 % sur douze mois, et non 5 % ÷ 12 chaque mois — d'où un résultat légèrement inférieur à celui des calculatrices qui divisent le taux par douze. La réalité ne l'est pas : un placement en actions fait ce rendement <em>en moyenne</em>, avec des années à −30 %. Ni fiscalité ni frais ne sont déduits ; comptez 0,5 à 2 % de frais annuels selon le support, qui se retirent du rendement saisi.</p>
+    </div>
+
+    <div class="panneau">
+      <h2>Le coût d'attendre</h2>
+      <p class="sous-titre">Même versement, même rendement, en commençant plus tard.</p>
+      <div class="defile"><table>
+        <thead><tr><th>Si vous commencez</th><th class="num">Durée</th><th class="num">Versé</th><th class="num">Capital final</th><th class="num">Écart</th></tr></thead>
+        <tbody>${[0, 2, 5, 10].filter(d => sim.annees - d >= 1).map(retard => {
+          const q = projeterEpargne({ ...sim, annees: sim.annees - retard });
+          return `<tr><td>${retard === 0 ? 'maintenant' : `dans ${retard} an${retard > 1 ? 's' : ''}`}</td>
+            <td class="num">${sim.annees - retard} ans</td><td class="num discret">${aff(q.verse)}</td>
+            <td class="num">${aff(q.total)}</td>
+            <td class="num ${retard ? 'perte' : ''}">${retard ? argent0(-(p.total - q.total) / (sim.reel ? deflateur : 1)) : '—'}</td></tr>`;
+        }).join('')}</tbody></table></div>
+    </div>`;
+
+  const relire = () => {
+    sim.initial = Math.max(0, lireNombre($('#si-initial').value));
+    sim.mensuel = Math.max(0, lireNombre($('#si-mensuel').value));
+    sim.annees = +$('#si-annees').value; sim.taux = +$('#si-taux').value;
+    sim.inflation = +$('#si-inflation').value; sim.reel = $('#si-reel').checked;
+    vueSimulateur();
+  };
+  ['#si-initial', '#si-mensuel'].forEach(id => $(id).addEventListener('change', relire));
+  ['#si-annees', '#si-taux', '#si-inflation', '#si-reel'].forEach(id => $(id).addEventListener('input', relire));
+  vue.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => {
+    sim.taux = { prudent: 3, equilibre: 5, actions: 7 }[b.dataset.preset]; vueSimulateur();
+  });
+
+  graphique('c-simu', {
+    type: 'line',
+    data: { labels: p.serie.map(x => x.mois / 12 + ' ans'), datasets: [
+      { label: 'Vos versements', data: p.serie.map(x => arrondi(x.verse / (sim.reel ? deflateur : 1))), borderColor: '#4F9A74', backgroundColor: '#9CC5A955', fill: 'origin', pointRadius: 0, borderWidth: 2, tension: .2 },
+      { label: 'Avec les intérêts', data: p.serie.map(x => arrondi(x.total / (sim.reel ? deflateur : 1))), borderColor: '#2B5680', backgroundColor: '#2B568033', fill: '-1', pointRadius: 0, borderWidth: 2, tension: .2 },
+    ] },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.y)}` } } },
+      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 9 } }, y: { ...axeEuros, beginAtZero: true } } },
+  });
+}
+
+/* Une phrase qui dit ce que le graphique montre, calculée et non décorative. */
+function phraseSimu(p, d) {
+  if (d.mensuel <= 0 && d.initial <= 0) return 'Indiquez un capital de départ ou un versement mensuel pour voir l\'effet.';
+  if (d.taux <= 0) return 'À rendement nul, l\'argent ne fait que s\'accumuler : le capital final est exactement la somme versée. C\'est la situation d\'un compte courant, inflation en plus.';
+  const anneesEffort = d.mensuel > 0 ? p.interets / (d.mensuel * 12) : null;
+  return `Sur ${d.annees} ans, les intérêts rapportent ${argent0(p.interets)}, soit ${pct(p.interets / Math.max(p.verse, 1) * 100, 0)} de ce que vous avez versé`
+    + (anneesEffort ? ` — l'équivalent de ${nombre(anneesEffort, 1)} années de versements obtenues sans rien verser.` : '.')
+    + ` Un euro placé aujourd'hui en vaut ${nombre(Math.pow(1 + d.taux / 100, d.annees), 2)} au terme ; le même euro versé la dernière année n'a pas le temps de travailler. C'est la durée, plus que le montant, qui fait le résultat.`;
 }
 
 /* ═════════════ Onglet 2 : Comptes ═════════════ */
@@ -1395,8 +1570,22 @@ function vueBudget() {
 
     <div class="panneau">
       <h2>D'où vient l'argent, où il va</h2>
-      <p class="sous-titre">Les entrées du mois à gauche, leur destination à droite. Les virements entre vos deux comptes n'apparaissent qu'au titre de l'épargne placée.</p>
-      <div class="defile" id="sankey"></div>
+      <p class="sous-titre">Les entrées du mois à gauche, leur destination à droite ; à côté, le poids de chaque poste. Les virements entre vos deux comptes n'apparaissent qu'au titre de l'épargne placée.</p>
+      <div class="grille-flux">
+        <div class="defile" id="sankey"></div>
+        <div class="bloc-part">
+          <h3>Répartition des sorties</h3>
+          <p class="sous-titre">${argent0(F.sorties)} dépensés</p>
+          <div class="donut"><canvas id="c-part-sorties"></canvas></div>
+          <div class="legende-part" id="leg-sorties"></div>
+        </div>
+        <div class="bloc-part">
+          <h3>Répartition des entrées</h3>
+          <p class="sous-titre">${argent0(F.entrees)} reçus</p>
+          <div class="donut"><canvas id="c-part-entrees"></canvas></div>
+          <div class="legende-part" id="leg-entrees"></div>
+        </div>
+      </div>
     </div>
 
     <div class="grille-large">
@@ -1442,6 +1631,8 @@ function vueBudget() {
     filtre = { mois: moisBudget, sens: 'tous', texte: '', categorie: tr.dataset.cat }; compteVu = 'courant'; ouvrirOnglet('comptes');
   });
   dessinerSankey(F, entreesCat);
+  camembert('c-part-sorties', 'leg-sorties', lignesCat.filter(l => l.reel > 0).map(l => ({ cle: l.c, v: l.reel })), 'Aucune dépense ce mois-ci.');
+  camembert('c-part-entrees', 'leg-entrees', entreesCat.map(l => ({ cle: l.c, v: l.v })), 'Aucune entrée ce mois-ci.');
 
   const mois6 = Array.from({ length: 6 }, (_, k) => decalerMois(moisDe(AUJ), k - 5)).filter(c => c >= premier);
   const f6 = mois6.map(fluxMois);
@@ -1455,6 +1646,29 @@ function vueBudget() {
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.y)}` } } },
       scales: { x: { grid: { display: false } }, y: axeEuros } },
   });
+}
+
+/* Camembert d'une répartition par catégorie, avec sa légende chiffrée.
+   Au-delà de six postes, la queue est regroupée : un camembert à douze parts ne se lit pas. */
+function camembert(idCanvas, idLegende, parts, messageVide) {
+  const zone = $('#' + idLegende), total = parts.reduce((s, p) => s + p.v, 0);
+  graphiques[idCanvas]?.destroy();
+  if (!parts.length || total <= 0) {
+    document.getElementById(idCanvas).closest('.donut').innerHTML = `<div class="vide" style="padding:40px 0">${messageVide}</div>`;
+    zone.innerHTML = ''; return;
+  }
+  const tri = [...parts].sort((a, b) => b.v - a.v);
+  const tete = tri.slice(0, 6).map(p => ({ nom: CATEGORIES[p.cle].nom, v: p.v, couleur: CATEGORIES[p.cle].couleur }));
+  const reste = tri.slice(6).reduce((s, p) => s + p.v, 0);
+  if (reste > 0) tete.push({ nom: `Autres (${tri.length - 6})`, v: reste, couleur: '#C3CCC5' });
+  graphique(idCanvas, {
+    type: 'doughnut',
+    data: { labels: tete.map(p => p.nom), datasets: [{ data: tete.map(p => arrondi(p.v)), backgroundColor: tete.map(p => p.couleur), borderColor: '#FFFFFF', borderWidth: 2, hoverOffset: 6 }] },
+    options: { maintainAspectRatio: false, cutout: '58%',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${argent(c.parsed)} · ${pct(c.parsed / total * 100, 0)}` } } } },
+  });
+  const partTexte = v => v / total * 100 < 0.5 ? '< 1 %' : pct(v / total * 100, 0);
+  zone.innerHTML = tete.map(p => `<div><i class="pastille" style="background:${p.couleur}"></i><span>${echap(p.nom)}</span><span class="part">${partTexte(p.v)} · ${argent0(p.v)}</span></div>`).join('');
 }
 
 /* Diagramme de flux en trois colonnes : entrées → mois → destinations. */
