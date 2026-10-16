@@ -14,12 +14,13 @@ navigateur le fait relire à l'utilisateur, et seul l'enregistrement de l'état
 écrit quoi que ce soit. Les PDF ne sont pas conservés.
 """
 
+import json
 import logging
 import os
 import tempfile
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
 from core.banque_db import BanqueDB, ConflitVersion
@@ -88,6 +89,7 @@ def _date(d) -> Optional[str]:
 @router.post("/banque/releves")
 async def lire_releves(
     fichiers: List[UploadFile] = File(...),
+    regles: Optional[str] = Form(None),
     user: str = Depends(utilisateur_courant),
 ):
     """Lit des relevés PDF et renvoie ce qui a été compris, sans rien enregistrer.
@@ -97,6 +99,17 @@ async def lire_releves(
     proposition d'import : opérations classées, tiers regroupés, récurrences et
     budgets déduits.
     """
+    # Les corrections déjà faites par l'utilisateur : un commerçant classé une fois
+    # l'est pour toujours, y compris dans les relevés importés plus tard.
+    apprises: Dict[str, str] = {}
+    if regles:
+        try:
+            brut = json.loads(regles)
+            if isinstance(brut, dict):
+                apprises = {str(k): str(v) for k, v in brut.items() if k and v}
+        except (ValueError, TypeError):
+            logger.warning("règles de catégorisation illisibles, ignorées")
+
     if len(fichiers) > NB_MAX_FICHIERS:
         raise HTTPException(400, f"{NB_MAX_FICHIERS} relevés au maximum par envoi.")
 
@@ -142,7 +155,7 @@ async def lire_releves(
         lus.append({"nom": f.filename, "banque": rel.banque,
                     "comptes": comptes, "anomalies": rel.anomalies})
 
-    a = analyser(operations, periodes) if operations else None
+    a = analyser(operations, periodes, apprises) if operations else None
     proposition = None
     if a:
         proposition = {
@@ -155,10 +168,14 @@ async def lire_releves(
                 "cle": t.cle, "libelle": t.libelle, "categorie": t.categorie,
                 "confiance": t.confiance, "sens": t.sens, "total": t.total,
                 "occurrences": t.occurrences, "mois": t.mois,
+                # De quoi proposer une opération programmée même pour un tiers que la
+                # détection automatique n'a pas retenu : l'utilisateur peut le vouloir.
+                "montant_type": abs(t.montant_type), "jour_type": t.jour_type,
+                "stabilite": t.stabilite_montant, "ecart_jour": t.ecart_jour,
             } for t in a["tiers"]],
             "operations": [{
                 "date": _date(o.date), "libelle": o.libelle, "montant": round(o.montant, 2),
-                "tiers": categoriser(o.libelle, o.montant).tiers,
+                "tiers": categoriser(o.libelle, o.montant, apprises).tiers,
             } for o in sorted(operations, key=lambda o: o.date)],
         }
     return {"fichiers": lus, "proposition": proposition}

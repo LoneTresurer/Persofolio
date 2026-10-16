@@ -122,7 +122,11 @@
 
   /* Flux du mois : diagramme de flux + deux camemberts côte à côte */
   .grille-flux { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-  @media (max-width: 1080px) { .grille-flux { grid-template-columns: 1fr; } }
+  @media (max-width: 1080px) {
+    .grille-flux { grid-template-columns: 1fr; }
+    .sankey { min-width: 520px; }          /* empilé : on retrouve la largeur, et le défilement */
+    #sankey { overflow-x: auto; }
+  }
   .bloc-part h3 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
   .bloc-part .sous-titre { margin-bottom: 8px; }
   .legende-part { font-size: 13px; margin-top: 10px; }
@@ -202,9 +206,13 @@
   select.cat-inline:hover, select.cat-inline:focus { border-color: var(--filet); background: var(--carte); }
 
   /* ── Flux du mois (Sankey) ─────────────────────────────── */
-  .sankey { width: 100%; min-width: 560px; display: block; }
-  .sankey text { font-size: 12.5px; fill: var(--encre); }
-  .sankey text.m { fill: var(--encre-2); font-size: 12px; }
+  /* Le diagramme s'ajuste à la largeur de sa colonne : une barre de défilement
+     sous le graphique le désaligne des camemberts posés à côté. */
+  .sankey { width: 100%; display: block; }
+  /* Tailles exprimées dans le viewBox : le SVG étant réduit pour tenir dans sa
+     colonne, elles sont choisies plus grandes qu'à l'écran. */
+  .sankey text { font-size: 16px; fill: var(--encre); }
+  .sankey text.m { fill: var(--encre-2); font-size: 14px; }
   .sankey path { opacity: .32; transition: opacity .15s; }
   .sankey path:hover { opacity: .6; }
 
@@ -1500,6 +1508,19 @@ function vueComptes() {
       <div class="courbe"><canvas id="c-solde"></canvas></div>
     </div>
     <div class="panneau">
+      <div class="tete-panneau"><div><h2>Opérations programmées</h2><p class="sous-titre">Enregistrées automatiquement chaque mois au jour indiqué.</p></div>
+        <button class="mini-btn" id="btn-prog">Programmer une opération</button></div>
+      <div class="defile">${progs.length ? `<table><thead><tr><th>Libellé</th><th>Catégorie</th><th>Jour</th><th class="num">Montant</th><th></th></tr></thead><tbody>
+        ${progs.map(r => {
+          const signe = r.type === 'VIREMENT' ? (r.versCompte === compteVu ? 1 : -1) : r.sens === 'ENTREE' ? 1 : -1;
+          const solde = r.detteId && !r.actif;
+          return `<tr><td>${echap(r.libelle)}${solde ? ' <span class="etiquette">prêt soldé</span>' : !r.actif ? ' <span class="etiquette">suspendue</span>' : ''}</td>
+          <td>${CATEGORIES[r.categorie].nom}</td><td>le ${r.jour}</td>
+          <td class="num ${signe > 0 ? 'gain' : ''}">${signe > 0 ? '+' : '−'}${argent(r.montant)}</td>
+          <td class="num">${r.detteId ? '<span class="discret">géré dans Dettes</span>' : `<button class="mini-btn" data-modif-prog="${r.id}">Modifier</button>`}</td></tr>`;
+        }).join('')}</tbody></table>` : '<div class="vide"><p>Aucune opération programmée sur ce compte.</p></div>'}</div>
+    </div>
+    <div class="panneau">
       <h2>Opérations</h2>
       <div class="filtres" style="margin-top:10px">
         <select class="saisie" id="f-mois" aria-label="Mois"><option value="tous">Tous les mois</option>${moisDispo.map(c => `<option value="${c}" ${c === f.mois ? 'selected' : ''}>${libelleMois(c)}</option>`).join('')}</select>
@@ -1522,19 +1543,6 @@ function vueComptes() {
           <td class="num"><button class="mini-btn" data-modif="${o.id}">Modifier</button></td></tr>`).join('')}</tbody></table>
         ${visibles.length > limiteOps ? `<div style="text-align:center;margin-top:12px"><button class="btn btn-sec" id="plus-ops">Afficher les ${Math.min(80, visibles.length - limiteOps)} suivantes</button></div>` : ''}`
         : `<div class="vide"><p>${ops.length ? 'Aucune opération ne correspond à ces filtres.' : 'Aucune opération sur ce compte pour l\'instant.'}</p>${ops.length ? '<button class="btn btn-sec" id="f-raz">Effacer les filtres</button>' : ''}</div>`}</div>
-    </div>
-    <div class="panneau">
-      <div class="tete-panneau"><div><h2>Opérations programmées</h2><p class="sous-titre">Enregistrées automatiquement chaque mois au jour indiqué.</p></div>
-        <button class="mini-btn" id="btn-prog">Programmer une opération</button></div>
-      <div class="defile">${progs.length ? `<table><thead><tr><th>Libellé</th><th>Catégorie</th><th>Jour</th><th class="num">Montant</th><th></th></tr></thead><tbody>
-        ${progs.map(r => {
-          const signe = r.type === 'VIREMENT' ? (r.versCompte === compteVu ? 1 : -1) : r.sens === 'ENTREE' ? 1 : -1;
-          const solde = r.detteId && !r.actif;
-          return `<tr><td>${echap(r.libelle)}${solde ? ' <span class="etiquette">prêt soldé</span>' : !r.actif ? ' <span class="etiquette">suspendue</span>' : ''}</td>
-          <td>${CATEGORIES[r.categorie].nom}</td><td>le ${r.jour}</td>
-          <td class="num ${signe > 0 ? 'gain' : ''}">${signe > 0 ? '+' : '−'}${argent(r.montant)}</td>
-          <td class="num">${r.detteId ? '<span class="discret">géré dans Dettes</span>' : `<button class="mini-btn" data-modif-prog="${r.id}">Modifier</button>`}</td></tr>`;
-        }).join('')}</tbody></table>` : '<div class="vide"><p>Aucune opération programmée sur ce compte.</p></div>'}</div>
     </div>`;
 
   vue.querySelectorAll('[data-compte]').forEach(b => b.onclick = () => { compteVu = b.dataset.compte; filtre = { mois: 'tous', sens: 'tous', texte: '', categorie: '' }; vueComptes(); });
@@ -1605,7 +1613,7 @@ function vueBudget() {
       <h2>D'où vient l'argent, où il va</h2>
       <p class="sous-titre">Les entrées du mois à gauche, leur destination à droite ; à côté, le poids de chaque poste. Les virements entre vos deux comptes n'apparaissent qu'au titre de l'épargne placée.</p>
       <div class="grille-flux">
-        <div class="defile" id="sankey"></div>
+        <div id="sankey"></div>
         <div class="bloc-part">
           <h3>Répartition des sorties</h3>
           <p class="sous-titre">${argent0(F.sorties)} dépensés</p>
@@ -1717,9 +1725,9 @@ function dessinerSankey(F, entreesCat) {
     if (F.solde - place > 0.5) destinations.push({ nom: 'Resté sur le courant', v: F.solde - place, couleur: '#1D7A4B' });
   }
   const total = Math.max(sources.reduce((s, n) => s + n.v, 0), destinations.reduce((s, n) => s + n.v, 0));
-  const L = 820, ecart = 8, n = Math.max(sources.length, destinations.length);
-  const H = Math.max(260, n * 40), utile = H - ecart * (n - 1);
-  const X = { g: 190, m: 402, d: 614 }, larg = 12, k = utile / total;
+  const L = 1000, ecart = 8, n = Math.max(sources.length, destinations.length);
+  const H = Math.max(280, n * 44), utile = H - ecart * (n - 1);
+  const X = { g: 230, m: 430, d: 630 }, larg = 12, k = utile / total;
   const empiler = noeuds => { let y = (H - (noeuds.reduce((s, x) => s + x.v * k, 0) + ecart * (noeuds.length - 1))) / 2; noeuds.forEach(x => { x.y = y; x.h = Math.max(2, x.v * k); y += x.h + ecart; }); };
   empiler(sources); empiler(destinations);
   const mH = total * k, mY = (H - mH) / 2;
@@ -1731,9 +1739,20 @@ function dessinerSankey(F, entreesCat) {
   sources.forEach(s => { svg += bande(X.g + larg, s.y, X.m, yM, s.h, s.couleur, `${s.nom} : ${argent(s.v)}`); yM += s.h; });
   yM = mY;
   destinations.forEach(d => { svg += bande(X.m + larg, yM, X.d, d.y, d.h, d.couleur, `${d.nom} : ${argent(d.v)} (${pct(d.v / total * 100, 0)})`); yM += d.h; });
-  const etiquette = (x, y, h, noeud, ancre) => h >= 26
-    ? `<text x="${x}" y="${y + h / 2 - 7}" text-anchor="${ancre}" dominant-baseline="middle">${echap(noeud.nom)}</text><text class="m" x="${x}" y="${y + h / 2 + 8}" text-anchor="${ancre}" dominant-baseline="middle">${argent0(noeud.v)}</text>`
-    : h >= 9 ? `<text x="${x}" y="${y + h / 2}" text-anchor="${ancre}" dominant-baseline="middle">${echap(noeud.nom)} <tspan class="m">${argent0(noeud.v)}</tspan></text>` : '';
+  /* Les libellés sont tronqués d'après la place réellement disponible de leur côté :
+     sans cela, « Remboursements de crédit » dépasse du cadre et se coupe n'importe où.
+     Le nom complet reste accessible au survol, et la légende des camemberts le redonne. */
+  const place = ancre => (ancre === 'end' ? X.g - 12 : L - X.d - larg - 12) / (0.55 * 16);
+  const couper = (nom, ancre) => {
+    const max = Math.floor(place(ancre));
+    return nom.length <= max ? echap(nom) : echap(nom.slice(0, Math.max(3, max - 1)).trimEnd()) + '…';
+  };
+  const etiquette = (x, y, h, noeud, ancre) => {
+    const titre = `<title>${echap(noeud.nom)} : ${argent(noeud.v)}</title>`;
+    if (h >= 32) return `<text x="${x}" y="${y + h / 2 - 8}" text-anchor="${ancre}" dominant-baseline="middle">${couper(noeud.nom, ancre)}${titre}</text><text class="m" x="${x}" y="${y + h / 2 + 9}" text-anchor="${ancre}" dominant-baseline="middle">${argent0(noeud.v)}</text>`;
+    if (h >= 12) return `<text x="${x}" y="${y + h / 2}" text-anchor="${ancre}" dominant-baseline="middle">${couper(noeud.nom, ancre)} <tspan class="m">${argent0(noeud.v)}</tspan>${titre}</text>`;
+    return '';
+  };
   sources.forEach(s => { svg += `<rect x="${X.g}" y="${s.y}" width="${larg}" height="${s.h}" rx="2" fill="${s.couleur}"/>` + etiquette(X.g - 8, s.y, s.h, s, 'end'); });
   destinations.forEach(d => { svg += `<rect x="${X.d}" y="${d.y}" width="${larg}" height="${d.h}" rx="2" fill="${d.couleur}"/>` + etiquette(X.d + larg + 8, d.y, d.h, d, 'start'); });
   svg += `<rect x="${X.m}" y="${mY}" width="${larg}" height="${mH}" rx="2" fill="#15261D"/>`;
@@ -1978,6 +1997,8 @@ async function envoyerReleves(fichiers) {
   zone.innerHTML = `<div class="panneau"><div class="vide"><p>Lecture de ${fichiers.length} relevé${fichiers.length > 1 ? 's' : ''}…</p></div></div>`;
   const form = new FormData();
   [...fichiers].forEach(f => form.append('fichiers', f));
+  // Ce que l'utilisateur a déjà classé : inutile de le lui redemander à chaque relevé.
+  form.append('regles', JSON.stringify((E && E.regles) || {}));
   try {
     const rep = await fetch(API + '/banque/releves', {
       method: 'POST', headers: { Authorization: 'Bearer ' + JETON }, body: form,
@@ -1995,7 +2016,7 @@ async function envoyerReleves(fichiers) {
     IMP = {
       fichiers: data.fichiers, p,
       // Affectation par compte du relevé : le plus fourni devient le compte courant.
-      affectation: {}, cats: {}, garder: {}, budgets: { ...p.budgets },
+      affectation: {}, cats: {}, garder: {}, manuelles: {}, budgets: {},
       solde: null, correction: 'ajustement',
     };
     let principal = null, maxOps = -1;
@@ -2006,7 +2027,8 @@ async function envoyerReleves(fichiers) {
     }));
     if (principal !== null) IMP.affectation[principal] = 'courant';
     p.tiers.forEach(t => { IMP.cats[t.cle] = t.categorie; });
-    p.recurrences.forEach(r => { IMP.garder[r.cle] = r.reguliere; });
+    p.recurrences.forEach(r => { IMP.garder[r.cle] = r.reguliere; IMP.manuelles[r.cle] = false; });
+    IMP.budgets = budgetsImport();
     // Solde proposé : la clôture du relevé le plus récent du compte retenu.
     IMP.solde = soldeProposeImport();
     rendreImport();
@@ -2029,6 +2051,47 @@ function soldeProposeImport() {
   if (!retenus.length) return 0;
   const dernier = retenus.sort((a, b) => (a.fin || '').localeCompare(b.fin || '')).pop();
   return dernier.solde_cloture ?? 0;
+}
+
+/* Récurrences : celles que la détection a trouvées, plus celles que l'utilisateur
+   ajoute lui-même depuis la liste des commerçants. Même forme pour les deux. */
+function recurrencesImport() {
+  const auto = (IMP.p.recurrences || []).map(r => ({ ...r, manuelle: false }));
+  const vues = new Set(auto.map(r => r.cle));
+  const ajoutees = IMP.p.tiers
+    .filter(t => IMP.manuelles[t.cle] && !vues.has(t.cle))
+    .map(t => ({
+      cle: t.cle, libelle: t.libelle, categorie: IMP.cats[t.cle] || t.categorie, sens: t.sens,
+      montant: t.montant_type, jour: t.jour_type, occurrences: t.occurrences, mois: t.mois,
+      reguliere: t.stabilite <= 0.12 && t.ecart_jour <= 4, stabilite: t.stabilite,
+      ecart_jour: t.ecart_jour, manuelle: true,
+    }));
+  return [...auto, ...ajoutees].sort((a, b) => b.montant - a.montant);
+}
+
+/* Tiers qui deviendront des opérations programmées : exclus des budgets, sinon
+   la même dépense serait comptée deux fois dans le plan mensuel. */
+function clesProgrammees() {
+  return new Set(recurrencesImport().filter(r => IMP.garder[r.cle]).map(r => r.cle));
+}
+
+/* Moyenne mensuelle par catégorie, recalculée à chaque reclassement.
+   Même formule que le serveur : seuls les mois civils entièrement couverts comptent. */
+function budgetsImport() {
+  const mois = new Set(IMP.p.mois_complets);
+  if (!mois.size) return {};
+  const exclus = clesProgrammees(), cumul = {};
+  let inconnus = 0;
+  IMP.p.operations.forEach(o => {
+    if (o.montant >= 0 || !mois.has(o.date.slice(0, 7)) || exclus.has(o.tiers)) return;
+    const cat = IMP.cats[o.tiers] || 'inconnu';
+    if (cat === 'inconnu') { inconnus += Math.abs(o.montant); return; }
+    cumul[cat] = (cumul[cat] || 0) + Math.abs(o.montant);
+  });
+  const n = mois.size, res = {};
+  Object.keys(cumul).sort().forEach(c => { res[c] = arrondi(cumul[c] / n); });
+  res.__inconnus = arrondi(inconnus / n);      // montré à part, jamais enregistré comme budget
+  return res;
 }
 
 /* Opérations retenues, avec la catégorie décidée par l'utilisateur. */
@@ -2153,6 +2216,7 @@ function blocAffectation(comptes) {
 }
 
 function blocTiers(p, inconnus, eurosInconnus, eurosTotal) {
+  const auto = new Set((p.recurrences || []).map(r => r.cle));
   const tri = [...p.tiers].sort((a, b) => {
     const ia = IMP.cats[a.cle] === 'inconnu', ib = IMP.cats[b.cle] === 'inconnu';
     return ia !== ib ? (ia ? -1 : 1) : Math.abs(b.total) - Math.abs(a.total);
@@ -2170,7 +2234,8 @@ function blocTiers(p, inconnus, eurosInconnus, eurosTotal) {
         ? `${inconnus.length} commerçants non reconnus, ${argent0(eurosInconnus)} au total. Les ${p.mesure.tiers_a_relire_pour_80pct} premiers en expliquent déjà 80 %.`
         : 'Tout est classé.'}</p>
     <div class="defile" style="max-height:460px;overflow-y:auto">
-      <table><thead><tr><th>Commerçant ou tiers</th><th class="num">Opérations</th><th class="num">Total</th><th style="width:210px">Catégorie</th></tr></thead>
+      <table><thead><tr><th>Commerçant ou tiers</th><th class="num">Opérations</th><th class="num">Total</th>
+        <th style="width:210px">Catégorie</th><th style="width:96px" title="En faire une opération programmée, enregistrée automatiquement chaque mois">Chaque mois</th></tr></thead>
       <tbody>${tri.map(t => {
         const cats = t.sens === 'ENTREE' ? CATS_ENTREE : CATS_SORTIE;
         const dou = IMP.cats[t.cle] === 'inconnu';
@@ -2180,23 +2245,31 @@ function blocTiers(p, inconnus, eurosInconnus, eurosTotal) {
           <td class="num ${t.total > 0 ? 'gain' : ''}">${argent(t.total, true)}</td>
           <td><select class="saisie" data-cat-tiers="${echap(t.cle)}">
             ${cats.map(c => `<option value="${c}" ${IMP.cats[t.cle] === c ? 'selected' : ''}>${CATEGORIES[c].nom}</option>`).join('')}
-          </select></td></tr>`;
+          </select></td>
+          <td class="num">${auto.has(t.cle)
+            ? '<span class="discret" title="Repérée automatiquement : à confirmer plus bas">détectée</span>'
+            : `<input type="checkbox" data-manuel="${echap(t.cle)}" ${IMP.manuelles[t.cle] ? 'checked' : ''}
+                 ${t.occurrences < 2 ? 'disabled title="Vue une seule fois : rien ne dit qu\'elle revient"' : ''}
+                 style="accent-color:var(--foret)">`}</td></tr>`;
       }).join('')}</tbody></table></div></div>`;
 }
 
 function blocRecurrences(p) {
-  if (!p.recurrences.length) {
+  const liste = recurrencesImport();
+  if (!liste.length) {
     return `<div class="panneau"><h2>Opérations qui reviennent chaque mois</h2>
       <div class="vide"><p>Aucune échéance régulière détectée. Avec un seul mois de relevés, c'est normal :
-        il en faut au moins deux pour qu'une habitude se voie.</p></div></div>`;
+        il en faut au moins deux pour qu'une habitude se voie. Vous pouvez en ajouter depuis la colonne
+        « chaque mois » de la liste ci-dessus.</p></div></div>`;
   }
   return `<div class="panneau">
     <h2>Opérations qui reviennent chaque mois</h2>
     <p class="sous-titre">Repérées parce qu'elles reviennent au même rythme, pas parce qu'on a reconnu leur nom.
-      Cochez celles à programmer : elles seront ensuite enregistrées automatiquement chaque mois.</p>
+      Cochez celles à programmer : elles seront ensuite enregistrées automatiquement chaque mois.
+      Pour en ajouter une que la détection a manquée, cochez « chaque mois » dans la liste ci-dessus.</p>
     <div class="defile"><table><thead><tr><th style="width:34px"></th><th>Libellé</th><th class="num">Montant</th>
       <th class="num">Jour</th><th>Régularité</th><th style="width:190px">Catégorie</th></tr></thead>
-      <tbody>${p.recurrences.map(r => `<tr>
+      <tbody>${liste.map(r => `<tr>
         <td><input type="checkbox" data-rec="${echap(r.cle)}" ${IMP.garder[r.cle] ? 'checked' : ''} style="accent-color:var(--foret)"></td>
         <td>${echap(r.cle)}<span class="sous">${echap(r.libelle.slice(0, 64))}</span></td>
         <td class="num ${r.sens === 'ENTREE' ? 'gain' : ''}">${argent(r.montant)}</td>
@@ -2204,7 +2277,7 @@ function blocRecurrences(p) {
         <td>${r.reguliere
           ? '<span class="statut ok">même montant</span>'
           : `<span class="statut serre">montant variable</span><span class="sous">±${pct(r.stabilite * 100, 0)} d'un mois à l'autre</span>`}
-          <span class="sous">vu ${r.occurrences} fois sur ${r.mois.length} mois</span></td>
+          <span class="sous">vu ${r.occurrences} fois sur ${r.mois.length} mois${r.manuelle ? ' · ajoutée par vous' : ''}</span></td>
         <td><select class="saisie" data-cat-tiers="${echap(r.cle)}">
           ${(r.sens === 'ENTREE' ? CATS_ENTREE : CATS_SORTIE).map(c => `<option value="${c}" ${IMP.cats[r.cle] === c ? 'selected' : ''}>${CATEGORIES[c].nom}</option>`).join('')}
         </select></td></tr>`).join('')}</tbody></table></div></div>`;
@@ -2218,7 +2291,8 @@ function blocBudgets(p) {
         ne couvre aucun mois complet. Une moyenne mensuelle serait fausse — ajoutez le relevé suivant,
         ou saisissez vos budgets à la main.</p></div>`;
   }
-  const cats = Object.keys(IMP.budgets);
+  const cats = Object.keys(IMP.budgets).filter(c => c !== '__inconnus');
+  const resteInconnu = IMP.budgets.__inconnus || 0;
   return `<div class="panneau">
     <h2>Budgets déduits de vos relevés</h2>
     <p class="sous-titre">Moyenne par mois sur ${mois.length} mois complet${mois.length > 1 ? 's' : ''}
@@ -2228,7 +2302,10 @@ function blocBudgets(p) {
     <div class="grille-budgets">${cats.length ? cats.map(c => `
       <div class="champ"><label for="bud-i-${c}">${CATEGORIES[c] ? CATEGORIES[c].nom : c}</label>
         <input id="bud-i-${c}" data-budget-imp="${c}" inputmode="decimal" value="${nombre(IMP.budgets[c], 2)}"></div>`).join('')
-      : '<p class="discret">Rien à proposer : toutes vos dépenses sont des opérations programmées.</p>'}</div></div>`;
+      : '<p class="discret">Rien à proposer : toutes vos dépenses sont des opérations programmées.</p>'}</div>
+    ${resteInconnu > 0 ? `<p class="note alerte" style="margin-top:12px">${argent0(resteInconnu)} par mois restent non catégorisés
+      et ne sont donc dans aucun budget. Classez les commerçants concernés plus haut : ces montants se répartiront ici.</p>` : ''}
+    </div>`;
 }
 
 /* Dernier relevé retenu pour le compte courant : c'est lui qui borne l'historique. */
@@ -2294,9 +2371,16 @@ function brancherImport() {
     IMP.affectation[s.dataset.affect] = s.value; IMP.solde = soldeProposeImport(); rendreImport();
   });
   z.querySelectorAll('[data-cat-tiers]').forEach(s => s.onchange = () => {
-    IMP.cats[s.dataset.catTiers] = s.value; rendreImport();
+    IMP.cats[s.dataset.catTiers] = s.value; IMP.budgets = budgetsImport(); rendreImport();
   });
-  z.querySelectorAll('[data-rec]').forEach(c => c.onchange = () => { IMP.garder[c.dataset.rec] = c.checked; });
+  z.querySelectorAll('[data-manuel]').forEach(c => c.onchange = () => {
+    IMP.manuelles[c.dataset.manuel] = c.checked;
+    IMP.garder[c.dataset.manuel] = c.checked;      // ajoutée à la main = cochée d'office
+    IMP.budgets = budgetsImport(); rendreImport();
+  });
+  z.querySelectorAll('[data-rec]').forEach(c => c.onchange = () => {
+    IMP.garder[c.dataset.rec] = c.checked; IMP.budgets = budgetsImport(); rendreImport();
+  });
   z.querySelectorAll('[data-budgetImp], [data-budget-imp]').forEach(el => el.onchange = () => {
     IMP.budgets[el.dataset.budgetImp] = lireNombre(el.value);
   });
@@ -2364,7 +2448,7 @@ function appliquerImport() {
   // 5. Les récurrences cochées deviennent des opérations programmées, à partir de demain :
   //    les mois passés sont déjà dans l'historique importé, il ne faut pas les recréer.
   let programmees = 0;
-  (IMP.p.recurrences || []).forEach(r => {
+  recurrencesImport().forEach(r => {
     if (!IMP.garder[r.cle]) return;
     const cat = IMP.cats[r.cle] || 'inconnu';
     E.programmees.push({
@@ -2378,6 +2462,7 @@ function appliquerImport() {
   // 6. Budgets : seulement pour les catégories qui ne sont pas déjà programmées.
   const catsProg = new Set(E.programmees.map(r => r.categorie));
   Object.entries(IMP.budgets).forEach(([c, v]) => {
+    if (c === '__inconnus') return;
     if (v > 0 && CATEGORIES[c] && !catsProg.has(c)) E.budgets[c] = arrondi(v);
   });
 
