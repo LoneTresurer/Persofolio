@@ -103,6 +103,24 @@ verifier("portefeuille.html : écran de connexion masqué",
 avertir("portefeuille.html : liens vers les autres pages",
         "banque.html" in pf, "ajouter les liens Accueil et Budget et comptes dans l'en-tête (confort, non bloquant)")
 
+# ── Imports : rien ne doit pointer vers un module archivé ───────────────────
+def _imports_casses() -> list:
+    """Tout « from agents.X » / « from core.X » doit correspondre à un fichier présent."""
+    manquants = []
+    for py in BACK.rglob("*.py"):
+        if "archive_optimiseur" in py.parts:
+            continue
+        for paquet, module in re.findall(r"^\s*from\s+(agents|core)\.(\w+)\s+import", lire(py), re.M):
+            if not (BACK / paquet / f"{module}.py").is_file():
+                manquants.append(f"{py.relative_to(P)} → {paquet}.{module}")
+    return manquants
+
+
+_casses = _imports_casses()
+verifier("aucun import vers un module archivé ou absent", not _casses,
+         "remonter le module depuis backend/archive_optimiseur/, ou retirer le code qui en dépend : "
+         + ", ".join(_casses) if _casses else "")
+
 # ── Dépendances ─────────────────────────────────────────────────────────────
 req = lire(BACK / "requirements.txt")
 for paquet in ("fastapi", "uvicorn", "pandas", "yfinance", "httpx"):
