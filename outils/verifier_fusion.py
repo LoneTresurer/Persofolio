@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 
-P = Path("ecofolio_perso")
+P = Path("persofolio")
 BACK, FRONT = P / "backend", P / "frontend"
 
 ok, echecs, avertissements = [], [], []

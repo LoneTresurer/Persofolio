@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EcoFolio · Mon compte</title>
+<title>PersoFolio · Mon compte</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -351,7 +351,7 @@
 <!-- ═════════════ Connexion ═════════════ -->
 <section id="ecran-attente">
   <div class="boite-connexion">
-    <h1>EcoFolio</h1>
+    <h1>PersoFolio</h1>
     <p>Suivi de votre compte-titres : positions, plus-values, risque et actualités.</p>
     <p class="discret" id="attente-message">Ouverture de votre portefeuille…</p>
     <div id="auth-erreur" class="erreur cache"></div>
@@ -362,7 +362,7 @@
 <section id="ecran-app" class="cache">
   <header>
     <div class="barre">
-      <div class="marque">Eco<span>Folio</span></div>
+      <div class="marque">Perso<span>Folio</span></div>
       <label class="choix-pf">Portefeuille
         <select id="sel-portefeuille" title="Chaque portefeuille a ses propres opérations, positions et performance."></select>
       </label>
@@ -632,14 +632,14 @@
     document.documentElement.dataset.theme = nom;
     const bouton = $('#btn-theme');
     if (bouton) bouton.setAttribute('aria-checked', nom === 'sombre' ? 'true' : 'false');
-    try { localStorage.setItem('ecofolio_theme', nom); } catch {}
+    try { localStorage.setItem('persofolio_theme', nom); } catch {}
     // Les graphiques sont dessinés sur un canevas : ils ne suivent pas une feuille de
     // style, il faut les retracer. Jamais au tout premier appel, qui a lieu avant que
     // l'application n'ait chargé quoi que ce soit.
     if (redessiner) redessinerGraphiques();
   }
   // Au premier chargement : le choix retenu, sinon le réglage du système.
-  appliquerTheme((() => { try { return localStorage.getItem('ecofolio_theme'); } catch { return null; } })()
+  appliquerTheme((() => { try { return localStorage.getItem('persofolio_theme'); } catch { return null; } })()
     || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'sombre' : 'clair'));
   document.addEventListener('DOMContentLoaded', () => {
     const bouton = $('#btn-theme');
@@ -650,11 +650,11 @@
       document.documentElement.dataset.theme === 'sombre' ? 'clair' : 'sombre', true);
   });
 
-  let jeton = localStorage.getItem('ecofolio_jeton');
-  let utilisateur = localStorage.getItem('ecofolio_user');
+  let jeton = localStorage.getItem('persofolio_jeton');
+  let utilisateur = localStorage.getItem('persofolio_user');
   // Portefeuille actif : retenu d'une session à l'autre, par utilisateur.
   let PORTEFEUILLES = [], pfActif = null;
-  const clePf = () => 'ecofolio_pf_' + (utilisateur || '');
+  const clePf = () => 'persofolio_pf_' + (utilisateur || '');
   let SYN = null, typeOrdre = 'ACHAT', ficheOrdre = null, graphiques = {}, charge = {};
 
   /* ── Graphiques nets ─────────────────────────────────────
@@ -765,8 +765,8 @@
       const r = await api('/auth/local', { method: 'POST' });
       jeton = r.jeton; utilisateur = r.username;
       try {
-        localStorage.setItem('ecofolio_jeton', jeton);
-        localStorage.setItem('ecofolio_user', utilisateur);
+        localStorage.setItem('persofolio_jeton', jeton);
+        localStorage.setItem('persofolio_user', utilisateur);
       } catch {}
       demarrer();
     } catch (ex) {
@@ -779,8 +779,8 @@
   function deconnecter() {
     if (jeton) fetch(API + '/auth/deconnexion', { method: 'POST', headers: { Authorization: 'Bearer ' + jeton } }).catch(() => {});
     jeton = null; utilisateur = null;
-    localStorage.removeItem('ecofolio_jeton'); localStorage.removeItem('ecofolio_user');
-    location.replace('index.html');       // connexion unique : page d'accueil d'EcoFolio
+    localStorage.removeItem('persofolio_jeton'); localStorage.removeItem('persofolio_user');
+    location.replace('index.html');       // connexion unique : page d'accueil d'PersoFolio
   }
   $('#btn-deconnexion').onclick = deconnecter;
 

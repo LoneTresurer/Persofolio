@@ -23,7 +23,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-PROJET = "ecofolio_perso"
+PROJET = "persofolio"
 BRANCHE_EUX = "portefeuille"
 BRANCHE_MOI = "perso-finance"
 

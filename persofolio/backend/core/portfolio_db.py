@@ -165,7 +165,7 @@ class PortfolioDB:
     def utilisateur_local(self) -> str:
         """Le compte unique de cette installation, créé au besoin.
 
-        EcoFolio tourne sur le poste de son utilisateur, pour lui seul : il n'y a
+        PersoFolio tourne sur le poste de son utilisateur, pour lui seul : il n'y a
         personne dont il faudrait se protéger, et un mot de passe n'ajouterait qu'un
         obstacle. On retient donc le compte déjà présent — celui qui porte le plus
         d'opérations s'il y en a plusieurs, héritage d'une version antérieure — et on

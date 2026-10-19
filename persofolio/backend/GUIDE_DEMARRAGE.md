@@ -1,6 +1,11 @@
-# EcoFolio — Guide de démarrage
+# PersoFolio — Guide de démarrage
 
-EcoFolio réunit deux modules autour d'un seul compte utilisateur :
+> L'application s'appelait **EcoFolio** jusqu'au 19 octobre 2026. Les comptes et leurs
+> données ne sont pas concernés : ils vivent dans `data/portefeuille.db`, que le
+> changement de nom ne touche pas. Seules les clés gardées par le navigateur changent,
+> et la page d'accueil reprend automatiquement une session ouverte avant le changement.
+
+PersoFolio réunit deux modules autour d'un seul compte utilisateur :
 
 - **Budget et comptes** (`banque.html`) — compte courant et compte investissement,
   revenus et dépenses, objectifs d'épargne, crédits.
@@ -40,7 +45,7 @@ RapidOCR télécharge ses modèles au premier relevé scanné lu, pas à l'insta
 ## Lancer le serveur (à faire à chaque fois)
 
 ```powershell
-cd <dossier du projet>\ecofolio_perso\backend
+cd <dossier du projet>\persofolio\backend
 python -m uvicorn main:app --reload --port 8000
 ```
 

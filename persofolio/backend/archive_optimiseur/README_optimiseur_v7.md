@@ -1,4 +1,4 @@
-# EcoFolio v7.0 — Optimiseur ESG + Analyse Rétrospective de Performance
+# PersoFolio v7.0 — Optimiseur ESG + Analyse Rétrospective de Performance
 
 ## Nouveautés v7 vs v6
 

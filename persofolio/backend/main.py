@@ -1,5 +1,5 @@
 """
-EcoFolio API v11.0
+PersoFolio API v11.0
 ==================
 Deux modules, un seul compte utilisateur :
 
@@ -27,9 +27,9 @@ from fastapi.staticfiles import StaticFiles
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
-logger = logging.getLogger("ecofolio")
+logger = logging.getLogger("persofolio")
 
-app = FastAPI(title="EcoFolio API", version="11.0.0", docs_url="/docs")
+app = FastAPI(title="PersoFolio API", version="11.0.0", docs_url="/docs")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 

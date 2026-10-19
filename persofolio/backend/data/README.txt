@@ -8,4 +8,4 @@ portefeuille.db  — créée automatiquement au premier lancement du serveur.
 La supprimer, serveur arrêté, remet l'application à zéro (tous les comptes).
 
 L'optimiseur ESG archivé (backend/archive_optimiseur/) utilisait en plus
-ecofolio_sessions.db et le fichier Etude_Entreprises_REEL_Data_final.xlsx.
+persofolio_sessions.db et le fichier Etude_Entreprises_REEL_Data_final.xlsx.

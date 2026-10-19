@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EcoFolio · Budget et comptes</title>
+<title>PersoFolio · Budget et comptes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -338,6 +338,25 @@
 
   /* ── Tiroir ────────────────────────────────────────────── */
   .voile { position: fixed; inset: 0; background: rgba(21, 38, 29, .35); z-index: 20; }
+
+  /* ── Modale (alerte explicative, au centre) ────────────── */
+  .modale { position: fixed; z-index: 22; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto;
+    background: var(--carte); border-radius: var(--rayon); padding: 26px 28px; box-shadow: 0 18px 50px rgba(21, 38, 29, .22); }
+  .modale h2 { font-family: 'IBM Plex Serif', serif; font-weight: 500; font-size: 23px; margin: 0 0 8px; }
+  .modale > p { color: var(--encre-2); font-size: 14px; line-height: 1.55; margin: 0 0 18px; }
+  .repere { border: 1px solid var(--filet); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .repere .ligne { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .repere .ligne strong { font-weight: 600; font-size: 15px; }
+  .repere .ligne .quand { color: var(--encre-2); font-size: 13.5px; white-space: nowrap; }
+  .repere .choix { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+  .repere .choix .sinon { display: flex; align-items: center; gap: 8px; }
+  .repere .choix .ou { color: var(--encre-2); font-size: 13px; }
+  .repere .choix select { max-width: 200px; }
+  .modale .fin { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .repere.regle { border-color: var(--foret); background: var(--foret-clair); }
+  .repere.regle .choix { display: none; }
+  .repere .verdict { color: var(--foret); font-size: 13.5px; font-weight: 500; }
   .tiroir { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100%); background: var(--carte); z-index: 21; padding: 22px 24px; overflow-y: auto; box-shadow: -8px 0 30px rgba(21, 38, 29, .12); transform: translateX(100%); transition: transform .22s ease; }
   .tiroir.ouvert { transform: none; }
   .tiroir h2 { font-family: 'IBM Plex Serif', serif; font-weight: 500; font-size: 24px; margin: 0; }
@@ -367,7 +386,7 @@
 <!-- ═════════════ Chargement / serveur injoignable ═════════════ -->
 <section id="ecran-etat">
   <div class="assistant" style="padding-top:18vh">
-    <div class="marque">Eco<span>Folio</span> <span class="discret" style="font-weight:400">· Budget et comptes</span></div>
+    <div class="marque">Perso<span>Folio</span> <span class="discret" style="font-weight:400">· Budget et comptes</span></div>
     <h1 id="etat-titre" style="font-family:'IBM Plex Serif',serif;font-weight:500;font-size:28px">Chargement de vos comptes…</h1>
     <p class="intro" id="etat-texte"></p>
     <div id="etat-actions"></div>
@@ -377,7 +396,7 @@
 <!-- ═════════════ Assistant de configuration ═════════════ -->
 <section id="assistant" class="cache">
   <div class="assistant">
-    <div class="marque">Eco<span>Folio</span> <span class="discret" style="font-weight:400">· Budget et comptes</span></div>
+    <div class="marque">Perso<span>Folio</span> <span class="discret" style="font-weight:400">· Budget et comptes</span></div>
     <ol class="etapes" id="etapes"></ol>
     <div id="etape"></div>
     <div id="assistant-erreur" class="erreur cache"></div>
@@ -388,7 +407,7 @@
 <!-- ═════════════ Import de relevés bancaires ═════════════ -->
 <section id="import" class="cache">
   <div class="barre-import">
-    <div class="marque">Eco<span>Folio</span> <span class="discret" style="font-weight:400">· Import de relevés</span></div>
+    <div class="marque">Perso<span>Folio</span> <span class="discret" style="font-weight:400">· Import de relevés</span></div>
     <div class="espace"></div>
     <button class="mini-btn" id="imp-fermer">Fermer</button>
   </div>
@@ -399,7 +418,7 @@
 <section id="app" class="cache">
   <header>
     <div class="barre">
-      <div class="marque">Eco<span>Folio</span></div>
+      <div class="marque">Perso<span>Folio</span></div>
       <div class="module">Budget et comptes</div>
       <div class="espace"></div>
       <span class="sauvegarde" id="sauvegarde" aria-live="polite"></span>
@@ -448,10 +467,11 @@
 
 <div class="voile cache" id="voile"></div>
 <aside class="tiroir" id="tiroir" aria-hidden="true"></aside>
+<div class="modale cache" id="modale" role="dialog" aria-modal="true" aria-labelledby="modale-titre"></div>
 
 <script>
 /* ════════════════════════════════════════════════════════════════════════
-   EcoFolio · Budget et comptes — prototype front-end
+   PersoFolio · Budget et comptes — prototype front-end
    Données stockées dans le navigateur (localStorage), une entrée par utilisateur.
    Le modèle (comptes / opérations / opérations programmées / dettes / objectifs)
    est pensé pour être déplacé tel quel dans une table SQLite côté backend.
@@ -460,10 +480,12 @@
 const $ = s => document.querySelector(s);
 /* Même compte que le compte-titres : jeton délivré par l'API à la connexion (index.html). */
 const API = /:8000$/.test(location.host) ? location.origin : 'http://localhost:8000';
-const JETON = localStorage.getItem('ecofolio_jeton');
-let UTILISATEUR = localStorage.getItem('ecofolio_user') || '';
+const JETON = localStorage.getItem('persofolio_jeton');
+let UTILISATEUR = localStorage.getItem('persofolio_user') || '';
 if (!JETON) location.replace('index.html');
-const ANCIENNE_CLE = 'ecofolio_banque_v1:' + UTILISATEUR.toLowerCase();   // prototype précédent (navigateur)
+// Clé du prototype précédent, qui gardait tout dans le navigateur. Elle garde le nom
+// d'alors : la renommer rendrait illisibles les données déjà écrites sous ce nom.
+const ANCIENNE_CLE = 'ecofolio_banque_v1:' + UTILISATEUR.toLowerCase();
 
 /* ── Référentiels ──────────────────────────────────────── */
 const CATEGORIES = {
@@ -513,12 +535,12 @@ function appliquerTheme(nom, redessiner = false) {
   document.documentElement.dataset.theme = nom;
   const bouton = $('#btn-theme');
   if (bouton) bouton.setAttribute('aria-checked', nom === 'sombre' ? 'true' : 'false');
-  try { localStorage.setItem('ecofolio_theme', nom); } catch {}
+  try { localStorage.setItem('persofolio_theme', nom); } catch {}
   // Les graphiques sont tracés sur un canevas : ils ne suivent pas la feuille de style
   // et doivent être redessinés. Jamais au premier appel, avant tout affichage.
   if (redessiner && E) rafraichir();
 }
-appliquerTheme((() => { try { return localStorage.getItem('ecofolio_theme'); } catch { return null; } })()
+appliquerTheme((() => { try { return localStorage.getItem('persofolio_theme'); } catch { return null; } })()
   || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'sombre' : 'clair'));
 document.addEventListener('DOMContentLoaded', () => {
   const bouton = $('#btn-theme');
@@ -604,7 +626,7 @@ async function api(chemin, options = {}) {
 
 function deconnecter() {
   fetch(API + '/auth/deconnexion', { method: 'POST', headers: { Authorization: 'Bearer ' + JETON } }).catch(() => {});
-  localStorage.removeItem('ecofolio_jeton'); localStorage.removeItem('ecofolio_user');
+  localStorage.removeItem('persofolio_jeton'); localStorage.removeItem('persofolio_user');
   location.replace('index.html');
 }
 
@@ -2505,7 +2527,7 @@ function blocSolde(ops, total) {
     <h2>Et aujourd'hui ?</h2>
     <p class="sous-titre">${fin ? `Vos relevés s'arrêtent au ${dateLongue(fin)}, sur un solde de ${argent(cloture)}.` : ''}
       ${E && retourImport === 'app'
-        ? 'Votre compte courant affiche aujourd\'hui ' + argent(soldeCompte('courant')) + ' dans EcoFolio. L\'historique importé vient se placer derrière ce solde, qui ne bouge pas.'
+        ? 'Votre compte courant affiche aujourd\'hui ' + argent(soldeCompte('courant')) + ' dans PersoFolio. L\'historique importé vient se placer derrière ce solde, qui ne bouge pas.'
         : 'Indiquez le solde réel de votre compte courant aujourd\'hui : c\'est lui qui fait foi, l\'historique se cale dessus.'}</p>
     <div class="deux-col" style="max-width:520px">
       <div class="champ"><label for="imp-solde">Solde du compte courant aujourd'hui</label>
@@ -2616,16 +2638,30 @@ function appliquerImport() {
   // 5. Les récurrences cochées deviennent des opérations programmées, à partir de demain :
   //    les mois passés sont déjà dans l'historique importé, il ne faut pas les recréer.
   let programmees = 0;
+  const progParCle = {};
   recurrencesImport().forEach(r => {
     if (!IMP.garder[r.cle]) return;
     const cat = IMP.cats[r.cle] || 'inconnu';
-    E.programmees.push({
+    const prog = {
       id: uid(), libelle: r.libelle.slice(0, 60) || r.cle, sens: r.sens,
       categorie: cat, compte: 'courant', montant: arrondi(r.montant), jour: r.jour,
       debut: decalerJours(AUJ, 1), actif: true,
-    });
+    };
+    E.programmees.push(prog);
+    progParCle[r.cle] = prog.id;
     programmees++;
   });
+
+  // 5 bis. Les tiers lus comme des échéances de crédit. On les relève même quand ils
+  //   n'apparaissent qu'une fois : un prêt qui vient d'être débloqué n'a encore qu'une
+  //   échéance au relevé, et c'est justement celui qu'il faut enregistrer.
+  const reperes = IMP.p.tiers
+    .filter(t => (IMP.cats[t.cle] || t.categorie) === 'credit' && t.sens === 'SORTIE')
+    .filter(t => !dejaSuiviParUnCredit(Math.abs(t.montant_type), t.jour_type))
+    .sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
+    .slice(0, 5)
+    .map(t => ({ cle: t.cle, libelle: t.libelle, montant: arrondi(Math.abs(t.montant_type)),
+                 jour: t.jour_type, occurrences: t.occurrences, progId: progParCle[t.cle] || null }));
 
   // 6. Budgets : seulement pour les catégories qui ne sont pas déjà programmées.
   const catsProg = new Set(E.programmees.map(r => r.categorie));
@@ -2644,6 +2680,96 @@ function appliquerImport() {
     demarrer();
   }
   toast(`${ajoutees} opérations importées${programmees ? `, ${programmees} opérations programmées` : ''}`);
+  if (reperes.length) modaleCreditsReperes(reperes);
+}
+
+/* ── Crédits repérés à l'import ───────────────────────────────────────────
+   Une mensualité de crédit lue dans un relevé n'est, pour l'instant, qu'une
+   dépense programmée de plus : l'application ne connaît ni le capital restant,
+   ni le taux, ni la date de fin. On le dit, et on laisse l'utilisateur trancher
+   — l'algorithme n'a lu qu'un libellé, il peut se tromper.
+   Tant qu'il n'a pas répondu, rien ne change : la ligne reste une dépense. */
+
+/* Ce montant à ce jour-là est-il déjà couvert par un crédit suivi ? Alors se taire. */
+function dejaSuiviParUnCredit(montant, jour) {
+  return E.programmees.some(r => r.detteId
+    && Math.abs(r.montant - montant) / Math.max(montant, 1) <= 0.05
+    && Math.abs(r.jour - jour) <= 3);
+}
+
+let jumelleAttendue = null;   // la programmée que le crédit en cours de création remplace
+
+function modaleCreditsReperes(lignes) {
+  if (!lignes || !lignes.length) return;
+  const pluriel = lignes.length > 1;
+  const parCle = Object.fromEntries(lignes.map(l => [l.cle, l]));
+
+  ouvrirModale(`
+    <h2 id="modale-titre">${pluriel ? 'Des prélèvements ressemblent à des crédits' : 'Un prélèvement ressemble à un crédit'}</h2>
+    <p>Dans vos relevés, ${pluriel ? `${lignes.length} prélèvements portent` : 'un prélèvement porte'} un libellé d'échéance
+       de crédit. ${pluriel ? 'Enregistrés comme crédits, ils donneraient' : 'Enregistré comme crédit, il donnerait'}
+       le capital restant dû, le coût des intérêts et la date de fin — une dépense ordinaire ne dit rien de tout cela.
+       Mais la lecture se fait sur le libellé seul : elle peut se tromper. À vous de trancher.
+       ${pluriel ? 'Sans réponse, ils restent de simples dépenses' : 'Sans réponse, il reste une simple dépense'}.</p>
+    ${lignes.map(l => `
+      <div class="repere" data-repere="${echap(l.cle)}">
+        <div class="ligne">
+          <strong>${echap(l.libelle)}</strong>
+          <span class="quand">${argent(-l.montant)} · le ${l.jour}${l.progId ? ' de chaque mois' : ''}</span>
+        </div>
+        <div class="choix">
+          <button class="btn" type="button" data-credit-oui="${echap(l.cle)}">C'est un crédit : le configurer</button>
+          <span class="sinon">
+            <span class="ou">ou, si ce n'en est pas un :</span>
+            <select data-credit-non="${echap(l.cle)}" aria-label="Reclasser cette dépense">
+              <option value="">Reclasser en…</option>
+              ${CATS_SORTIE.filter(c => c !== 'credit').map(c => `<option value="${c}">${CATEGORIES[c].nom}</option>`).join('')}
+            </select>
+          </span>
+        </div>
+      </div>`).join('')}
+    <div class="fin">
+      <button class="btn btn-sec" type="button" data-fermer>Je verrai plus tard</button>
+    </div>
+    <p class="discret" style="margin:12px 0 0">Configurer le crédit remplace la dépense programmée correspondante par son échéance,
+       pour que la même somme ne soit pas comptée deux fois. Rien n'est perdu : vous pourrez toujours créer le crédit depuis
+       l'onglet Dettes, ou changer la catégorie de la ligne dans Opérations programmées.</p>`);
+
+  $('#modale').querySelector('[data-fermer]').onclick = fermerModale;
+
+  // « C'est un crédit » : le tiroir s'ouvre prérempli, et retiendra la ligne à remplacer.
+  $('#modale').querySelectorAll('[data-credit-oui]').forEach(b => b.onclick = () => {
+    const l = parCle[b.dataset.creditOui]; if (!l) return;
+    jumelleAttendue = l.progId;
+    fermerModale();
+    tiroirDette(null, { ...nouveauCredit(), nom: nomDeCredit(l.libelle), jour: l.jour,
+                        mensualite: String(l.montant).replace('.', ','), manuelle: true });
+  });
+
+  // « Ce n'en est pas un » : les opérations de ce tiers changent de catégorie, et la
+  // règle vaudra pour les prochains relevés — il ne sera plus proposé comme crédit.
+  $('#modale').querySelectorAll('[data-credit-non]').forEach(s => s.onchange = () => {
+    const cat = s.value, l = parCle[s.dataset.creditNon];
+    if (!cat || !l) return;
+    E.operations.forEach(o => { if (o.tiers === l.cle) o.categorie = cat; });
+    if (l.progId) { const p = E.programmees.find(r => r.id === l.progId); if (p) p.categorie = cat; }
+    E.regles = E.regles || {}; E.regles[l.cle] = cat;
+    const carte = $('#modale').querySelector(`[data-repere="${CSS.escape(l.cle)}"]`);
+    carte.classList.add('regle');
+    carte.insertAdjacentHTML('beforeend',
+      `<div class="verdict">✓ Reclassé en « ${CATEGORIES[cat].nom} » — retenu pour les prochains relevés.</div>`);
+    sauver(); rafraichir();
+    if (![...$('#modale').querySelectorAll('.repere')].every(c => c.classList.contains('regle'))) return;
+    $('#modale').querySelector('[data-fermer]').textContent = 'Fermer';
+  });
+}
+
+/* « ECH PRET IMMO 1234 » → « Pret Immo » : un nom lisible pour le crédit à créer. */
+function nomDeCredit(libelle) {
+  const mots = normaliserTiers(libelle).split(' ')
+    .filter(m => m.length > 2 && !/^(ECH|ECHEANCE|PRLV|PREL|VIR|REMB|MENS|CRED|CAP|CAPITAL|COTIS|MENSUALITE)$/.test(m) && !/^\d+$/.test(m));
+  const nom = mots.slice(0, 3).join(' ').toLowerCase();
+  return nom ? nom.charAt(0).toUpperCase() + nom.slice(1) : libelle.slice(0, 40);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2655,9 +2781,24 @@ function ouvrirTiroir(html) {
   t.querySelector('[data-fermer]').onclick = fermerTiroir;
   setTimeout(() => t.querySelector('input:not([type=hidden]), select')?.focus(), 60);
 }
-function fermerTiroir() { $('#tiroir').classList.remove('ouvert'); $('#tiroir').setAttribute('aria-hidden', 'true'); $('#voile').classList.add('cache'); }
-$('#voile').onclick = fermerTiroir;
-document.addEventListener('keydown', e => { if (e.key === 'Escape') fermerTiroir(); });
+function fermerTiroir() {
+  $('#tiroir').classList.remove('ouvert'); $('#tiroir').setAttribute('aria-hidden', 'true');
+  jumelleAttendue = null;
+  if ($('#modale').classList.contains('cache')) $('#voile').classList.add('cache');
+}
+
+/* Modale centrée : une alerte qui demande une décision, pas un formulaire de saisie. */
+function ouvrirModale(html) {
+  const m = $('#modale'); m.innerHTML = html;
+  $('#voile').classList.remove('cache'); m.classList.remove('cache');
+  m.querySelector('[data-fermer]')?.focus();
+}
+function fermerModale() {
+  $('#modale').classList.add('cache'); $('#modale').innerHTML = '';
+  if (!$('#tiroir').classList.contains('ouvert')) $('#voile').classList.add('cache');
+}
+$('#voile').onclick = () => { fermerModale(); fermerTiroir(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { fermerModale(); fermerTiroir(); } });
 const enteteTiroir = titre => `<div class="entete"><h2>${titre}</h2><button class="mini-btn" data-fermer aria-label="Fermer">Fermer</button></div>`;
 function erreurTiroir(msg) { const z = $('#t-erreur'); z.textContent = msg; z.classList.remove('cache'); }
 const optionsComptes = sel => Object.entries(COMPTES).map(([k, c]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${c.nom}</option>`).join('');
@@ -2871,7 +3012,11 @@ function tiroirDette(id, brouillon) {
       E.programmees.filter(r => r.detteId === d.id).forEach(r => Object.assign(r, { libelle: `Échéance ${nom}`, montant: c.total, jour: +b.jour, actif: c.capital > 0.005 }));
     } else {
       const jumelle = programmeeJumelle(c.total, +b.jour, nom);
-      if (jumelle && confirm(`L'opération programmée « ${jumelle.libelle} » de ${argent(jumelle.montant)} le ${jumelle.jour} ressemble à l'échéance de ce crédit.\n\n`
+      // Venu de la modale « ce prélèvement ressemble à un crédit » : la ligne qu'on
+      // remplace est déjà connue et annoncée, inutile de redemander.
+      if (jumelle && jumelle.id === jumelleAttendue) {
+        E.programmees = E.programmees.filter(r => r.id !== jumelle.id);
+      } else if (jumelle && confirm(`L'opération programmée « ${jumelle.libelle} » de ${argent(jumelle.montant)} le ${jumelle.jour} ressemble à l'échéance de ce crédit.\n\n`
           + `La garder en plus du crédit compterait la même dépense deux fois. La supprimer ?`)) {
         E.programmees = E.programmees.filter(r => r.id !== jumelle.id);
       }

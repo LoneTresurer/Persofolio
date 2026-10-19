@@ -1,5 +1,5 @@
 """
-Test rapide du backend EcoFolio v8.
+Test rapide du backend PersoFolio v8.
 À lancer pendant que `uvicorn main:app --reload --port 8000` tourne.
 
 Utilisation :
@@ -17,7 +17,7 @@ except ImportError:
 BASE = "http://localhost:8000"
 
 print("─" * 70)
-print(" Diagnostic backend EcoFolio v8")
+print(" Diagnostic backend PersoFolio v8")
 print("─" * 70)
 
 # 1. Le backend répond-il ?

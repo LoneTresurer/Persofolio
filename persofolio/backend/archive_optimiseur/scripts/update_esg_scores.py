@@ -167,7 +167,7 @@ async def fetch_one(client: httpx.AsyncClient, ticker: str, name: str) -> Option
 
 async def main():
     print("\n" + "="*55)
-    print("  MISE À JOUR DES SCORES ESG — EcoFolio")
+    print("  MISE À JOUR DES SCORES ESG — PersoFolio")
     print("="*55)
 
     # Charger scores existants

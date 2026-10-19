@@ -29,7 +29,7 @@ from core.habitudes import analyser
 from core.releve import extraire
 from routes_portefeuille import utilisateur_courant
 
-logger = logging.getLogger("ecofolio.banque")
+logger = logging.getLogger("persofolio.banque")
 
 router = APIRouter()
 bdb = BanqueDB()

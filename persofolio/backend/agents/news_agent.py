@@ -104,7 +104,7 @@ class NewsAgent:
         # Yahoo Finance RSS
         try:
             url  = self.RSS_URLS["yahoo"].format(ticker=ticker)
-            resp = await client.get(url, headers={"User-Agent": "EcoFolio/4.0"})
+            resp = await client.get(url, headers={"User-Agent": "PersoFolio/4.0"})
             if resp.status_code == 200:
                 articles.extend(self._parse_rss(resp.text, ticker))
         except Exception:
@@ -115,7 +115,7 @@ class NewsAgent:
             try:
                 q    = quote(ticker.replace(".PA", "").replace(".DE", "").replace(".L", ""))
                 url  = self.RSS_URLS["google"].format(query=q)
-                resp = await client.get(url, headers={"User-Agent": "EcoFolio/4.0"})
+                resp = await client.get(url, headers={"User-Agent": "PersoFolio/4.0"})
                 if resp.status_code == 200:
                     articles.extend(self._parse_rss(resp.text, ticker))
             except Exception:

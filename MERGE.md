@@ -27,7 +27,7 @@ Trois demandes, qui coûtent peu de leur côté et évitent l'essentiel des conf
 2. **Ne pas toucher à `index.html`.** La page d'accueil et la connexion sont
    refaites de ce côté-ci ; leur version sera remplacée en bloc, donc tout
    travail fait dessus serait perdu.
-3. **Livrer le dossier complet** (`ecofolio_perso/` avec `backend/` et
+3. **Livrer le dossier complet** (`persofolio/` avec `backend/` et
    `frontend/`), en `.zip`, sans `__pycache__` ni `.db`.
 
 S'ils acceptent de passer à git, le mieux est qu'ils travaillent sur une branche
@@ -67,7 +67,7 @@ touchés de ce côté depuis `base` (`git diff --stat base perso-finance`).
 |---|---|---|
 | `frontend/banque.html` | nous seuls | impossible : ils ne l'ont pas |
 | `backend/routes_banque.py`, `core/banque_db.py` | nous seuls | impossible |
-| `frontend/index.html` | **nous** | garder notre version entière : `git checkout --ours ecofolio_perso/frontend/index.html` |
+| `frontend/index.html` | **nous** | garder notre version entière : `git checkout --ours persofolio/frontend/index.html` |
 | `backend/main.py` | **nous** | garder notre version, puis y remonter à la main les routes qu'ils auraient ajoutées |
 | `backend/routes_portefeuille.py` | **eux** | garder leur version, puis y remettre nos 7 lignes (`GET /auth/moi`, voir §4) |
 | `frontend/portefeuille.html` | **eux** | garder leur version, puis y remettre nos 4 retouches (§4) |
@@ -150,7 +150,7 @@ performance) est là, ligne pour ligne.
 2. **Le thème sombre.** Leur bascule ne valait que pour le compte-titres ;
    passer au budget ramenait au clair. Le même jeu de variables CSS et la même
    bascule ont été ajoutés à `banque.html`, les deux pages partageant la clé
-   `localStorage['ecofolio_theme']`. Aucune couleur n'a changé en mode clair.
+   `localStorage['persofolio_theme']`. Aucune couleur n'a changé en mode clair.
    `index.html` reste volontairement sombre : c'est la page d'accueil.
 3. **Les dépendances.** `pypdf`, `pypdfium2` et `rapidocr-onnxruntime`
    deviennent des dépendances requises (lecture des relevés scannés).
@@ -245,10 +245,40 @@ lancé ici. D'où le §7.
 
 ---
 
+## 6 bis. Après la fusion : renommage et page d'accueil
+
+Trois changements faits le 19 octobre, une fois la fusion validée.
+
+**EcoFolio devient PersoFolio.** Le nom est remplacé partout : pages, titres, API,
+dossier du projet (`ecofolio_perso/` → `persofolio/`), journaux, documentation, et les
+clés gardées par le navigateur (`ecofolio_jeton` → `persofolio_jeton`, de même pour
+l'utilisateur et le thème). Deux exceptions délibérées, toutes deux commentées sur
+place : `ecofolio_banque_v1`, qui désigne des données déjà écrites sous l'ancien nom et
+deviendrait illisible si on la renommait ; et `data/ecofolio_sessions.db` dans
+l'optimiseur archivé, qui est un nom de fichier, pas une marque. `index.html` reprend
+au chargement une session ouverte avant le changement, pour ne déconnecter personne.
+
+**Nouvelle page d'accueil.** `index.html` est refaite : bandeau, argumentaire à gauche,
+carte de connexion à droite, trois sections de présentation et un pied de page. Elle
+reprend les teintes des deux modules et porte la même bascule clair / sombre, si bien
+que les trois pages partagent enfin une seule identité visuelle. L'écran d'accueil
+d'après connexion suit le même habillage. Le contrat de la page n'a pas bougé :
+mêmes identifiants (`page-login`, `form-login`, `tab-signup`…), mêmes fonctions
+(`doLogin`, `doSignup`, `doLogout`, `switchAuthTab`), même enchaînement.
+
+**Crédits repérés à l'import.** Quand la lecture d'un relevé classe un prélèvement en
+échéance de crédit, une modale le signale à la fin de l'import : l'utilisateur ouvre la
+création du crédit (préremplie, et la dépense programmée en double est remplacée), ou
+reclasse la ligne — ce qui vaut règle pour les relevés suivants. Sans réponse, rien ne
+change. Le repérage porte sur les tiers, pas seulement sur les récurrences : un prêt
+débloqué le mois dernier n'a encore qu'une échéance au relevé.
+
+---
+
 ## 7. À vérifier au premier démarrage réel
 
 ```bash
-cd ecofolio_perso/backend
+cd persofolio/backend
 python -m pip install -r requirements.txt
 python -m uvicorn main:app --reload
 ```

@@ -1,5 +1,5 @@
 """
-EcoFolio API v9.0
+PersoFolio API v9.0
 =================
 POST /optimiser              → Pipeline ESG complet + sauvegarde session
 POST /portefeuille/perso     → Analyse d'un portefeuille composé par l'investisseur
@@ -43,7 +43,7 @@ def _san(obj):
     if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)): return None
     return obj
 
-app = FastAPI(title="EcoFolio API", version="10.0.0", docs_url="/docs")
+app = FastAPI(title="PersoFolio API", version="10.0.0", docs_url="/docs")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
@@ -444,7 +444,7 @@ async def optimiser(profil: ProfilInvestisseur):
                 s["signal_news"] = SIGNAL_MAP.get(news_map[tk],"➡️ Neutre")
 
         meta = {
-            "source_excel":"Données historiques (Excel EcoFolio)",
+            "source_excel":"Données historiques (Excel PersoFolio)",
             "source_web":"Yahoo Finance + Morningstar Sustainalytics",
             "methode_beta":donnees.get("methode_beta","OLS regression"),
             "methode_covariance":donnees.get("methode_covariance","Ledoit-Wolf"),
@@ -879,7 +879,7 @@ async def suivi(req: SuiviRequest):
             fx_div_src = fx_div["source"]; div_devise = req.dividendes_devise.upper()
         else:
             div_eur    = round(montant * div_yield * annees_eff, 2)
-            div_source = "estimation EcoFolio (versements historiques)"
+            div_source = "estimation PersoFolio (versements historiques)"
             fx_div_src = "EUR (devise de référence)"; div_devise = "EUR"
     else:
         div_eur, div_source = 0.0, "non applicable (horizon ≤ 1 an)"
