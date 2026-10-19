@@ -48,9 +48,18 @@ disparaîtraient à chaque fermeture.
 
 ## Ce dont tu as besoin (à installer une seule fois)
 
-### 1. Python 3.11 ou plus récent
-- Télécharger sur : https://www.python.org/downloads/
+### 1. Python 3.10, 3.11 ou 3.12 — **pas plus récent**
+- Télécharger sur : https://www.python.org/downloads/release/python-3128/
 - Pendant l'installation : cocher la case « Add Python to PATH » ✓
+
+> **Pourquoi pas la dernière version ?** `rapidocr-onnxruntime`, qui lit les
+> relevés scannés, n'est publié que jusqu'à Python 3.12 inclus. Sur 3.13 ou
+> plus récent, pip ne trouve rien à installer et s'arrête.
+>
+> Si vous avez déjà une version plus récente, **ne la désinstallez pas** :
+> installez 3.12 à côté, les deux cohabitent. `construire.bat` choisit la
+> bonne tout seul, et `py -3.12 -m uvicorn main:app --reload` lance le serveur
+> avec celle-là.
 
 ### 2. Les bibliothèques Python
 Ouvrir PowerShell dans le dossier `backend` et taper :

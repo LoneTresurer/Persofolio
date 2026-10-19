@@ -1,3 +1,7 @@
+# Python 3.10, 3.11 ou 3.12. Pas 3.13 ni au-delà : rapidocr-onnxruntime, qui
+# lit les relevés scannés, est publié jusqu'à 3.12 inclus (Requires-Python <3.13).
+# Sur une version plus récente, pip ne trouve rien et l'installation s'arrête.
+
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pydantic>=2.0.0

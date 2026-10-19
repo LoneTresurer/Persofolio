@@ -60,49 +60,100 @@ if not exist "persofolio\backend\persofolio.spec" (
 )
 
 rem --- 1. Python --------------------------------------------------------------
-rem "if ... && ..." sur une meme ligne se lit de plusieurs facons selon la
-rem version de Windows. On evite, et on teste en deux temps.
+rem La version la plus recente n'est PAS la bonne : rapidocr-onnxruntime, qui
+rem porte la lecture des releves scannes, n'est publie que jusqu'a Python 3.12
+rem inclus ("Requires-Python >=3.6,<3.13"). Sur 3.13 et au-dela, pip ne trouve
+rem rien et la construction s'arrete.
+rem
+rem On cherche donc une version utilisable, de la plus recente a la plus
+rem ancienne, au lieu de prendre celle qui se presente. Une machine peut tres
+rem bien avoir 3.15 en premier dans le PATH et 3.12 installe a cote : c'est le
+rem cas courant, et c'est 3.12 qu'il faut.
+
 set "PY="
-py --version >nul 2>&1
-if not errorlevel 1 set "PY=py"
+set "VERSION="
+
+py -3.12 --version >nul 2>&1
+if not errorlevel 1 set "PY=py -3.12"
 if defined PY goto :python_trouve
+
+py -3.11 --version >nul 2>&1
+if not errorlevel 1 set "PY=py -3.11"
+if defined PY goto :python_trouve
+
+py -3.10 --version >nul 2>&1
+if not errorlevel 1 set "PY=py -3.10"
+if defined PY goto :python_trouve
+
+rem Aucune version nommee : le Python par defaut fera l'affaire s'il convient.
 python --version >nul 2>&1
 if not errorlevel 1 set "PY=python"
+if defined PY goto :python_verifie
+py --version >nul 2>&1
+if not errorlevel 1 set "PY=py"
+
+:python_verifie
+if not defined PY goto :pas_de_python
+rem Compatible ? Python repond mieux que findstr sur un numero de version.
+%PY% -c "import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] <= (3,12) else 1)" >nul 2>&1
+if errorlevel 1 goto :python_incompatible
+
 :python_trouve
-
-if not defined PY (
-    echo   [ECHEC] Python est introuvable sur cette machine.
-    echo.
-    echo   Installez-le depuis https://www.python.org/downloads/
-    echo   IMPORTANT : cochez "Add Python to PATH" pendant l'installation.
-    echo   Fermez cette fenetre, puis relancez ce fichier.
-    exit /b 1
-)
-
 for /f "tokens=2" %%V in ('%PY% --version 2^>^&1') do set "VERSION=%%V"
-echo   Python %VERSION% trouve.
+echo   Python %VERSION% retenu pour la construction.
+goto :python_ok
 
-echo %VERSION% | findstr /b "3.13 3.14 3.15" >nul
-if not errorlevel 1 (
-    echo.
-    echo   [ATTENTION] Python %VERSION% est tres recent. Si l'installation des
-    echo   bibliotheques echoue plus bas, installez Python 3.11 ou 3.12 :
-    echo   ce sont les versions pour lesquelles toutes les dependances
-    echo   existent, onnxruntime en particulier.
-    echo.
-)
+:pas_de_python
+echo   [ECHEC] Python est introuvable sur cette machine.
+echo.
+echo   Installez Python 3.12 depuis :
+echo     https://www.python.org/downloads/release/python-3128/
+echo   Prenez "Windows installer (64-bit)" et cochez "Add Python to PATH".
+echo   Fermez cette fenetre, puis relancez ce fichier.
+exit /b 1
+
+:python_incompatible
+for /f "tokens=2" %%V in ('%PY% --version 2^>^&1') do set "VERSION=%%V"
+echo   [ECHEC] Aucune version de Python utilisable n'a ete trouvee.
+echo.
+echo   La seule disponible ici est Python %VERSION%, et elle ne convient pas :
+echo   la lecture des releves scannes repose sur rapidocr-onnxruntime, qui
+echo   n'est publie que jusqu'a Python 3.12 inclus. Sur une version plus
+echo   recente, pip ne trouve simplement rien a installer.
+echo.
+echo   Installez Python 3.12 A COTE de celle-ci, sans la desinstaller :
+echo     https://www.python.org/downloads/release/python-3128/
+echo   Prenez "Windows installer (64-bit)". Les deux versions cohabitent
+echo   sans probleme, et ce script choisira la bonne tout seul.
+echo.
+echo   Versions actuellement installees :
+py -0p 2>nul
+echo.
+exit /b 1
+
+:python_ok
 
 rem --- 2. Environnement isole -------------------------------------------------
 set "PYV=%~dp0.venv-build\Scripts\python.exe"
 
-if not exist "%PYV%" (
-    echo   Creation de l'environnement de construction...
-    %PY% -m venv ".venv-build"
-    if errorlevel 1 (
-        echo   [ECHEC] L'environnement n'a pas pu etre cree.
-        exit /b 1
-    )
+rem Un environnement laisse par une tentative precedente peut reposer sur une
+rem version de Python incompatible. On le verifie plutot que de le reutiliser.
+if not exist "%PYV%" goto :creer_env
+"%PYV%" -c "import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] <= (3,12) else 1)" >nul 2>&1
+if not errorlevel 1 goto :env_pret
+echo   L'environnement de construction existant repose sur une version de
+echo   Python incompatible. Il est supprime et refait.
+rmdir /s /q ".venv-build"
+
+:creer_env
+echo   Creation de l'environnement de construction...
+%PY% -m venv ".venv-build"
+if errorlevel 1 (
+    echo   [ECHEC] L'environnement n'a pas pu etre cree.
+    exit /b 1
 )
+
+:env_pret
 if not exist "%PYV%" (
     echo   [ECHEC] L'environnement a ete cree mais python.exe est introuvable.
     echo   Attendu ici : %PYV%
@@ -118,8 +169,13 @@ echo.
 if errorlevel 1 (
     echo.
     echo   [ECHEC] Une bibliotheque n'a pas pu etre installee.
-    echo   Une coupure reseau suffit a le provoquer : relancez ce fichier,
-    echo   la reprise est rapide, rien n'est retelecharge inutilement.
+    echo.
+    echo   Si le message ci-dessus dit "Could not find a version" ou
+    echo   "No matching distribution", c'est une incompatibilite de version,
+    echo   pas un probleme de reseau : signalez-le, en copiant ces lignes.
+    echo.
+    echo   Sinon, une coupure reseau suffit a le provoquer : relancez ce
+    echo   fichier, la reprise est rapide, rien n'est retelecharge en vain.
     exit /b 1
 )
 
