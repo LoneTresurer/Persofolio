@@ -25,8 +25,47 @@
     --perte-clair: #F7E6E3;
     --ambre: #8A5412;
     --ambre-clair: #FBEEDC;
+    --champ: #FFFFFF;
     --rayon: 10px;
   }
+  /* Mode sombre, repris du compte-titres pour que les deux modules se ressemblent :
+     les verts sont éclaircis pour rester lisibles sur fond foncé, et gains et pertes
+     restent distinguables l'un de l'autre sans dépendre de la seule teinte. */
+  html[data-theme="sombre"] {
+    --papier: #121714;
+    --carte: #1A211C;
+    --encre: #E8EDE9;
+    --encre-2: #9DAAA1;
+    --filet: #2C3630;
+    --filet-2: #232C26;
+    --foret: #5FBC8C;
+    --foret-clair: #1E3328;
+    --invest: #7FA7CB;
+    --invest-clair: #1C2A38;
+    --gain: #5FBC8C;
+    --perte: #E2796B;
+    --perte-clair: #3A221F;
+    --ambre: #D9A441;
+    --ambre-clair: #2E2719;
+    --champ: #222A25;
+  }
+  html { color-scheme: light; }
+  html[data-theme="sombre"] { color-scheme: dark; }
+
+  /* Interrupteur de thème, identique à celui du compte-titres. */
+  .bascule-theme { position: relative; display: inline-flex; align-items: center;
+    width: 46px; height: 26px; border-radius: 999px; border: 1px solid var(--filet);
+    background: var(--papier); cursor: pointer; padding: 0; flex: none; transition: background .2s; }
+  .bascule-theme::after { content: ""; position: absolute; left: 2px; top: 1px;
+    width: 20px; height: 20px; border-radius: 50%; background: var(--carte);
+    box-shadow: 0 1px 2px rgba(21, 38, 29, .15); transition: transform .2s; }
+  html[data-theme="sombre"] .bascule-theme { background: var(--foret-clair); border-color: var(--foret); }
+  html[data-theme="sombre"] .bascule-theme::after { transform: translateX(20px); }
+  .bascule-theme span { position: absolute; font-size: 11px; line-height: 1; top: 7px; }
+  .bascule-theme .clair { left: 6px; opacity: 0; }
+  .bascule-theme .sombre { right: 6px; opacity: .85; }
+  html[data-theme="sombre"] .bascule-theme .clair { opacity: .85; }
+  html[data-theme="sombre"] .bascule-theme .sombre { opacity: 0; }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--papier); color: var(--encre);
@@ -50,7 +89,7 @@
   .bloc-dette { background: var(--carte); border: 1px solid var(--filet); border-radius: var(--rayon); padding: 14px 16px; margin-bottom: 12px; }
   .bloc-dette .tete-panneau { margin-bottom: 10px; }
   .champ input, .champ select, .saisie {
-    background: var(--carte); border: 1px solid var(--filet); border-radius: 8px; padding: 9px 11px; width: 100%; min-width: 0;
+    background: var(--champ); border: 1px solid var(--filet); border-radius: 8px; padding: 9px 11px; width: 100%; min-width: 0;
   }
   .champ input:focus, .champ select:focus, .saisie:focus { border-color: var(--foret); outline: none; }
   .btn { border: 1px solid var(--foret); background: var(--foret); color: #fff; border-radius: 8px; padding: 10px 18px; font-weight: 500; white-space: nowrap; }
@@ -108,10 +147,11 @@
   th { text-align: left; font-weight: 500; color: var(--encre-2); font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--filet); white-space: nowrap; }
   th.num { text-align: right; }
   td { padding: 9px 10px; border-bottom: 1px solid var(--filet-2); vertical-align: middle; }
+  tr.cliquable:hover td, .cat-ligne.cliquable:hover td { background: var(--foret-clair); }
   tbody tr:last-child td { border-bottom: none; }
   .defile { overflow-x: auto; }
   .sous { display: block; font-size: 12px; color: var(--encre-2); }
-  .etiquette { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: 12px; font-weight: 500; background: #ECEFEB; white-space: nowrap; }
+  .etiquette { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: 12px; font-weight: 500; background: var(--filet-2); white-space: nowrap; }
   .etiquette.courant { background: var(--foret-clair); color: var(--foret); }
   .etiquette.invest { background: var(--invest-clair); color: var(--invest); }
   .etiquette.auto { background: var(--papier); color: var(--encre-2); font-weight: 400; }
@@ -238,7 +278,6 @@
   .cat-ligne td:first-child { display: flex; align-items: center; gap: 8px; }
   .cat-ligne .progres { min-width: 120px; }
   tr.cliquable { cursor: pointer; }
-  tr.cliquable:hover td { background: #F7F9F6; }
 
   /* ── Dettes ────────────────────────────────────────────── */
   .jauge { margin-top: 8px; }
@@ -294,7 +333,7 @@
   .depot:hover, .depot.survol { border-color: var(--foret); background: var(--foret-clair); }
   .depot strong { font-size: 16px; font-weight: 600; }
   .depot span { color: var(--encre-2); font-size: 13.5px; }
-  tr.a-classer td { background: #FBF7EE; }
+  tr.a-classer td { background: var(--ambre-clair); }
   tr.a-classer td:first-child { box-shadow: inset 3px 0 0 var(--ambre); }
 
   /* ── Tiroir ────────────────────────────────────────────── */
@@ -367,6 +406,9 @@
       <span class="utilisateur" id="nom-utilisateur"></span>
       <a class="mini-btn" href="index.html">Accueil</a>
       <a class="mini-btn" href="portefeuille.html">Compte-titres</a>
+      <button class="bascule-theme" id="btn-theme" role="switch" aria-checked="false"
+              aria-label="Basculer entre le mode clair et le mode sombre"
+              title="Mode clair / mode sombre"><span class="clair">☀</span><span class="sombre">☾</span></button>
       <button class="mini-btn" id="btn-import">Importer un relevé</button>
       <button class="btn" id="btn-operation">Ajouter une opération</button>
       <button class="mini-btn" id="btn-reinit" title="Effacer les données de ce module et relancer la configuration">Réinitialiser</button>
@@ -463,6 +505,28 @@ const TYPES_DETTE = {
   etudiant: 'Prêt étudiant', renouvelable: 'Crédit renouvelable', autre: 'Autre dette',
 };
 const SEUIL_ENDETTEMENT = 35; // % des revenus nets, norme HCSF (assurance comprise)
+
+/* ── Thème clair / sombre ───────────────────────────────
+   Le réglage est partagé avec le compte-titres (même clé de stockage) : choisi d'un
+   côté, il s'applique de l'autre. */
+function appliquerTheme(nom, redessiner = false) {
+  document.documentElement.dataset.theme = nom;
+  const bouton = $('#btn-theme');
+  if (bouton) bouton.setAttribute('aria-checked', nom === 'sombre' ? 'true' : 'false');
+  try { localStorage.setItem('ecofolio_theme', nom); } catch {}
+  // Les graphiques sont tracés sur un canevas : ils ne suivent pas la feuille de style
+  // et doivent être redessinés. Jamais au premier appel, avant tout affichage.
+  if (redessiner && E) rafraichir();
+}
+appliquerTheme((() => { try { return localStorage.getItem('ecofolio_theme'); } catch { return null; } })()
+  || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'sombre' : 'clair'));
+document.addEventListener('DOMContentLoaded', () => {
+  const bouton = $('#btn-theme');
+  if (!bouton) return;
+  bouton.setAttribute('aria-checked', document.documentElement.dataset.theme === 'sombre' ? 'true' : 'false');
+  bouton.onclick = () => appliquerTheme(
+    document.documentElement.dataset.theme === 'sombre' ? 'clair' : 'sombre', true);
+});
 
 /* ── Formats ───────────────────────────────────────────── */
 const nombre = (v, d = 2) => (v == null || isNaN(v)) ? '—' : new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).format(v);
@@ -1252,10 +1316,15 @@ function graphique(id, config) {
   graphiques[id]?.destroy();
   const el = document.getElementById(id); if (!el) return;
   Chart.defaults.font.family = "'IBM Plex Sans', system-ui, sans-serif";
-  Chart.defaults.color = '#5B6A61';
+  Chart.defaults.color = couleurTheme('--encre-2');
   graphiques[id] = new Chart(el, config);
 }
-const axeEuros = { ticks: { callback: v => argent0(v) }, grid: { color: '#EDF0EC' }, border: { display: false } };
+/* Valeur courante d'une variable CSS : les graphiques sont dessinés sur un canevas
+   et ne suivent pas la feuille de style, il faut leur passer la couleur du moment. */
+const couleurTheme = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim() || '#5B6A61';
+/* Fonction et non constante : la couleur de grille suit le thème en cours, qui peut
+   changer entre deux tracés. */
+const axeEuros = () => ({ ticks: { callback: v => argent0(v) }, grid: { color: couleurTheme('--filet-2') }, border: { display: false } });
 
 /* ════════════════════════════════════════════════════════════════════════
    SIMULATEUR D'INTÉRÊTS COMPOSÉS
@@ -1533,7 +1602,7 @@ Intérêts calculés chaque mois au taux équivalent (1 + taux annuel)^(1/12) �
     ] },
     options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.y)}` } } },
-      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 9 } }, y: { ...axeEuros, beginAtZero: true } } },
+      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 9 } }, y: { ...axeEuros(), beginAtZero: true } } },
   });
 }
 
@@ -1641,7 +1710,7 @@ function vueComptes() {
     data: { labels: jours.map(dateCourte), datasets: [{ data: soldes, borderColor: couleur, backgroundColor: couleur + '1A', fill: true, stepped: true, pointRadius: 0, borderWidth: 2 }] },
     options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => argent(c.parsed.y) } } },
-      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: axeEuros } },
+      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: axeEuros() } },
   });
 }
 
@@ -1768,7 +1837,7 @@ ${argent0(F.entrees)} − ${argent0(F.sorties)} = ${argent0(F.solde, true)}`)}</
     ] },
     options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.y)}` } } },
-      scales: { x: { grid: { display: false } }, y: axeEuros } },
+      scales: { x: { grid: { display: false } }, y: axeEuros() } },
   });
 }
 
@@ -1964,7 +2033,7 @@ function vueDettes() {
     })) },
     options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent0(c.parsed.y)}` } } },
-      scales: { x: { grid: { display: false }, ticks: { autoSkip: true, maxRotation: 0, maxTicksLimit: 8 } }, y: { ...axeEuros, stacked: true } } },
+      scales: { x: { grid: { display: false }, ticks: { autoSkip: true, maxRotation: 0, maxTicksLimit: 8 } }, y: { ...axeEuros(), stacked: true } } },
   });
 }
 

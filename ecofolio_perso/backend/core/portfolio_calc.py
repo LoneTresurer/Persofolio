@@ -4,7 +4,11 @@ core/portfolio_calc.py
 Moteur de calcul du compte-titres : à partir de la liste des opérations
 (dépôts, retraits, achats, ventes, dividendes), recalcule l'état du compte.
 
-Principe (comme un courtier) :
+Principe : outil de SUIVI d'investissements, pas plateforme de trading. On peut donc
+saisir une position sans avoir enregistré le moindre dépôt : le compte espèces est une
+information complémentaire, jamais une contrainte. Il peut devenir négatif, ce qui
+signifie simplement « capital investi non déclaré en dépôts ».
+
   - Le compte espèces est en EUR.
   - Une ligne est suivie dans SA devise (ex. Apple en USD) : quantité et PRU en devise.
   - Chaque achat / vente est converti en EUR au taux de change du jour de l'opération
@@ -21,7 +25,9 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 EPS = 1e-9
-TYPES_OPERATION = ("DEPOT", "RETRAIT", "ACHAT", "VENTE", "DIVIDENDE")
+TYPES_OPERATION = ("DEPOT", "RETRAIT", "ACHAT", "VENTE", "DIVIDENDE", "SPLIT")
+TYPES_ORDRE     = ("ACHAT", "VENTE")                      # onglet « Ordres »
+TYPES_MOUVEMENT = ("DEPOT", "RETRAIT", "DIVIDENDE", "SPLIT")   # onglet « Mouvements »
 
 
 class OperationInvalide(ValueError):
@@ -55,10 +61,17 @@ class Position:
 @dataclass
 class EtatCompte:
     cash_eur: float = 0.0
-    depots_nets_eur: float = 0.0        # dépôts − retraits
+    depots_nets_eur: float = 0.0        # dépôts − retraits réellement saisis
+    # Un achat qui dépasse les espèces disponibles suppose que l'argent est entré sur le
+    # compte d'une façon ou d'une autre. Faute de dépôt saisi, on inscrit le complément
+    # ici : c'est le capital venu de l'extérieur. Il sert de dénominateur à la
+    # plus-value, et il évite surtout de compter deux fois l'euro qu'une vente a rendu
+    # disponible et qu'un achat ultérieur a réemployé.
+    apports_implicites_eur: float = 0.0
     frais_eur: float = 0.0
     dividendes_eur: float = 0.0
     pv_realisee_eur: float = 0.0
+    cout_cede_eur: float = 0.0          # coût de revient des titres vendus (pour la perf globale)
     positions: Dict[str, Position] = field(default_factory=dict)   # lignes ouvertes ET soldées
     operations: List[dict] = field(default_factory=list)          # opérations enrichies
 
@@ -102,10 +115,6 @@ def _appliquer(etat: EtatCompte, op: dict) -> None:
 
     elif t == "RETRAIT":
         m = float(op["montant_eur"])
-        if m > etat.cash_eur + 0.005:
-            raise OperationInvalide(
-                f"Retrait de {m:.2f} € impossible le {date} : "
-                f"solde espèces disponible {etat.cash_eur:.2f} €.")
         etat.cash_eur -= m
         etat.depots_nets_eur -= m
         enrichie["flux_cash_eur"] = -m
@@ -115,11 +124,15 @@ def _appliquer(etat: EtatCompte, op: dict) -> None:
         q, prix, taux = float(op["quantite"]), float(op["prix"]), float(op["taux_eur"])
         montant_eur = q * prix * taux
         cout = montant_eur + frais
-        if cout > etat.cash_eur + 0.005:
-            raise OperationInvalide(
-                f"Achat de {q:g} {tk} le {date} impossible : il faut {cout:.2f} € "
-                f"(frais inclus), solde espèces disponible {etat.cash_eur:.2f} €. "
-                f"Enregistrez d'abord un dépôt.")
+        # Aucun contrôle de provision : on suit des investissements, on ne passe pas d'ordres.
+        # L'achat se sert d'abord des espèces disponibles — celles d'une vente passée, par
+        # exemple. Ce qui manque est forcément venu de l'extérieur : on l'enregistre comme
+        # un versement, et le solde espèces ne devient jamais négatif.
+        if etat.cash_eur < cout - EPS:
+            manque = cout - etat.cash_eur
+            etat.apports_implicites_eur += manque
+            etat.cash_eur = cout
+            enrichie["apport_implicite_eur"] = round(manque, 2)
         pos = etat.positions.get(tk)
         if pos is None or pos.quantite <= EPS:
             ancienne = pos
@@ -164,10 +177,23 @@ def _appliquer(etat: EtatCompte, op: dict) -> None:
         etat.cash_eur += produit_eur
         etat.frais_eur += frais
         etat.pv_realisee_eur += pv_eur
+        etat.cout_cede_eur += cout_unitaire_eur * q
         enrichie["flux_cash_eur"] = produit_eur
         enrichie["pru_au_moment"] = round(pos.pru, 6)
         enrichie["pv_realisee_eur"] = round(pv_eur, 2)
         enrichie["pv_realisee_devise"] = round(pv_dev, 2)
+
+    elif t == "SPLIT":
+        # Division / regroupement d'actions : ratio 4 = 4 nouvelles actions pour 1 ancienne.
+        # La valeur de la ligne ne change pas : la quantité est multipliée, le PRU divisé.
+        tk, ratio = op["ticker"], float(op["quantite"])
+        pos = etat.positions.get(tk)
+        if ratio <= 0:
+            raise OperationInvalide(f"Ratio de division invalide pour {tk} le {date}.")
+        if pos and pos.quantite > EPS:
+            pos.quantite *= ratio
+            pos.pru /= ratio
+        enrichie["flux_cash_eur"] = 0.0
 
     elif t == "DIVIDENDE":
         m = float(op["montant_eur"])

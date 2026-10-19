@@ -97,9 +97,12 @@ verifier("banque.html : données sur le serveur", "/banque/etat" in banque,
 verifier("portefeuille.html : renvoi vers la connexion unique",
          "location.replace('index.html')" in pf,
          "sans jeton, la page doit renvoyer vers index.html au lieu d'afficher son propre écran de connexion")
-verifier("portefeuille.html : écran de connexion masqué",
-         re.search(r'id="ecran-connexion"[^>]*class="[^"]*cache', pf) is not None,
-         'ajouter class="cache" sur <section id="ecran-connexion">')
+# L'écran d'accueil de portefeuille.html a changé de nom au fil des versions
+# (ecran-connexion, puis ecran-attente). Ce qui compte n'est pas son identifiant
+# mais le fait qu'il ne serve pas de second écran de connexion.
+verifier("portefeuille.html : pas de second écran de connexion",
+         not re.search(r'id="(auth-mdp|auth-user)"', pf),
+         "la connexion se fait sur index.html ; retirer le formulaire de portefeuille.html")
 avertir("portefeuille.html : liens vers les autres pages",
         "banque.html" in pf, "ajouter les liens Accueil et Budget et comptes dans l'en-tête (confort, non bloquant)")
 
@@ -126,8 +129,10 @@ req = lire(BACK / "requirements.txt")
 for paquet in ("fastapi", "uvicorn", "pandas", "yfinance", "httpx"):
     verifier(f"requirements : {paquet}", re.search(rf"^{paquet}", req, re.M) is not None,
              "dépendance nécessaire aux deux modules")
+# pdfplumber sert désormais à la lecture des relevés bancaires : il n'est plus
+# propre à l'optimiseur. Seuls scipy, scikit-learn et openpyxl le restent.
 avertir("requirements : dépendances de l'optimiseur retirées",
-        not re.search(r"^(scipy|scikit-learn|pdfplumber|openpyxl)", req, re.M),
+        not re.search(r"^(scipy|scikit-learn|openpyxl)", req, re.M),
         "l'optimiseur est archivé ; ces paquets ne servent plus (les commenter)")
 
 # ── Rapport ─────────────────────────────────────────────────────────────────

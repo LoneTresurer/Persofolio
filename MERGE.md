@@ -1,5 +1,11 @@
 # Fusionner les deux moitiés du projet
 
+> **Fusion faite le 19 octobre 2026.** La livraison compte-titres du 17 octobre
+> est intégrée dans `perso-finance`. Les sections 1 à 4 restent la méthode (elle
+> resservira à la prochaine livraison) ; le **§4 bis** raconte ce que la fusion a
+> réellement demandé, et le **§7** liste les points à vérifier au premier
+> démarrage réel.
+
 Le projet est développé en deux moitiés parties de la même version :
 
 - **Budget et comptes** — cette branche, `perso-finance`.
@@ -116,10 +122,59 @@ en mémoire est toujours valable.
    if (jeton) demarrer(); else location.replace('index.html');
    ```
 
+---
+
+## 4 bis. Ce que la fusion du 19 octobre a réellement demandé
+
+`git merge portefeuille` a laissé **deux fichiers en conflit** :
+`frontend/portefeuille.html` (quatre blocs) et `requirements.txt`. Tout le reste
+s'est fusionné seul — y compris `routes_portefeuille.py`, où notre route
+`/auth/moi` et leurs nouvelles routes se sont posées côte à côte.
+
+**Leur demi-part est arrivée intacte.** Le diff final de `portefeuille.html`
+contre leur livraison ne contient plus que nos quatre retouches du §4 : tout
+leur travail (sélecteur multi-portefeuille, cloche de notifications, bascule de
+thème, synchronisation des dividendes, import courtier CSV/PDF, onglet
+performance) est là, ligne pour ligne.
+
+### Les trois arbitrages
+
+1. **La connexion.** Ils avaient retiré l'écran de connexion au profit d'une
+   session anonyme (`POST /auth/local`). L'énoncé demande un compte avec
+   identifiant et mot de passe : la connexion unique d'`index.html` l'emporte.
+   Leur route `/auth/local` et leur fonction `ouvrirSession()` **restent dans le
+   code**, simplement plus appelées. Pour revenir au fonctionnement
+   mono-utilisateur, une seule ligne à changer, tout en bas de
+   `portefeuille.html` : remplacer `location.replace('index.html')` par
+   `ouvrirSession()`. Le commentaire sur place le rappelle.
+2. **Le thème sombre.** Leur bascule ne valait que pour le compte-titres ;
+   passer au budget ramenait au clair. Le même jeu de variables CSS et la même
+   bascule ont été ajoutés à `banque.html`, les deux pages partageant la clé
+   `localStorage['ecofolio_theme']`. Aucune couleur n'a changé en mode clair.
+   `index.html` reste volontairement sombre : c'est la page d'accueil.
+3. **Les dépendances.** `pypdf`, `pypdfium2` et `rapidocr-onnxruntime`
+   deviennent des dépendances requises (lecture des relevés scannés).
+   `scipy`, `scikit-learn` et `openpyxl` passent en commentaire : plus aucun
+   module chargé par le serveur ne les importe, seul l'optimiseur archivé s'en
+   servait.
+
+### Les trois recollages
+
+Du code de liaison, pas des fonctionnalités : sans eux, la page du compte-titres
+restait bloquée sur son écran d'attente.
+
+- Le panneau de notifications avait perdu les identifiants de ses deux boutons
+  (`activer-notifs`, `effacer-notifs`) : leur disparition cassait le script au
+  démarrage, donc **toute** la page.
+- Le bouton **Déconnexion** était dans l'en-tête sans être relié à
+  `deconnecter()`.
+- Un jeton périmé (401) rouvrait une session anonyme ; il renvoie maintenant à
+  `index.html`, comme le veut la connexion unique.
+
 ### À quoi ressemble un conflit réel
 
-Essai fait avec une livraison fictive (nouvelle route, nouveau bouton dans
-l'en-tête, nouvelle constante) : **un seul fichier en conflit**,
+Essai fait **avant** la livraison, avec une livraison fictive (nouvelle route,
+nouveau bouton dans l'en-tête, nouvelle constante) : **un seul fichier en conflit**,
 `portefeuille.html`, sur deux blocs de trois lignes, tous deux du type « garder
 les deux côtés » :
 
@@ -169,7 +224,51 @@ git tag v1-fusion                # repère utile avant la suite
 
 ---
 
-## 6. Ce qu'il restera à faire ensuite
+## 6. Ce qui a été vérifié, et comment
+
+Les 43 contrôles statiques passent. Le parcours des cinq points ci-dessus a été
+joué automatiquement sur la version fusionnée, plus :
+
+- le thème suit d'un module à l'autre, dans les deux sens ;
+- les cinq onglets du budget s'ouvrent sans erreur en clair comme en sombre ;
+- l'import de relevés, la relecture des tiers, les moyennes qui se recalculent
+  au fur et à mesure du classement, le ré-import sans doublon ;
+- le rapprochement d'une échéance de crédit déjà repérée à l'import avec la
+  dette qu'on crée ensuite ;
+- la déconnexion, puis l'accès direct aux deux pages protégées : renvoi vers
+  `index.html` ; après reconnexion, les données sont retrouvées.
+
+**Ce que ces essais ne prouvent pas.** Ils tournent contre un serveur d'essai qui
+rejoue les relevés déjà analysés, parce que l'environnement de développement n'a
+pas accès au réseau pour installer FastAPI. Le vrai serveur n'a donc jamais été
+lancé ici. D'où le §7.
+
+---
+
+## 7. À vérifier au premier démarrage réel
+
+```bash
+cd ecofolio_perso/backend
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --reload
+```
+
+1. **Ouvrir <http://localhost:8000/docs>** : la liste doit contenir à la fois les
+   routes `/compte/*` du compte-titres et `/banque/etat` du budget. Si l'une des
+   deux familles manque, c'est qu'un routeur n'est pas monté dans `main.py`.
+2. **Les graphiques.** Chart.js et les polices viennent d'un CDN, bloqué dans
+   l'environnement d'essai : aucun graphique n'a pu être affiché ici. Au premier
+   lancement avec Internet, vérifier la courbe des soldes, les deux camemberts à
+   côté du Sankey, et qu'ils se redessinent bien aux couleurs du thème quand on
+   bascule en sombre.
+3. **L'installation d'OCR.** `rapidocr-onnxruntime` télécharge ses modèles au
+   premier usage. Un relevé PDF ordinaire n'en a pas besoin ; seul un relevé
+   scanné y fait appel.
+4. **Les données de marché** (`yfinance`) demandent Internet.
+
+---
+
+## 8. Ce qu'il restera à faire ensuite
 
 - **Sortir l'authentification de `routes_portefeuille.py`** vers un
   `routes_auth.py` : `routes_banque.py` y importe aujourd'hui

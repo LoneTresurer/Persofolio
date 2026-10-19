@@ -5,10 +5,16 @@ EcoFolio réunit deux modules autour d'un seul compte utilisateur :
 - **Budget et comptes** (`banque.html`) — compte courant et compte investissement,
   revenus et dépenses, objectifs d'épargne, crédits.
 - **Compte-titres** (`portefeuille.html`) — ordres, positions, performance et risque
-  du portefeuille réel, aux cours du marché.
+  du portefeuille réel, aux cours du marché. Plusieurs portefeuilles par compte,
+  notifications de dividendes, import des relevés de courtier (CSV et PDF).
+
+Les deux modules partagent la même bascule clair / sombre : le choix fait sur une
+page vaut pour l'autre.
 
 L'optimiseur ESG a été retiré de l'application en octobre 2026. Son code est conservé
 dans `backend/archive_optimiseur/` ; voir le README de ce dossier pour le réactiver.
+`scipy`, `scikit-learn` et `openpyxl` ne servaient qu'à lui : ils sont commentés dans
+`requirements.txt`, à décommenter en même temps que le reste.
 
 ---
 
@@ -23,6 +29,11 @@ Ouvrir PowerShell dans le dossier `backend` et taper :
 ```
 pip install -r requirements.txt
 ```
+
+L'installation prend quelques minutes : elle comprend la lecture des PDF et la
+reconnaissance optique (`pypdf`, `pypdfium2`, `rapidocr-onnxruntime`), qui permet
+d'importer un relevé **scanné**. Un relevé PDF ordinaire n'en a pas besoin.
+RapidOCR télécharge ses modèles au premier relevé scanné lu, pas à l'installation.
 
 ---
 
@@ -77,9 +88,11 @@ backend/
 │   ├── portfolio_calc.py     ← Positions, PnL, performance, risque
 │   ├── portfolio_db.py       ← Utilisateurs, jetons, opérations de bourse
 │   ├── banque_db.py          ← État du module Budget et comptes
-│   ├── releve.py             ← Lecture des relevés PDF (toutes banques)
+│   ├── releve.py             ← Lecture des relevés bancaires PDF (toutes banques)
 │   ├── categorisation.py     ← Catégorie d'une opération d'après son libellé
-│   └── habitudes.py          ← Récurrences et budgets déduits des relevés
+│   ├── habitudes.py          ← Récurrences et budgets déduits des relevés
+│   ├── import_csv.py         ← Import d'un relevé de courtier au format CSV
+│   └── import_pdf.py         ← Import d'un relevé de courtier au format PDF
 ├── tests/
 │   └── test_releve.py        ← Contrôle d'équilibre sur vos propres relevés
 ├── archive_optimiseur/       ← Optimiseur ESG retiré de l'application (voir son README)
@@ -98,3 +111,6 @@ backend/
 | Port 8000 déjà utilisé | Changer le port : `--port 8001`, puis ouvrir `http://localhost:8001` |
 | « Le serveur ne répond pas » dans une page | Le backend n'est pas lancé, ou la page a été ouverte en double-clic au lieu de `http://localhost:8000` |
 | « Session expirée » | Se reconnecter depuis la page d'accueil |
+| Les graphiques restent vides | Chart.js vient d'Internet : vérifier la connexion, ou recharger la page |
+| Les cours des titres ne s'affichent pas | `yfinance` interroge Yahoo Finance : Internet requis |
+| Un relevé scanné n'est pas lu | Premier usage : RapidOCR télécharge ses modèles, laisser le temps au premier import |
