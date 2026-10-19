@@ -7,7 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.1/build/index.umd.min.js"></script>
 <style>
+  /* Toutes les couleurs passent par ces variables : changer de thème ne consiste
+     alors qu'à les redéfinir, sans toucher à une seule règle de mise en page. */
   :root {
     --papier: #F2F4F1;
     --carte: #FFFFFF;
@@ -19,8 +22,47 @@
     --gain: #1D7A4B;
     --perte: #B23A2E;
     --perte-clair: #F7E6E3;
+    --alerte-fond: #FBF3E3;
+    --alerte-bord: #C08A3E;
+    --champ: #FFFFFF;
+    --ombre: 0 1px 2px rgba(21, 38, 29, .05);
     --rayon: 10px;
   }
+  /* Mode sombre : les verts sont éclaircis pour rester lisibles sur fond foncé,
+     et les gains/pertes restent distinguables par un daltonien comme en clair. */
+  html[data-theme="sombre"] {
+    --papier: #121714;
+    --carte: #1A211C;
+    --encre: #E8EDE9;
+    --encre-2: #9DAAA1;
+    --filet: #2C3630;
+    --foret: #5FBC8C;
+    --foret-clair: #1E3328;
+    --gain: #5FBC8C;
+    --perte: #E2796B;
+    --perte-clair: #3A221F;
+    --alerte-fond: #2E2719;
+    --alerte-bord: #C08A3E;
+    --champ: #222A25;
+    --ombre: 0 1px 2px rgba(0, 0, 0, .35);
+  }
+  html { color-scheme: light; }
+  html[data-theme="sombre"] { color-scheme: dark; }
+
+  /* Interrupteur de thème, dans l'esprit des réglages d'un téléphone */
+  .bascule-theme { position: relative; display: inline-flex; align-items: center;
+    width: 46px; height: 26px; border-radius: 999px; border: 1px solid var(--filet);
+    background: var(--papier); cursor: pointer; padding: 0; flex: none; transition: background .2s; }
+  .bascule-theme::after { content: ""; position: absolute; left: 2px; top: 1px;
+    width: 20px; height: 20px; border-radius: 50%; background: var(--carte);
+    box-shadow: var(--ombre); transition: transform .2s; }
+  html[data-theme="sombre"] .bascule-theme { background: var(--foret-clair); border-color: var(--foret); }
+  html[data-theme="sombre"] .bascule-theme::after { transform: translateX(20px); }
+  .bascule-theme span { position: absolute; font-size: 11px; line-height: 1; top: 7px; }
+  .bascule-theme .clair { left: 6px; opacity: 0; }
+  .bascule-theme .sombre { right: 6px; opacity: .85; }
+  html[data-theme="sombre"] .bascule-theme .clair { opacity: .85; }
+  html[data-theme="sombre"] .bascule-theme .sombre { opacity: 0; }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--papier); color: var(--encre);
@@ -37,7 +79,7 @@
   .discret { color: var(--encre-2); font-size: 13px; }
 
   /* ── Connexion ─────────────────────────────────────────── */
-  #ecran-connexion { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+  #ecran-attente { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
   .boite-connexion { width: 100%; max-width: 380px; }
   .boite-connexion h1 { font-family: 'IBM Plex Serif', serif; font-weight: 500; font-size: 34px; margin: 0 0 4px; }
   .boite-connexion p { margin: 0 0 28px; color: var(--encre-2); }
@@ -65,6 +107,7 @@
   .marque { font-weight: 600; letter-spacing: .01em; }
   .marque span { color: var(--foret); }
   .barre .espace { flex: 1; }
+  header { position: relative; }
   .utilisateur { color: var(--encre-2); font-size: 14px; }
 
   main { max-width: 1240px; margin: 0 auto; padding: 28px 24px 60px; }
@@ -92,7 +135,7 @@
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th { text-align: left; font-weight: 500; color: var(--encre-2); font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--filet); white-space: nowrap; }
   th.num { text-align: right; }
-  td { padding: 10px; border-bottom: 1px solid #EDF0EC; vertical-align: middle; }
+  td { padding: 10px; border-bottom: 1px solid var(--filet); vertical-align: middle; }
   tbody tr:last-child td { border-bottom: none; }
   .defile { overflow-x: auto; }
   .titre-ligne strong { display: block; font-weight: 500; }
@@ -101,11 +144,80 @@
   .mini-btn { border: 1px solid var(--filet); background: var(--carte); border-radius: 6px; padding: 4px 10px; font-size: 13px; }
   .mini-btn:hover { border-color: var(--foret); color: var(--foret); }
   .mini-btn.danger:hover { border-color: var(--perte); color: var(--perte); }
+  .mini-btn.achat { color: var(--gain); border-color: #BFDCC9; }
+  .mini-btn.achat:hover { background: var(--foret-clair); border-color: var(--gain); }
+  .mini-btn.vente { color: var(--perte); border-color: #E7C6C1; }
+  .mini-btn.vente:hover { background: var(--perte-clair); border-color: var(--perte); }
+  .actions-ligne { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+  .segments { display: inline-flex; background: var(--papier); border-radius: 8px; padding: 3px; gap: 2px; }
+  .segments button { border: none; background: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; color: var(--encre-2); }
+  .segments button[aria-pressed="true"] { background: var(--carte); color: var(--encre); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .grille-palmares { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .grille-palmares .panneau { margin-bottom: 18px; }
+  .palmares.vert { background: linear-gradient(180deg, #F3F9F5, var(--carte) 60%); border-color: #CFE3D6; }
+  .palmares.rouge { background: linear-gradient(180deg, #FCF4F2, var(--carte) 60%); border-color: #EBD2CD; }
+  .palmares table { font-size: 14px; }
+  .palmares .rang { color: var(--encre-2); font-size: 12px; width: 18px; }
+  tr.ligne-titre { cursor: pointer; }
+  tr.ligne-titre:hover td { background: #FAFBFA; }
+  tr.ligne-titre.ouverte td { background: var(--foret-clair); }
+  .detail-titre { padding: 14px 10px 18px; }
+  .detail-titre .courbe { height: 240px; }
+  .chevron { color: var(--encre-2); font-size: 11px; margin-left: 6px; }
+  #dlg-import { width: min(980px, calc(100% - 28px)); }
+  #import-table table { font-size: 13.5px; }
+  #import-table input, #import-table select {
+    background: var(--carte); border: 1px solid var(--filet); border-radius: 6px;
+    padding: 5px 7px; font-size: 13px; width: 100%; min-width: 0;
+  }
+  #import-table tr.exclue { opacity: .45; }
+  #import-table .alerte { color: #8A5412; font-size: 12px; display: block; }
+  .perf-table td.principal, .perf-table th.principal { font-weight: 600; }
+  .perf-table tr.total td { border-top: 2px solid var(--filet); }
+  .perf-table .groupe { color: var(--encre-2); font-weight: 500; font-size: 12px; }
+  .formule { background: var(--papier); border-left: 3px solid var(--foret); border-radius: 0 8px 8px 0;
+    padding: 10px 14px; margin: 10px 0 14px; font-size: 14.5px; }
+  .choix-pf { display: flex; align-items: center; gap: 7px; margin-left: 18px; font-size: 13px; color: var(--encre-2); }
+  .choix-pf select { padding: 5px 8px; border: 1px solid var(--filet); border-radius: 7px;
+    background: var(--champ); color: var(--encre); font-size: 13px; font-family: inherit; max-width: 230px; }
+  .liste-pf { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 18px; }
+  .liste-pf .ligne { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+    border: 1px solid var(--filet); border-radius: 9px; }
+  .liste-pf .ligne.actif { border-color: var(--foret); background: var(--foret-clair); }
+  .liste-pf .ligne input[type=text] { flex: 1; border: none; background: transparent;
+    font-size: 14px; font-family: inherit; color: var(--encre); padding: 2px 0; }
+  .liste-pf .ligne input[type=text]:focus { outline: none; border-bottom: 1px solid var(--foret); }
+  .liste-pf .meta { font-size: 12px; color: var(--encre-2); white-space: nowrap; }
+  /* Les champs de saisie et les boîtes de dialogue suivent le thème eux aussi,
+     sans quoi le mode sombre laisserait des rectangles blancs éblouissants. */
+  input, select, textarea { background: var(--champ); color: var(--encre); }
+  input::placeholder { color: var(--encre-2); opacity: .7; }
+  dialog { background: var(--carte); }
+  html[data-theme="sombre"] dialog::backdrop { background: rgba(0, 0, 0, .6); }
+  html[data-theme="sombre"] .toast { background: var(--carte); color: var(--encre);
+    border: 1px solid var(--filet); }
+  .bandeau-alerte { grid-column: 1 / -1; margin-top: 14px; padding: 10px 14px; border-radius: 8px;
+    background: var(--alerte-fond); border-left: 3px solid var(--alerte-bord); font-size: 13px; line-height: 1.55; color: var(--encre-2); }
+  .perf-table td.extrapole { font-style: italic; opacity: .85; }
+  details.methode { margin: 6px 0 12px; }
+  details.methode > summary { cursor: pointer; font-size: 13px; color: var(--foret); font-weight: 500; }
+  details.methode .formule { font-family: ui-monospace, "Cascadia Mono", Menlo, monospace; font-size: 13.5px; }
+  #import-detail > details { margin: 4px 0 10px; }
+  #import-detail > details > summary { cursor: pointer; font-size: 13px; color: var(--foret); font-weight: 500; }
+  .menu-detail { margin: 6px 0 10px; padding-left: 20px; font-size: 13px; color: var(--encre-2); line-height: 1.6; }
+  .ligne-classer { display: flex; gap: 10px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  .ligne-classer code { background: var(--papier); padding: 3px 8px; border-radius: 5px; font-size: 13px; }
+  tr.doublon td { background: var(--alerte-fond); }
+  .barre-outils { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }
   .etiquette { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: 12px; font-weight: 500; background: #ECEFEB; }
   .etiquette.ACHAT { background: var(--foret-clair); color: var(--foret); }
-  .etiquette.VENTE { background: #FBEEDC; color: #8A5412; }
+  .etiquette.VENTE { background: var(--perte-clair); color: var(--perte); }
+  .etiquette.auto { background: #EEF0EE; color: var(--encre-2); margin-left: 4px; }
+  tr.op-ACHAT td:first-child { box-shadow: inset 3px 0 0 var(--gain); }
+  tr.op-VENTE td:first-child { box-shadow: inset 3px 0 0 var(--perte); }
   .etiquette.DEPOT, .etiquette.DIVIDENDE { background: #E6EEF7; color: #2B5680; }
-  .etiquette.RETRAIT { background: var(--perte-clair); color: var(--perte); }
+  .etiquette.SPLIT { background: #F0ECF7; color: #5B4B86; }
+  .etiquette.RETRAIT { background: #F1ECE4; color: #7A5A2E; }
 
   .vide { text-align: center; padding: 36px 16px; color: var(--encre-2); }
   .vide p { margin: 0 0 14px; }
@@ -116,16 +228,87 @@
   .legende { list-style: none; padding: 0; margin: 12px 0 0; font-size: 13.5px; }
   .legende li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
   .legende .pastille { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
-  .legende .val { margin-left: auto; }
+  .legende .val { margin-left: auto; white-space: nowrap; padding-left: 8px; }
   .courbe { position: relative; height: 320px; }
+  .carte-zones { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 24px; align-items: center; }
+  .carte { position: relative; height: 380px; }
+  .tete-panneau { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .tete-panneau > div:first-child { flex: 1 1 340px; min-width: 0; }
+  .tete-panneau .periodes-perf { flex: none; margin-left: auto; }
+  .tete-panneau + .courbe { margin-top: 14px; }
+  .choix-indice { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--encre-2); }
+  .choix-indice select { border: 1px solid var(--filet); border-radius: 6px; padding: 5px 8px; background: var(--carte); }
+  .cloche { position: relative; border: 1px solid var(--filet); background: var(--carte); border-radius: 8px; padding: 7px 11px; line-height: 1; }
+  .cloche .compteur { position: absolute; top: -6px; right: -6px; background: var(--perte); color: #fff; border-radius: 10px; font-size: 11px; padding: 1px 6px; font-weight: 600; }
+  .notifs { position: absolute; right: 24px; top: 64px; width: min(380px, calc(100% - 28px)); background: var(--carte); border: 1px solid var(--filet); border-radius: var(--rayon); box-shadow: 0 10px 30px rgba(21,38,29,.12); z-index: 15; padding: 8px 0; max-height: 70vh; overflow-y: auto; }
+  .notifs .entete { display: flex; justify-content: space-between; align-items: center; padding: 6px 16px 10px; border-bottom: 1px solid var(--filet); }
+  .notif { padding: 10px 16px; border-bottom: 1px solid var(--filet); font-size: 13.5px; }
+  .notif:last-child { border-bottom: none; }
+  .notif.non-lue { background: var(--foret-clair); }
+  .notif strong { display: block; font-weight: 500; }
+  .notif time { font-size: 12px; color: var(--encre-2); }
+  dialog { border: 1px solid var(--filet); border-radius: var(--rayon); padding: 22px 24px; width: min(440px, calc(100% - 28px)); color: var(--encre); }
+  dialog::backdrop { background: rgba(21, 38, 29, .35); }
+  dialog h2 { font-family: 'IBM Plex Serif', serif; font-weight: 500; font-size: 22px; margin: 0 0 16px; }
+  .aide-champ { font-size: 12.5px; color: var(--encre-2); margin: -8px 0 14px; }
+  @media (max-width: 820px) { .carte-zones { grid-template-columns: 1fr; } .carte { height: 260px; } }
 
   .indicateurs { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0; border: 1px solid var(--filet); border-radius: var(--rayon); background: var(--carte); margin-bottom: 18px; overflow: hidden; }
-  .indicateurs > div { padding: 16px 18px; border-right: 1px solid #EDF0EC; border-bottom: 1px solid #EDF0EC; }
+  .indicateurs > div { padding: 16px 18px; border-right: 1px solid var(--filet); border-bottom: 1px solid var(--filet); }
   .indicateurs .nom { font-size: 13px; color: var(--encre-2); }
   .indicateurs .valeur { font-size: 24px; font-weight: 500; margin: 2px 0; }
   .indicateurs .aide { font-size: 12.5px; color: var(--encre-2); line-height: 1.4; }
+  /* Le taux sans risque se règle dans la tuile du ratio de Sharpe, pas dans un écran à part. */
+  /* ── Jauge de régularité ─────────────────────────────── */
+  .jauge-regularite { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; margin: 14px 0 6px; }
+  .jauge-regularite .score { font-size: 46px; font-weight: 500; line-height: 1; flex: none; }
+  .jauge-regularite .score span { font-size: 17px; color: var(--encre-2); font-weight: 400; }
+  .jauge-regularite .verdict { flex: 1 1 320px; min-width: 0; }
+  .jauge-regularite .verdict strong { display: block; font-size: 15px; margin-bottom: 2px; }
+  .jauge-regularite .verdict > span { display: block; color: var(--encre-2); font-size: 13.5px; line-height: 1.5; }
+  /* Le dégradé des quatre paliers : rouge, ambre, olive, vert */
+  .jauge-regularite .barre { position: relative; height: 8px; border-radius: 999px; margin: 14px 0 6px;
+    background: linear-gradient(to right, #B23A2E 0%, #C08A3E 40%, #7FA83C 60%, #1D7A4B 85%); }
+  .jauge-regularite .curseur { position: absolute; top: 50%; width: 15px; height: 15px; border-radius: 50%;
+    transform: translate(-50%, -50%); border: 2.5px solid var(--carte); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  .jauge-regularite .paliers { display: flex; justify-content: space-between; font-size: 11px; color: var(--encre-2); }
 
-  .article { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid #EDF0EC; }
+  /* ── Onglet Informations ─────────────────────────────── */
+  .sommaire-infos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .puce-info { border: 1px solid var(--filet); background: var(--papier); color: var(--encre);
+    border-radius: 999px; padding: 6px 14px; font-size: 13px; }
+  .puce-info:hover { background: var(--foret-clair); border-color: var(--foret); }
+  .fiche-info { scroll-margin-top: 16px; }
+  .fiche-info .definition { margin: 0 0 14px; line-height: 1.55; color: var(--encre); max-width: 70ch; }
+  .fiche-info .formule-fiche { margin: 0 0 14px; padding: 10px 14px; background: var(--papier);
+    border-left: 3px solid var(--foret); border-radius: 0 6px 6px 0;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13.5px; }
+  .fiche-info table.lecture { width: auto; margin: 0 0 14px; border-collapse: collapse; }
+  .fiche-info table.lecture th { text-align: left; white-space: nowrap; padding: 6px 18px 6px 0;
+    font-weight: 500; color: var(--encre); vertical-align: top; }
+  .fiche-info table.lecture td { padding: 6px 0; color: var(--encre-2); line-height: 1.5; }
+  .fiche-info table.lecture tr + tr th, .fiche table.lecture tr + tr td { border-top: 1px solid var(--filet); }
+  .fiche-info .exemple { margin: 0; padding: 12px 14px; background: var(--papier); border-radius: 8px;
+    line-height: 1.55; color: var(--encre-2); max-width: 78ch; }
+  .fiche-info .note-fiche { margin: 12px 0 0; font-size: 13px; color: var(--encre-2); line-height: 1.5;
+    max-width: 78ch; font-style: italic; }
+  /* Soulignement bref de la fiche visée par un clic sur un indicateur */
+  @keyframes visee { from { box-shadow: 0 0 0 3px var(--foret); } to { box-shadow: 0 0 0 3px transparent; } }
+  .fiche-info.visee { animation: visee 1.8s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .fiche-info.visee { animation: none; } }
+  /* Un indicateur cliquable renvoie à sa fiche */
+  .indicateurs > div.cliquable { cursor: pointer; }
+  .indicateurs > div.cliquable:hover { background: var(--papier); }
+  .indicateurs .vers-fiche { display: inline-block; margin-top: 6px; font-size: 12px;
+    color: var(--foret); text-decoration: underline; text-underline-offset: 2px; }
+
+  .reglage-taux { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12.5px; color: var(--encre-2); }
+  .reglage-taux input { width: 72px; padding: 4px 6px; font-size: 13px; text-align: right;
+    border: 1px solid var(--filet); border-radius: 6px; background: var(--champ); color: var(--encre); }
+  .reglage-taux input:focus { outline: 2px solid var(--foret); outline-offset: 1px; }
+  .reglage-taux input:disabled { opacity: .5; }
+
+  .article { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--filet); }
   .article:last-child { border-bottom: none; }
   .article a { color: var(--encre); font-weight: 500; text-decoration: none; }
   .article a:hover { text-decoration: underline; }
@@ -166,20 +349,12 @@
 <body>
 
 <!-- ═════════════ Connexion ═════════════ -->
-<section id="ecran-connexion">
+<section id="ecran-attente">
   <div class="boite-connexion">
     <h1>EcoFolio</h1>
     <p>Suivi de votre compte-titres : positions, plus-values, risque et actualités.</p>
+    <p class="discret" id="attente-message">Ouverture de votre portefeuille…</p>
     <div id="auth-erreur" class="erreur cache"></div>
-    <form id="form-auth">
-      <div class="champ"><label for="auth-user">Nom d'utilisateur</label><input id="auth-user" autocomplete="username" required minlength="3"></div>
-      <div class="champ"><label for="auth-mdp">Mot de passe</label><input id="auth-mdp" type="password" autocomplete="current-password" required minlength="6"></div>
-      <button class="btn" type="submit" id="auth-btn" style="width:100%">Se connecter</button>
-    </form>
-    <p class="discret" style="margin-top:16px">
-      <span id="auth-bascule-texte">Pas encore de compte ?</span>
-      <button class="btn-lien" id="auth-bascule" type="button">Créer un compte</button>
-    </p>
   </div>
 </section>
 
@@ -188,88 +363,153 @@
   <header>
     <div class="barre">
       <div class="marque">Eco<span>Folio</span></div>
+      <label class="choix-pf">Portefeuille
+        <select id="sel-portefeuille" title="Chaque portefeuille a ses propres opérations, positions et performance."></select>
+      </label>
+      <button class="mini-btn" id="btn-gerer-pf" title="Créer, renommer ou supprimer un portefeuille">Gérer</button>
       <div class="espace"></div>
       <span class="utilisateur" id="nom-utilisateur"></span>
-      <button class="btn" id="btn-ordre">Passer un ordre</button>
-      <button class="mini-btn" id="btn-deconnexion">Déconnexion</button>
+      <button class="cloche" id="btn-notifs" aria-label="Notifications">🔔<span class="compteur cache" id="nb-notifs"></span></button>
+      <button class="bascule-theme" id="btn-theme" role="switch" aria-checked="false"
+              aria-label="Basculer entre le mode clair et le mode sombre"
+              title="Mode clair / mode sombre"><span class="clair">☀</span><span class="sombre">☾</span></button>
+      <button class="btn" id="btn-ordre">Saisir une opération</button>
+    </div>
+    <div class="notifs cache" id="panneau-notifs">
+      <div class="entete"><strong>Notifications</strong><span style="display:flex;gap:12px"><button class="btn-lien" id="activer-notifs">Activer les alertes</button><button class="btn-lien" id="effacer-notifs">Effacer</button></span></div>
+      <div id="liste-notifs"></div>
     </div>
   </header>
 
   <main>
     <div class="releve">
       <div class="principal">
-        <div class="libelle">Valorisation du compte</div>
+        <div class="libelle" id="lbl-valo">Valorisation des titres</div>
         <div class="montant" id="k-valo">—</div>
         <div class="pnl" id="k-pnl">—</div>
       </div>
+      <!-- Trois mesures, et rien d'autre : ce que les titres détenus ont gagné, ce que
+           les titres vendus ont rapporté, et la somme des deux. Chacune est rapportée au
+           prix de revient des lignes concernées, donc chacune se vérifie à la main. -->
       <div class="chiffres">
-        <div><span>Espèces</span><strong id="k-cash">—</strong></div>
-        <div><span>Titres</span><strong id="k-titres">—</strong></div>
-        <div><span>Plus-values latentes</span><strong id="k-pvl">—</strong></div>
-        <div><span>Plus-values réalisées</span><strong id="k-pvr">—</strong></div>
-        <div><span>Variation du jour</span><strong id="k-jour">—</strong></div>
-        <div><span>Dépôts nets</span><strong id="k-depots">—</strong></div>
-        <div><span>Dividendes</span><strong id="k-div">—</strong></div>
-        <div><span>Frais payés</span><strong id="k-frais">—</strong></div>
+        <div><span>Plus-value latente</span><strong id="k-pv-latente">—</strong><span class="sous" id="k-pv-latente-detail"></span></div>
+        <div><span>Plus-value réalisée</span><strong id="k-pv-realisee">—</strong><span class="sous" id="k-pv-realisee-detail"></span></div>
+        <div><span>Gain total depuis l'ouverture</span><strong id="k-gain">—</strong><span class="sous" id="k-gain-detail"></span></div>
       </div>
+      <div id="alerte-financement" class="bandeau-alerte cache"></div>
     </div>
 
     <nav class="onglets" role="tablist">
       <button role="tab" data-onglet="positions" aria-selected="true">Positions</button>
-      <button role="tab" data-onglet="ordres">Carnet d'ordres</button>
+      <button role="tab" data-onglet="ordres">Ordres</button>
+      <button role="tab" data-onglet="mouvements">Mouvements</button>
       <button role="tab" data-onglet="repartition">Répartition</button>
       <button role="tab" data-onglet="performance">Performance</button>
       <button role="tab" data-onglet="risque">Risque</button>
       <button role="tab" data-onglet="actualites">Actualités</button>
+      <button role="tab" data-onglet="informations">Informations</button>
     </nav>
 
     <!-- Positions -->
     <div data-vue="positions">
       <div class="panneau">
-        <h2>Positions ouvertes</h2>
-        <p class="sous-titre">Chaque ligne est affichée dans sa devise de cotation ; la colonne € intègre l'effet change et les frais.</p>
+        <div class="tete-panneau">
+          <div>
+            <h2>Positions ouvertes</h2>
+            <p class="sous-titre"><strong>Brute</strong> : (cours − PRU) × quantité, dans la devise de cotation, hors frais.
+              <strong>Nette</strong> : ce qui reste réellement, frais de courtage et effet de change déduits.
+              L'écart entre les deux colonnes, ce sont vos frais.</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="mini-btn" id="btn-import" title="Importer un relevé d'opérations ou un export de positions depuis votre courtier">Importer un relevé</button>
+            <input type="file" id="fichier-import" accept=".csv,.txt,.pdf,text/csv,application/pdf" class="cache">
+          </div>
+        </div>
         <div class="defile" id="table-positions"></div>
       </div>
       <div class="panneau" id="bloc-soldees">
         <h2>Lignes soldées</h2>
-        <p class="sous-titre">Plus-values réalisées sur les titres entièrement vendus.</p>
+        <p class="sous-titre">Plus-values encaissées sur les titres entièrement vendus. La colonne nette
+          supporte les frais des deux passages, l'achat et la vente.</p>
         <div class="defile" id="table-soldees"></div>
       </div>
     </div>
 
-    <!-- Carnet d'ordres -->
+    <!-- Ordres -->
     <div data-vue="ordres" class="cache">
       <div class="panneau">
-        <h2>Carnet d'ordres et mouvements</h2>
-        <p class="sous-titre">Du plus récent au plus ancien. Une opération saisie par erreur peut être annulée si l'historique reste cohérent.</p>
+        <h2>Ordres saisis</h2>
+        <p class="sous-titre">Du plus récent au plus ancien. Une saisie peut être modifiée ou annulée tant que l'historique reste cohérent.</p>
         <div class="defile" id="table-ordres"></div>
+      </div>
+    </div>
+
+    <!-- Mouvements -->
+    <div data-vue="mouvements" class="cache">
+      <div class="panneau">
+        <h2>Mouvements d'espèces et opérations sur titres</h2>
+        <p class="sous-titre">Dépôts, retraits, dividendes et divisions d'actions. Les dividendes et les splits sont détectés automatiquement sur Yahoo Finance.</p>
+        <div class="defile" id="table-mouvements"></div>
       </div>
     </div>
 
     <!-- Répartition -->
     <div data-vue="repartition" class="cache">
+      <p class="discret" style="margin:0 0 14px">Les ETF sont ventilés selon leur contenu (par exemple un ETF S&amp;P 500 compte 100 % en Amérique du Nord), comme sur Boursorama. <span id="note-etf"></span></p>
       <div class="grille-2">
-        <div class="panneau"><h2>Zone géographique</h2><div class="donut"><canvas id="d-zone"></canvas></div><ul class="legende" id="l-zone"></ul></div>
-        <div class="panneau"><h2>Secteur</h2><div class="donut"><canvas id="d-secteur"></canvas></div><ul class="legende" id="l-secteur"></ul></div>
-        <div class="panneau"><h2>Devise</h2><div class="donut"><canvas id="d-devise"></canvas></div><ul class="legende" id="l-devise"></ul></div>
-        <div class="panneau"><h2>Titres et liquidités</h2><div class="donut"><canvas id="d-classe"></canvas></div><ul class="legende" id="l-classe"></ul></div>
+        <div class="panneau"><h2>Par titre</h2><div class="donut"><canvas id="d-titre"></canvas></div><ul class="legende" id="l-titre"></ul></div>
+        <div class="panneau"><h2>Par secteur</h2><div class="donut"><canvas id="d-secteur"></canvas></div><ul class="legende" id="l-secteur"></ul></div>
+        <div class="panneau"><h2>Par type d'actif</h2><div class="donut"><canvas id="d-actif"></canvas></div><ul class="legende" id="l-actif"></ul></div>
+        <div class="panneau"><h2>Par devise</h2><div class="donut"><canvas id="d-devise"></canvas></div><ul class="legende" id="l-devise"></ul></div>
       </div>
       <div class="panneau" style="margin-top:18px">
-        <h2>Par pays</h2>
-        <div class="defile" id="table-pays"></div>
+        <h2>Répartition géographique</h2>
+        <div class="carte-zones">
+          <div class="carte"><canvas id="c-carte"></canvas></div>
+          <div class="defile" id="table-zones"></div>
+        </div>
       </div>
     </div>
 
     <!-- Performance -->
     <div data-vue="performance" class="cache">
+      <div class="barre-outils">
+        <div class="segments" id="unites">
+          <button data-u="pct" aria-pressed="true">%</button>
+          <button data-u="eur">€</button>
+        </div>
+        <label class="choix-indice">Comparer à <select class="sel-indice" data-cible="performance"></select></label>
+        <label class="choix-indice">Mesuré <select class="sel-mode-indice" id="sel-mode-indice"></select></label>
+      </div>
       <div class="panneau">
-        <h2>Valorisation du compte</h2>
-        <p class="sous-titre">Reconstituée jour par jour à partir de vos opérations et des cours de clôture.</p>
+        <div class="tete-panneau">
+          <div>
+            <h2>Performances</h2>
+          </div>
+        </div>
+        <div class="defile" id="table-perfs"></div>
+        <p class="discret" id="note-perfs" style="margin:12px 0 0"></p>
+      </div>
+      <div class="grille-palmares">
+        <div class="panneau palmares vert"><h2>3 meilleures performances</h2><p class="sous-titre">Latente, en euros, effet de change inclus.</p><div id="top-titres"></div></div>
+        <div class="panneau palmares rouge"><h2>3 moins bonnes performances</h2><p class="sous-titre">Latente, en euros, effet de change inclus.</p><div id="flop-titres"></div></div>
+      </div>
+      <div class="panneau">
+        <div class="tete-panneau"><div>
+          <h2>Valorisation du portefeuille</h2>
+          <p class="sous-titre">Valeur de vos positions et de vos liquidités, reconstituée jour par jour à partir des cours de clôture.</p>
+        </div>
+          <div class="segments periodes-perf"></div>
+        </div>
         <div class="courbe"><canvas id="c-valo"></canvas></div>
       </div>
       <div class="panneau">
-        <h2>Plus ou moins-value cumulée</h2>
-        <p class="sous-titre">Valorisation moins dépôts nets, en euros. La performance en % (méthode TWR) neutralise l'effet de vos dépôts et retraits.</p>
+        <div class="tete-panneau"><div>
+          <h2 id="titre-perf">Performance comparée</h2>
+          <p class="sous-titre" id="sous-perf"></p>
+        </div>
+          <div class="segments periodes-perf"></div>
+        </div>
         <div class="courbe"><canvas id="c-pnl"></canvas></div>
       </div>
     </div>
@@ -287,14 +527,60 @@
         <div id="liste-actus"></div>
       </div>
     </div>
+
+    <!-- Informations : les fiches techniques, écrites une seule fois et appelées
+         depuis les indicateurs. C'est ici qu'on explique, et nulle part ailleurs. -->
+    <div data-vue="informations" class="cache">
+      <div class="panneau">
+        <h2>Comprendre les indicateurs</h2>
+        <p class="sous-titre">Chaque chiffre de l'application est défini ici, avec sa lecture et un exemple.
+          Depuis l'onglet Risque ou Performance, un clic sur un indicateur vous amène directement à sa fiche.</p>
+        <div class="sommaire-infos" id="sommaire-infos"></div>
+      </div>
+      <div id="fiches-infos"></div>
+    </div>
   </main>
 </section>
+
+<!-- ═════════════ Aperçu d'import ═════════════ -->
+<dialog id="dlg-portefeuilles">
+  <h2>Vos portefeuilles</h2>
+  <p class="aide-champ">Chaque portefeuille est indépendant : ses opérations, ses positions, sa
+    performance et son risque lui appartiennent. Rien n'est partagé entre eux, et vous choisissez
+    à l'ouverture celui que vous voulez suivre.</p>
+  <div class="liste-pf" id="pf-liste"></div>
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:18px">
+    <input type="text" id="pf-nouveau" maxlength="60" style="flex:1"
+           placeholder="Nom du nouveau portefeuille (PEA, compte-titres, challenge…)">
+    <button class="btn btn-sec" id="pf-creer" type="button">Créer</button>
+  </div>
+  <div style="display:flex;justify-content:flex-end">
+    <button class="btn" id="pf-fermer" type="button">Fermer</button>
+  </div>
+</dialog>
+
+<dialog id="dlg-import">
+  <h2>Importer des positions</h2>
+  <p class="aide-champ" id="import-resume"></p>
+  <div id="import-detail"></div>
+  <div id="import-erreur" class="erreur cache"></div>
+  <div class="defile" id="import-table"></div>
+  <label style="display:flex;gap:8px;align-items:flex-start;margin:14px 0;font-size:13px;color:var(--encre-2)">
+    <input type="checkbox" id="import-remplacer" style="margin-top:3px">
+    <span>Remplacer les positions déjà suivies sur les mêmes titres, au lieu de les cumuler.
+      À cocher si vous réimportez un export plus récent du même compte.</span>
+  </label>
+  <div style="display:flex;gap:10px;justify-content:flex-end">
+    <button class="btn btn-sec" id="import-annuler" type="button">Annuler</button>
+    <button class="btn" id="import-valider" type="button">Importer</button>
+  </div>
+</dialog>
 
 <!-- ═════════════ Tiroir Ordre ═════════════ -->
 <div class="voile cache" id="voile"></div>
 <aside class="tiroir" id="tiroir" aria-hidden="true">
   <div style="display:flex;justify-content:space-between;align-items:center">
-    <h2>Passer un ordre</h2>
+    <h2 id="titre-tiroir">Saisir une opération</h2>
     <button class="mini-btn" id="fermer-tiroir" aria-label="Fermer">Fermer</button>
   </div>
   <div class="types" id="types-ordre">
@@ -307,7 +593,7 @@
   <div id="ordre-erreur" class="erreur cache"></div>
   <form id="form-ordre">
     <div class="champ" data-pour="ACHAT VENTE DIVIDENDE">
-      <label for="o-ticker">Titre (ticker Yahoo Finance)</label>
+      <label for="o-ticker">Titre, fonds ou ETF (ticker Yahoo Finance)</label>
       <input id="o-ticker" placeholder="MC.PA, AAPL, SAP.DE, ASML.AS…" autocomplete="off">
     </div>
     <div class="fiche cache" id="o-fiche"></div>
@@ -331,13 +617,87 @@
 <script>
   const API = 'http://localhost:8000';
   const LIBELLES = { ACHAT: "Valider l'achat", VENTE: 'Valider la vente', DEPOT: 'Enregistrer le dépôt', RETRAIT: 'Enregistrer le retrait', DIVIDENDE: 'Enregistrer le dividende' };
-  const NOMS_TYPE = { ACHAT: 'Achat', VENTE: 'Vente', DEPOT: 'Dépôt', RETRAIT: 'Retrait', DIVIDENDE: 'Dividende' };
+  const NOMS_TYPE = { ACHAT: 'Achat', VENTE: 'Vente', DEPOT: 'Dépôt', RETRAIT: 'Retrait', DIVIDENDE: 'Dividende', SPLIT: "Division d'actions" };
   const PALETTE = ['#1E6A48', '#4F9A74', '#9CC5A9', '#2B5680', '#7FA7CB', '#C08A3E', '#8E6BA8', '#B23A2E', '#6B7A70', '#D5C9A1'];
   const $ = s => document.querySelector(s);
+  // Couleur courante du thème, lue sur la feuille de style : les graphiques suivent
+  // ainsi le mode clair ou sombre sans qu'aucune teinte ne soit écrite deux fois.
+  const teinte = nom => getComputedStyle(document.documentElement).getPropertyValue(nom).trim();
+
+  /* ── Thème clair / sombre ────────────────────────────── */
+  function appliquerTheme(nom, redessiner = false) {
+    document.documentElement.dataset.theme = nom;
+    const bouton = $('#btn-theme');
+    if (bouton) bouton.setAttribute('aria-checked', nom === 'sombre' ? 'true' : 'false');
+    try { localStorage.setItem('ecofolio_theme', nom); } catch {}
+    // Les graphiques sont dessinés sur un canevas : ils ne suivent pas une feuille de
+    // style, il faut les retracer. Jamais au tout premier appel, qui a lieu avant que
+    // l'application n'ait chargé quoi que ce soit.
+    if (redessiner) redessinerGraphiques();
+  }
+  // Au premier chargement : le choix retenu, sinon le réglage du système.
+  appliquerTheme((() => { try { return localStorage.getItem('ecofolio_theme'); } catch { return null; } })()
+    || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'sombre' : 'clair'));
+  document.addEventListener('DOMContentLoaded', () => {
+    const bouton = $('#btn-theme');
+    if (!bouton) return;
+    bouton.setAttribute('aria-checked',
+      document.documentElement.dataset.theme === 'sombre' ? 'true' : 'false');
+    bouton.onclick = () => appliquerTheme(
+      document.documentElement.dataset.theme === 'sombre' ? 'clair' : 'sombre', true);
+  });
 
   let jeton = localStorage.getItem('ecofolio_jeton');
   let utilisateur = localStorage.getItem('ecofolio_user');
+  // Portefeuille actif : retenu d'une session à l'autre, par utilisateur.
+  let PORTEFEUILLES = [], pfActif = null;
+  const clePf = () => 'ecofolio_pf_' + (utilisateur || '');
   let SYN = null, typeOrdre = 'ACHAT', ficheOrdre = null, graphiques = {}, charge = {};
+
+  /* ── Graphiques nets ─────────────────────────────────────
+     Un canevas n'est pas du texte : c'est une image de pixels. Si Chart.js la dessine
+     plus petite que la place qu'elle occupe à l'écran, le navigateur l'étire et tout
+     devient flou. Deux causes ici : l'écran de Windows est souvent à 125 ou 150 %, et
+     un graphique construit dans un onglet encore masqué se mesure à zéro.
+     D'où ce passage obligé : on dessine à 2 pixels au moins pour 1 pixel d'écran, et
+     on remesure le canevas dès que son conteneur change de taille. */
+  const OBSERVATEURS = {};
+  function creerGraphique(id, config) {
+    const toile = $('#' + id);
+    if (!toile || !window.Chart) return null;
+    graphiques[id]?.destroy();
+    const options = config.options || (config.options = {});
+    options.responsive = true;
+    options.maintainAspectRatio = false;
+    options.devicePixelRatio = Math.max(2, window.devicePixelRatio || 1);
+    options.animation = false;            // un graphique figé se lit mieux qu'un graphique qui glisse
+    const g = new Chart(toile, config);
+    graphiques[id] = g;
+    // Le conteneur peut être masqué au moment du tracé : on le remesure ensuite.
+    const boite = toile.parentElement;
+    if (boite && window.ResizeObserver) {
+      OBSERVATEURS[id]?.disconnect();
+      const obs = new ResizeObserver(() => { try { graphiques[id]?.resize(); } catch {} });
+      obs.observe(boite);
+      OBSERVATEURS[id] = obs;
+    }
+    requestAnimationFrame(() => { try { g.resize(); } catch {} });
+    return g;
+  }
+  // Un zoom du navigateur (Ctrl + molette) change la finesse de l'écran sans toucher
+  // au canevas : sans ce rappel, l'image reste dessinée à l'ancienne résolution et
+  // devient floue jusqu'au prochain rechargement.
+  function ajusterFinesse() {
+    const net = Math.max(2, window.devicePixelRatio || 1);
+    Object.values(graphiques).forEach(g => {
+      if (!g || !g.options) return;
+      try {
+        if (g.options.devicePixelRatio !== net) { g.options.devicePixelRatio = net; g.update('none'); }
+        g.resize();
+      } catch {}
+    });
+  }
+  window.addEventListener('resize', ajusterFinesse);
 
   /* ── Formats ─────────────────────────────────────────── */
   function argent(v, devise = 'EUR', signe = false) {
@@ -362,15 +722,28 @@
   async function api(chemin, options = {}) {
     let rep;
     try {
+      // Un envoi de fichier laisse le navigateur composer lui-même l'en-tête
+      const fichier = options.body instanceof FormData;
       rep = await fetch(API + chemin, {
         ...options,
-        headers: { 'Content-Type': 'application/json', ...(jeton ? { Authorization: 'Bearer ' + jeton } : {}), ...(options.headers || {}) },
+        headers: { ...(fichier ? {} : { 'Content-Type': 'application/json' }),
+                   ...(jeton ? { Authorization: 'Bearer ' + jeton } : {}),
+                   // Toute requête de données porte le portefeuille sur lequel elle agit.
+                   ...(pfActif ? { 'X-Portefeuille': String(pfActif) } : {}),
+                   ...(options.headers || {}) },
       });
     } catch {
       throw new Error("Le serveur ne répond pas. Lancez-le dans le terminal : python -m uvicorn main:app --reload");
     }
     const data = await rep.json().catch(() => ({}));
-    if (rep.status === 401 && jeton) { deconnecter(); throw new Error('Session expirée : reconnectez-vous.'); }
+    // Jeton périmé : il n'y a plus d'écran de connexion où renvoyer l'utilisateur,
+    // on en redemande simplement un au serveur et on rouvre la session.
+    if (rep.status === 401 && jeton) {
+      jeton = null;
+      try { localStorage.removeItem('ecofolio_jeton'); } catch {}
+      ouvrirSession();
+      throw new Error('Session renouvelée, réessayez.');
+    }
     if (!rep.ok) {
       const d = data.detail;
       throw new Error(typeof d === 'string' ? d : Array.isArray(d) ? d.map(x => x.msg.replace('Value error, ', '')).join(' ; ') : `Erreur ${rep.status}`);
@@ -378,48 +751,140 @@
     return data;
   }
 
-  /* ── Connexion ───────────────────────────────────────── */
-  let modeInscription = false;
-  $('#auth-bascule').onclick = () => {
-    modeInscription = !modeInscription;
-    $('#auth-btn').textContent = modeInscription ? 'Créer mon compte' : 'Se connecter';
-    $('#auth-bascule-texte').textContent = modeInscription ? 'Déjà un compte ?' : 'Pas encore de compte ?';
-    $('#auth-bascule').textContent = modeInscription ? 'Se connecter' : 'Créer un compte';
-    $('#auth-mdp').autocomplete = modeInscription ? 'new-password' : 'current-password';
-    $('#auth-erreur').classList.add('cache');
-  };
-  $('#form-auth').onsubmit = async e => {
-    e.preventDefault();
-    const err = $('#auth-erreur'); err.classList.add('cache');
+  /* ── Ouverture de la session ─────────────────────────────
+     Pas d'identifiant, pas de mot de passe : l'application tourne sur votre poste,
+     pour vous seul, et ses données ne quittent jamais votre machine. Il n'y a donc
+     personne dont il faudrait se protéger, et un écran de connexion n'ajouterait
+     qu'un obstacle — et un mot de passe de plus à oublier.
+     Le serveur reprend le compte déjà présent dans la base : vos positions et vos
+     opérations sont conservées, y compris celles saisies avant ce changement. */
+  async function ouvrirSession() {
+    const message = $('#attente-message'), err = $('#auth-erreur');
     try {
-      const r = await api(modeInscription ? '/auth/inscription' : '/auth/connexion', {
-        method: 'POST', body: JSON.stringify({ username: $('#auth-user').value.trim(), mdp: $('#auth-mdp').value }),
-      });
+      const r = await api('/auth/local', { method: 'POST' });
       jeton = r.jeton; utilisateur = r.username;
-      localStorage.setItem('ecofolio_jeton', jeton); localStorage.setItem('ecofolio_user', utilisateur);
+      try {
+        localStorage.setItem('ecofolio_jeton', jeton);
+        localStorage.setItem('ecofolio_user', utilisateur);
+      } catch {}
       demarrer();
-    } catch (ex) { err.textContent = ex.message; err.classList.remove('cache'); }
-  };
-  function deconnecter() {
-    if (jeton) fetch(API + '/auth/deconnexion', { method: 'POST', headers: { Authorization: 'Bearer ' + jeton } }).catch(() => {});
-    jeton = null; utilisateur = null;
-    localStorage.removeItem('ecofolio_jeton'); localStorage.removeItem('ecofolio_user');
-    $('#ecran-app').classList.add('cache'); $('#ecran-connexion').classList.remove('cache');
+    } catch (ex) {
+      if (message) message.classList.add('cache');
+      err.textContent = ex.message;
+      err.classList.remove('cache');
+    }
   }
-  $('#btn-deconnexion').onclick = deconnecter;
 
   /* ── Démarrage & onglets ─────────────────────────────── */
   function demarrer() {
-    $('#ecran-connexion').classList.add('cache'); $('#ecran-app').classList.remove('cache');
+    $('#ecran-attente').classList.add('cache'); $('#ecran-app').classList.remove('cache');
     $('#nom-utilisateur').textContent = utilisateur;
     charge = {};
-    rafraichir();
+    majBoutonAlertes();
+    chargerPortefeuilles()
+      .then(() => chargerParametres().catch(() => {}))
+      .finally(() => rafraichir().then(synchroniserDividendes));
+    clearInterval(window._minuteurDiv);
+    window._minuteurDiv = setInterval(synchroniserDividendes, 30 * 60 * 1000);   // nouvelle vérification toutes les 30 min
   }
+  /* ── Portefeuilles ───────────────────────────────────────
+     Un même utilisateur peut suivre plusieurs portefeuilles sans rapport entre eux :
+     un PEA, un compte-titres, un portefeuille d'école. Chacun a ses opérations, donc
+     ses positions, sa performance et son risque. Rien n'est partagé entre eux. */
+  async function chargerPortefeuilles() {
+    const r = await api('/portefeuilles');
+    PORTEFEUILLES = r.portefeuilles || [];
+    const retenu = parseInt(localStorage.getItem(clePf()) || '', 10);
+    pfActif = PORTEFEUILLES.some(p => p.id === retenu) ? retenu : (r.defaut || null);
+    if (pfActif) localStorage.setItem(clePf(), String(pfActif));
+    rendreSelecteurPf();
+  }
+
+  function rendreSelecteurPf() {
+    const sel = $('#sel-portefeuille');
+    sel.innerHTML = PORTEFEUILLES.map(p =>
+      `<option value="${p.id}" ${p.id === pfActif ? 'selected' : ''}>${echap(p.nom)}</option>`).join('');
+    sel.closest('label').classList.toggle('cache', PORTEFEUILLES.length < 1);
+  }
+
+  $('#sel-portefeuille').onchange = async e => {
+    pfActif = parseInt(e.target.value, 10);
+    localStorage.setItem(clePf(), String(pfActif));
+    PERFS = null; PERF = null; OPS = null; charge = {};
+    await rafraichir();
+    const nom = (PORTEFEUILLES.find(p => p.id === pfActif) || {}).nom || '';
+    toast(`Portefeuille « ${nom} »`);
+  };
+
+  $('#btn-gerer-pf').onclick = () => { rendreGestionPf(); $('#dlg-portefeuilles').showModal(); };
+
+  function rendreGestionPf() {
+    $('#pf-liste').innerHTML = PORTEFEUILLES.map(p => `
+      <div class="ligne ${p.id === pfActif ? 'actif' : ''}">
+        <input type="text" value="${echap(p.nom)}" data-id="${p.id}" maxlength="60"
+               aria-label="Nom du portefeuille">
+        <span class="meta">${p.n_operations} opération${p.n_operations > 1 ? 's' : ''}${
+          p.premiere_operation ? ' · depuis le ' + dateFr(p.premiere_operation) : ''}</span>
+        <button class="mini-btn" data-action="renommer" data-id="${p.id}">Renommer</button>
+        <button class="mini-btn" data-action="supprimer" data-id="${p.id}"
+                ${PORTEFEUILLES.length <= 1 ? 'disabled title="Vous ne pouvez pas supprimer votre seul portefeuille."' : ''}>Supprimer</button>
+      </div>`).join('');
+    $('#pf-liste').querySelectorAll('button[data-action]').forEach(b => {
+      b.onclick = async () => {
+        const id = parseInt(b.dataset.id, 10);
+        const champ = $(`#pf-liste input[data-id="${id}"]`);
+        try {
+          if (b.dataset.action === 'renommer') {
+            await api(`/portefeuilles/${id}`, { method: 'PUT', body: JSON.stringify({ nom: champ.value }) });
+            toast('Portefeuille renommé.');
+          } else {
+            const p = PORTEFEUILLES.find(x => x.id === id);
+            if (!confirm(`Supprimer « ${p.nom} » et ses ${p.n_operations} opération(s) ? `
+                       + `Cette action est définitive.`)) return;
+            await api(`/portefeuilles/${id}`, { method: 'DELETE' });
+            if (id === pfActif) { pfActif = null; localStorage.removeItem(clePf()); }
+            toast('Portefeuille supprimé.');
+          }
+          await chargerPortefeuilles(); rendreGestionPf(); await rafraichir();
+        } catch (ex) { alert(ex.message); }
+      };
+    });
+  }
+
+  $('#pf-creer').onclick = async () => {
+    const champ = $('#pf-nouveau');
+    if (!champ.value.trim()) { champ.focus(); return; }
+    try {
+      const r = await api('/portefeuilles', { method: 'POST', body: JSON.stringify({ nom: champ.value }) });
+      champ.value = '';
+      pfActif = r.id; localStorage.setItem(clePf(), String(pfActif));
+      await chargerPortefeuilles(); rendreGestionPf(); await rafraichir();
+      toast(`Portefeuille « ${r.nom} » créé.`);
+    } catch (ex) { alert(ex.message); }
+  };
+  $('#pf-fermer').onclick = () => $('#dlg-portefeuilles').close();
+
+  /* Un graphique est dessiné sur un canevas : il ne suit pas la feuille de style.
+     Changer de thème impose donc de le retracer avec les couleurs du nouveau. */
+  function redessinerGraphiques() {
+    if (!SYN) return;                       // rien n'est encore affiché
+    const onglet = document.querySelector('nav.onglets [aria-selected="true"]');
+    if (!onglet) return;
+    charge[onglet.dataset.onglet] = false;
+    ouvrirOnglet(onglet.dataset.onglet);
+  }
+
   async function rafraichir() {
     try {
       SYN = await api('/compte/synthese');
       afficherReleve(); afficherPositions();
+      // La performance de l'en-tête est la même que celle des courbes : on la charge
+      // en arrière-plan pour ne pas retarder l'affichage des positions.
+      api(`/compte/performances?indice=${indiceChoisi}&mode=${modeIndice}`)
+        .then(p => { PERFS = p; afficherReleve(); })
+        .catch(() => {});
       charge = {};
+      OPS = null;
       const actif = document.querySelector('nav.onglets [aria-selected="true"]').dataset.onglet;
       ouvrirOnglet(actif);
     } catch (ex) { toast(ex.message); }
@@ -430,94 +895,177 @@
     document.querySelectorAll('[data-vue]').forEach(v => v.classList.toggle('cache', v.dataset.vue !== nom));
     if (charge[nom]) return;
     charge[nom] = true;
-    ({ ordres: chargerOrdres, repartition: afficherRepartition, performance: chargerPerformance,
-       risque: chargerRisque, actualites: chargerActus }[nom] || (() => {}))();
+    ({ ordres: chargerOperations, mouvements: chargerOperations, repartition: afficherRepartition,
+       performance: chargerPerformance, risque: chargerRisque, actualites: chargerActus,
+       informations: afficherInfos }[nom] || (() => {}))();
   }
 
-  /* ── Relevé (en-tête chiffré) ────────────────────────── */
+  /* ── Relevé (en-tête chiffré) ──────────────────────────
+     Deux chiffres seulement, et pas un de plus : ce que vaut le compte aujourd'hui,
+     et ce qu'il a gagné depuis l'origine. Tout le reste est du détail, il est dans
+     les onglets. La performance comparée à un indice est une autre question, elle a
+     son onglet : la mêler à la plus-value dans l'en-tête ne faisait qu'embrouiller. */
   function afficherReleve() {
     const t = SYN.totaux;
-    $('#k-valo').textContent = argent(t.valorisation_eur);
-    $('#k-pnl').innerHTML = t.depots_nets_eur > 0
-      ? `<span class="${classe(t.pnl_total_eur)}">${argent(t.pnl_total_eur, 'EUR', true)} (${pct(t.perf_pct)})</span> <span class="discret">depuis l'ouverture</span>`
-      : '<span class="discret">Commencez par enregistrer un dépôt d\'espèces.</span>';
-    $('#k-cash').textContent = argent(t.cash_eur);
-    $('#k-titres').textContent = argent(t.titres_eur);
-    $('#k-pvl').innerHTML = `<span class="${classe(t.pv_latente_eur)}">${argent(t.pv_latente_eur, 'EUR', true)}</span>`;
-    $('#k-pvr').innerHTML = `<span class="${classe(t.pv_realisee_eur)}">${argent(t.pv_realisee_eur, 'EUR', true)}</span>`;
-    $('#k-jour').innerHTML = `<span class="${classe(t.var_jour_eur)}">${argent(t.var_jour_eur, 'EUR', true)}</span>`;
-    $('#k-depots').textContent = argent(t.depots_nets_eur);
-    $('#k-div').textContent = argent(t.dividendes_eur);
-    $('#k-frais').textContent = argent(t.frais_eur);
+    // Les versements n'ont pas été saisis : ils ont été déduits des achats. Les espèces,
+    // elles, sont suivies dans tous les cas — une vente les crédite.
+    $('#k-valo').textContent = argent(t.titres_eur);
+
+    // Variation du jour, en euros et en pourcentage de la veille
+    const vj = t.var_jour_eur || 0, vjp = t.var_jour_pct;
+    $('#k-pnl').innerHTML = `<span class="${classe(vj)}">${argent(vj, 'EUR', true)}`
+      + (vjp === null || vjp === undefined ? '' : ` (${pct(vjp)})`)
+      + `</span> <span class="discret">aujourd'hui</span>`;
+    $('#k-pnl').title = "Variation depuis la clôture de la veille, sur l'ensemble des lignes.";
+
+    // Trois mesures, chacune rapportée au prix de revient des lignes qu'elle concerne.
+    // Un pourcentage dont le dénominateur ne porte pas sur les mêmes lignes que le
+    // numérateur ne veut rien dire : c'est la règle qui tient tout cet en-tête.
+    const chiffre = (cle, montant, pourcent, detail, aide) => {
+      $('#k-' + cle).innerHTML = `<span class="${classe(montant)}">`
+        + argent(montant, 'EUR', true)
+        + (pourcent === null || pourcent === undefined ? '' : ` (${pct(pourcent)})`) + `</span>`;
+      $('#k-' + cle + '-detail').textContent = detail;
+      $('#k-' + cle).title = aide;
+    };
+
+    chiffre('pv-latente', t.pv_latente_eur, t.pv_latente_pct,
+      t.cout_titres_eur ? `sur un prix de revient de ${argent(t.cout_titres_eur)}` : '',
+      "Valeur de vos lignes détenues moins ce qu'elles vous ont coûté, frais compris. "
+      + "C'est la somme de la colonne « +/- value nette » de vos positions.");
+
+    chiffre('pv-realisee', t.pv_realisee_eur, t.pv_realisee_pct,
+      t.cout_cede_eur ? `sur un prix de revient de ${argent(t.cout_cede_eur)}` : 'aucune ligne vendue',
+      "Gain ou perte encaissé sur les lignes entièrement vendues, frais d'achat et de "
+      + "vente déduits. Ce montant ne bouge plus : il est acquis.");
+
+    const detailGain = [];
+    if (t.investi_eur) detailGain.push(`sur ${argent(t.investi_eur)} d'achats cumulés`);
+    if (t.dividendes_eur) detailGain.push(`${argent(t.dividendes_eur)} de dividendes encaissés`);
+    if (t.frais_eur) detailGain.push(`${argent(t.frais_eur)} de frais payés`);
+    chiffre('gain', t.pv_totale_eur, t.pv_totale_pct, detailGain.join(' · '),
+      "Latente plus réalisée, rapportée au prix de revient de tout ce que vous avez acheté "
+      + "depuis l'ouverture. Dividendes encaissés et frais payés sont déjà dedans.");
+
+    // Le solde espèces ne peut plus être négatif : un achat non couvert est financé par
+    // un versement déduit. Reste à le dire, parce que ce versement n'a pas été saisi par
+    // l'utilisateur et qu'il sert de dénominateur à la plus-value en pourcentage.
+    // Pas de bandeau permanent : la sous-ligne du capital investi dit déjà ce qu'il faut
+    // savoir, et un avertissement qui ne disparaît jamais finit par ne plus être lu.
+    $('#alerte-financement').classList.add('cache');
   }
 
   /* ── Positions ───────────────────────────────────────── */
   function afficherPositions() {
     const p = SYN.positions;
+    p.forEach(l => {                       // plus-value en € rapportée au montant investi
+      const investi = (l.valeur_eur || 0) - (l.pv_latente_eur || 0);
+      l.pv_eur_pct = l.pv_latente_eur_pct;
+    });
     if (!p.length) {
-      $('#table-positions').innerHTML = `<div class="vide"><p>Aucune position ouverte.</p>
-        <button class="btn" onclick="ouvrirTiroir('${SYN.totaux.cash_eur > 0 ? 'ACHAT' : 'DEPOT'}')">${SYN.totaux.cash_eur > 0 ? 'Acheter un titre' : 'Enregistrer un dépôt'}</button></div>`;
+      $('#table-positions').innerHTML = `<div class="vide"><p>Aucune position suivie pour l'instant.</p>
+        <p class="discret">Saisissez vos lignes avec leur quantité, leur prix de revient et leur date d'entrée. Déclarer vos versements d'espèces est facultatif.</p>
+        <button class="btn" onclick="ouvrirTiroir('ACHAT')">Saisir une position</button></div>`;
     } else {
       $('#table-positions').innerHTML = `<table><thead><tr>
         <th>Titre</th><th class="num">Quantité</th><th class="num">PRU</th><th class="num">Cours</th><th class="num">Jour</th>
-        <th class="num">Valeur</th><th class="num">+/- latente</th><th class="num">+/- latente (€)</th><th class="num">Poids</th><th></th>
-      </tr></thead><tbody>${p.map(l => `<tr>
-        <td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)} · depuis le ${dateFr(l.date_entree)}</small></td>
+        <th class="num">Valeur</th>
+        <th class="num" title="(cours − PRU) × quantité, dans la devise de cotation. Le mouvement du titre seul, hors frais et hors change.">+/- value brute (devise)</th>
+        <th class="num" title="Valeur − prix de revient, frais de courtage et TVA inclus, effet de change appliqué. Ce qui reste réellement.">+/- value nette (€)</th>
+        <th class="num">Poids</th>
+      </tr></thead><tbody>${p.map(l => `<tr class="ligne-titre" onclick="basculerDetail(event, '${l.ticker}')">
+        <td class="titre-ligne"><strong>${echap(l.nom)}<span class="chevron">▾</span></strong><small>${echap(l.ticker)} · depuis le ${dateFr(l.date_entree)}</small></td>
         <td class="num">${nombre(l.quantite, l.quantite % 1 ? 4 : 0)}</td>
         <td class="num">${argent(l.pru, l.devise)}</td>
         <td class="num">${argent(l.cours, l.devise)}${l.cours_indisponible ? '<span class="sous">cours indisponible</span>' : ''}</td>
         <td class="num ${classe(l.var_jour_pct)}">${pct(l.var_jour_pct)}</td>
         <td class="num">${argent(l.valeur_devise, l.devise)}${l.devise !== 'EUR' ? `<span class="sous">${argent(l.valeur_eur)}</span>` : ''}</td>
         <td class="num ${classe(l.pv_latente_devise)}">${argent(l.pv_latente_devise, l.devise, true)}<span class="sous">${pct(l.pv_latente_pct)}</span></td>
-        <td class="num ${classe(l.pv_latente_eur)}">${argent(l.pv_latente_eur, 'EUR', true)}</td>
+        <td class="num ${classe(l.pv_latente_eur)}">${argent(l.pv_latente_eur, 'EUR', true)}<span class="sous ${classe(l.pv_latente_eur)}">${pct(l.pv_eur_pct)}</span></td>
         <td class="num">${pct(l.poids_pct, false)}</td>
-        <td class="num"><button class="mini-btn" onclick="vendre('${l.ticker}')">Vendre</button></td>
       </tr>`).join('')}</tbody></table>`;
     }
     const s = SYN.positions_soldees;
     $('#bloc-soldees').classList.toggle('cache', !s.length);
-    $('#table-soldees').innerHTML = s.length ? `<table><thead><tr><th>Titre</th><th class="num">+/- réalisée (devise)</th><th class="num">+/- réalisée (€)</th><th class="num">Dividendes</th></tr></thead>
+    $('#table-soldees').innerHTML = s.length ? `<table><thead><tr><th>Titre</th><th class="num" title="(prix de vente − PRU) × quantité, dans la devise de cotation. Hors frais.">+/- value brute (devise)</th><th class="num" title="Produit de la vente diminué du prix de revient, frais d'achat ET de vente inclus, effet de change appliqué.">+/- value nette (€)</th><th class="num">Dividendes</th></tr></thead>
       <tbody>${s.map(l => `<tr><td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)}</small></td>
         <td class="num ${classe(l.pv_realisee_devise)}">${argent(l.pv_realisee_devise, l.devise, true)}</td>
         <td class="num ${classe(l.pv_realisee_eur)}">${argent(l.pv_realisee_eur, 'EUR', true)}</td>
         <td class="num">${argent(l.dividendes_eur)}</td></tr>`).join('')}</tbody></table>` : '';
   }
 
-  /* ── Carnet d'ordres ─────────────────────────────────── */
-  async function chargerOrdres() {
-    const zone = $('#table-ordres');
-    zone.innerHTML = '<div class="vide">Chargement…</div>';
+  /* ── Ordres et mouvements ────────────────────────────── */
+  let OPS = null;
+  async function chargerOrdres() { await chargerOperations(); }
+  async function chargerMouvements() { await chargerOperations(); }
+
+  async function chargerOperations() {
+    const zones = [$('#table-ordres'), $('#table-mouvements')];
+    zones.forEach(z => { if (z && !z.innerHTML) z.innerHTML = '<div class="vide">Chargement…</div>'; });
     try {
-      const { operations } = await api('/compte/operations');
-      if (!operations.length) { zone.innerHTML = '<div class="vide"><p>Aucune opération pour l\'instant.</p><button class="btn" onclick="ouvrirTiroir(\'DEPOT\')">Enregistrer un dépôt</button></div>'; return; }
-      zone.innerHTML = `<table><thead><tr><th>Date</th><th>Opération</th><th>Titre</th><th class="num">Quantité</th><th class="num">Prix</th>
-        <th class="num">Frais</th><th class="num">Mouvement espèces</th><th class="num">+/- réalisée</th><th class="num">Solde espèces</th><th></th></tr></thead>
-        <tbody>${operations.map(o => `<tr>
-          <td>${dateFr(o.date)}</td>
-          <td><span class="etiquette ${o.type}">${NOMS_TYPE[o.type]}</span>${o.commentaire ? `<span class="sous">${echap(o.commentaire)}</span>` : ''}</td>
-          <td class="titre-ligne">${o.ticker ? `<strong>${echap(o.nom || o.ticker)}</strong><small>${echap(o.ticker)}</small>` : '—'}</td>
-          <td class="num">${o.quantite ? nombre(o.quantite, o.quantite % 1 ? 4 : 0) : ''}</td>
-          <td class="num">${o.prix ? argent(o.prix, o.devise) : ''}${o.devise && o.devise !== 'EUR' && o.taux_eur ? `<span class="sous">1 ${o.devise} = ${nombre(o.taux_eur, 4)} €</span>` : ''}</td>
-          <td class="num">${o.frais_eur ? argent(o.frais_eur) : ''}</td>
-          <td class="num ${classe(o.flux_cash_eur)}">${argent(o.flux_cash_eur, 'EUR', true)}</td>
-          <td class="num ${classe(o.pv_realisee_eur)}">${o.pv_realisee_eur !== undefined ? argent(o.pv_realisee_eur, 'EUR', true) : ''}</td>
-          <td class="num">${argent(o.cash_apres_eur)}</td>
-          <td class="num"><button class="mini-btn danger" onclick="annuler(${o.id})">Annuler</button></td>
-        </tr>`).join('')}</tbody></table>`;
-    } catch (ex) { zone.innerHTML = `<div class="erreur">${echap(ex.message)}</div>`; }
+      OPS = await api('/compte/operations');
+      afficherOrdres(); afficherMouvements();
+    } catch (ex) { zones.forEach(z => z && (z.innerHTML = `<div class="erreur">${echap(ex.message)}</div>`)); }
   }
+
+  const boutonsLigne = o => `<div class="actions-ligne">
+      ${o.type === 'SPLIT' ? '' : `<button class="mini-btn" onclick="modifier(${o.id})">Modifier</button>`}
+      <button class="mini-btn danger" onclick="annuler(${o.id})">Annuler</button></div>`;
+
+  function afficherOrdres() {
+    const zone = $('#table-ordres'), ordres = OPS.ordres;
+    if (!ordres.length) {
+      zone.innerHTML = `<div class="vide"><p>Aucun ordre saisi.</p><button class="btn" onclick="ouvrirTiroir('ACHAT')">Saisir une position</button></div>`;
+      return;
+    }
+    zone.innerHTML = `<table><thead><tr><th>Date</th><th>Sens</th><th>Titre</th><th class="num">Quantité</th>
+      <th class="num">Prix unitaire</th><th class="num">Frais</th><th class="num">Montant de la position</th><th></th></tr></thead>
+      <tbody>${ordres.map(o => `<tr class="op-${o.type}">
+        <td>${dateFr(o.date)}</td>
+        <td><span class="etiquette ${o.type}">${o.sens}</span>${o.commentaire ? `<span class="sous">${echap(o.commentaire)}</span>` : ''}</td>
+        <td class="titre-ligne"><strong>${echap(o.nom || o.ticker)}</strong><small>${echap(o.ticker)}</small></td>
+        <td class="num">${nombre(o.quantite, o.quantite % 1 ? 4 : 0)}</td>
+        <td class="num">${argent(o.prix, o.devise)}${o.devise !== 'EUR' && o.taux_eur ? `<span class="sous">1 ${o.devise} = ${nombre(o.taux_eur, 4)} €</span>` : ''}</td>
+        <td class="num">${o.frais_eur ? argent(o.frais_eur) : '—'}</td>
+        <td class="num"><strong>${argent(o.montant_position_eur)}</strong></td>
+        <td class="num">${boutonsLigne(o)}</td></tr>`).join('')}</tbody></table>`;
+  }
+
+  function afficherMouvements() {
+    const zone = $('#table-mouvements'), mvts = OPS.mouvements;
+    if (!mvts.length) {
+      zone.innerHTML = `<div class="vide"><p>Aucun mouvement.</p><button class="btn" onclick="ouvrirTiroir('DEPOT')">Enregistrer un dépôt</button></div>`;
+      return;
+    }
+    zone.innerHTML = `<table><thead><tr><th>Date</th><th>Nature</th><th>Titre</th><th class="num">Quantité</th>
+      <th class="num">Montant unitaire</th><th class="num">Mouvement espèces</th><th class="num">Solde espèces</th><th></th></tr></thead>
+      <tbody>${mvts.map(o => `<tr>
+        <td>${dateFr(o.date)}</td>
+        <td><span class="etiquette ${o.type}">${NOMS_TYPE[o.type]}</span>${o.origine === 'auto' ? '<span class="etiquette auto" title="Détecté automatiquement sur Yahoo Finance">auto</span>' : ''}${o.commentaire ? `<span class="sous">${echap(o.commentaire)}</span>` : ''}</td>
+        <td class="titre-ligne">${o.ticker ? `<strong>${echap(o.nom || o.ticker)}</strong><small>${echap(o.ticker)}</small>` : '—'}</td>
+        <td class="num">${o.type === 'SPLIT' ? '—' : o.quantite ? nombre(o.quantite, o.quantite % 1 ? 4 : 0) : '—'}</td>
+        <td class="num">${o.type === 'SPLIT' ? `${nombre(o.quantite, 0)} pour 1` : o.prix ? argent(o.prix, o.devise) : '—'}</td>
+        <td class="num ${classe(o.flux_cash_eur)}">${o.flux_cash_eur ? argent(o.flux_cash_eur, 'EUR', true) : '—'}</td>
+        <td class="num">${argent(o.cash_apres_eur)}</td>
+        <td class="num">${boutonsLigne(o)}</td></tr>`).join('')}</tbody></table>`;
+  }
+
   async function annuler(id) {
     if (!confirm('Annuler définitivement cette opération ?')) return;
     try { await api('/compte/operations/' + id, { method: 'DELETE' }); toast('Opération annulée.'); rafraichir(); }
     catch (ex) { alert(ex.message); }
   }
 
+  function modifier(id) {
+    const o = OPS.operations.find(x => x.id === id);
+    if (o) ouvrirTiroir(o.type, o.ticker || '', o.quantite || '', o);
+  }
+
   /* ── Répartition ─────────────────────────────────────── */
   function donut(id, donnees) {
-    graphiques[id]?.destroy();
     const leg = $('#l-' + id.slice(2));
-    if (!donnees.length || !window.Chart) { leg.innerHTML = '<li class="discret">Aucune donnée.</li>'; return; }
-    graphiques[id] = new Chart($('#' + id), {
+    if (!donnees.length || !window.Chart) { graphiques[id]?.destroy(); leg.innerHTML = '<li class="discret">Aucune donnée.</li>'; return; }
+    creerGraphique(id, {
       type: 'doughnut',
       data: { labels: donnees.map(d => d.label), datasets: [{ data: donnees.map(d => d.valeur_eur), backgroundColor: PALETTE, borderColor: '#fff', borderWidth: 2 }] },
       options: { maintainAspectRatio: false, cutout: '64%', plugins: { legend: { display: false },
@@ -527,43 +1075,244 @@
   }
   function afficherRepartition() {
     const r = SYN.repartition;
-    donut('d-zone', r.zone); donut('d-secteur', r.secteur); donut('d-devise', r.devise); donut('d-classe', r.classe);
-    $('#table-pays').innerHTML = r.pays.length ? `<table><thead><tr><th>Pays</th><th class="num">Valeur</th><th class="num">Poids</th></tr></thead>
-      <tbody>${r.pays.map(p => `<tr><td>${echap(p.label)}</td><td class="num">${argent(p.valeur_eur)}</td><td class="num">${pct(p.poids_pct, false)}</td></tr>`).join('')}</tbody></table>`
-      : '<div class="vide">Aucune position ouverte.</div>';
+    donut('d-titre', r.titre); donut('d-secteur', r.secteur); donut('d-actif', r.actif); donut('d-devise', r.devise);
+    const estimes = (r.etf_ventiles || []).filter(e => e.source !== 'yahoo').map(e => e.ticker);
+    $('#note-etf').textContent = estimes.length ? `Pour ${estimes.join(', ')}, la ventilation est estimée d'après l'indice répliqué.` : '';
+    $('#table-zones').innerHTML = `<table><tbody>${r.zone.map(z => `<tr>
+      <td><span class="pastille" style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:8px;background:${couleurZone(z.poids_pct)}"></span>${echap(z.label)}</td>
+      <td class="num">${argent(z.valeur_eur)}</td><td class="num"><strong>${pct(z.poids_pct, false)}</strong></td></tr>`).join('')}</tbody></table>`;
+    carteMonde(r.zone);
+  }
+
+  // Pays de la carte (noms Natural Earth) → zones de l'appli
+  const ZONES_PAYS = {
+    'Amérique du Nord': ['United States of America', 'Canada', 'Mexico', 'Greenland', 'Bahamas', 'Belize', 'Costa Rica', 'Cuba', 'Dominican Rep.', 'El Salvador', 'Guatemala', 'Haiti', 'Honduras', 'Jamaica', 'Nicaragua', 'Panama', 'Puerto Rico', 'Trinidad and Tobago'],
+    'Amérique du Sud': ['Argentina', 'Bolivia', 'Brazil', 'Chile', 'Colombia', 'Ecuador', 'Falkland Is.', 'Guyana', 'Paraguay', 'Peru', 'Suriname', 'Uruguay', 'Venezuela'],
+    'Europe': ['Albania', 'Austria', 'Belarus', 'Belgium', 'Bosnia and Herz.', 'Bulgaria', 'Croatia', 'Cyprus', 'N. Cyprus', 'Czechia', 'Denmark', 'Estonia', 'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Iceland', 'Ireland', 'Italy', 'Kosovo', 'Latvia', 'Lithuania', 'Luxembourg', 'Macedonia', 'Moldova', 'Montenegro', 'Netherlands', 'Norway', 'Poland', 'Portugal', 'Romania', 'Russia', 'Serbia', 'Slovakia', 'Slovenia', 'Spain', 'Sweden', 'Switzerland', 'Ukraine', 'United Kingdom'],
+    'Moyen-Orient': ['Iran', 'Iraq', 'Israel', 'Jordan', 'Kuwait', 'Lebanon', 'Oman', 'Palestine', 'Qatar', 'Saudi Arabia', 'Syria', 'Turkey', 'United Arab Emirates', 'Yemen'],
+    'Afrique': ['Algeria', 'Angola', 'Benin', 'Botswana', 'Burkina Faso', 'Burundi', 'Cameroon', 'Central African Rep.', 'Chad', 'Congo', "Côte d'Ivoire", 'Dem. Rep. Congo', 'Djibouti', 'Egypt', 'Eq. Guinea', 'Eritrea', 'Ethiopia', 'Gabon', 'Gambia', 'Ghana', 'Guinea', 'Guinea-Bissau', 'Kenya', 'Lesotho', 'Liberia', 'Libya', 'Madagascar', 'Malawi', 'Mali', 'Mauritania', 'Morocco', 'Mozambique', 'Namibia', 'Niger', 'Nigeria', 'Rwanda', 'S. Sudan', 'Senegal', 'Sierra Leone', 'Somalia', 'Somaliland', 'South Africa', 'Sudan', 'Tanzania', 'Togo', 'Tunisia', 'Uganda', 'W. Sahara', 'Zambia', 'Zimbabwe', 'eSwatini'],
+  };
+  const zoneDuPays = nom => Object.keys(ZONES_PAYS).find(z => ZONES_PAYS[z].includes(nom)) || 'Asie-Océanie';
+  function couleurZone(poids) {
+    if (!poids) return '#DDE3DD';
+    const t = Math.min(1, 0.25 + poids / 100 * 0.75);            // plus la zone pèse, plus le vert est profond
+    const mix = (a, b) => Math.round(a + (b - a) * t);
+    return `rgb(${mix(190, 30)}, ${mix(222, 106)}, ${mix(203, 72)})`;
+  }
+  let FOND_CARTE = null;
+  async function carteMonde(zones) {
+    if (!window.Chart || !window.ChartGeo) return;
+    try {
+      if (!FOND_CARTE) {
+        Chart.register(ChartGeo.ChoroplethController, ChartGeo.ProjectionScale, ChartGeo.ColorScale, ChartGeo.GeoFeature);
+        const topo = await (await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json')).json();
+        FOND_CARTE = ChartGeo.topojson.feature(topo, topo.objects.countries).features
+          .filter(f => !['Antarctica', 'Fr. S. Antarctic Lands'].includes(f.properties.name));
+      }
+      const poids = Object.fromEntries(zones.map(z => [z.label, z.poids_pct || 0]));
+      creerGraphique('c-carte', {
+        type: 'choropleth',
+        data: { labels: FOND_CARTE.map(f => f.properties.name), datasets: [{
+          data: FOND_CARTE.map(f => ({ feature: f, value: poids[zoneDuPays(f.properties.name)] || 0 })),
+          backgroundColor: c => couleurZone(c.raw?.value), borderColor: '#fff', borderWidth: 0.5,
+        }] },
+        options: { maintainAspectRatio: false, showOutline: false, showGraticule: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: {
+            label: c => { const z = zoneDuPays(c.raw.feature.properties.name); return ` ${z} : ${pct(poids[z] || 0, false)}`; } } } },
+          scales: { projection: { axis: 'x', projection: 'equalEarth' }, color: { axis: 'x', display: false } } },
+      });
+    } catch (ex) { console.warn('Carte indisponible', ex); }
   }
 
   /* ── Performance ─────────────────────────────────────── */
+  let PERF = null, PERFS = null, perfJours = 252, perfUnite = 'pct';
+  // 5 J et 1 M sont tracés à partir des cotations horaires réelles de Yahoo
+  const CODES_PERIODE = { 5: '5j', 21: '1m', 63: '3m', 126: '6m', 252: '1a', 1260: '5a', 0: 'tout' };
+
   async function chargerPerformance() {
     try {
-      const { points } = await api('/compte/historique');
-      if (!window.Chart || !points.length) return;
-      const axeX = { ticks: { maxTicksLimit: 8, color: '#5B6A61' }, grid: { display: false } };
-      const axeY = f => ({ ticks: { callback: f, color: '#5B6A61' }, grid: { color: '#EDF0EC' } });
-      const labels = points.map(p => dateFr(p.date));
-      graphiques.valo?.destroy(); graphiques.pnl?.destroy();
-      graphiques.valo = new Chart($('#c-valo'), {
-        type: 'line',
-        data: { labels, datasets: [
-          { label: 'Valorisation', data: points.map(p => p.valorisation_eur), borderColor: '#1E6A48', backgroundColor: 'rgba(30,106,72,.08)', fill: true, pointRadius: 0, borderWidth: 2, tension: .15 },
-          { label: 'Dépôts nets', data: points.map(p => p.depots_nets_eur), borderColor: '#5B6A61', borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5, stepped: true },
-        ] },
-        options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-          plugins: { tooltip: { callbacks: { label: c => ` ${c.dataset.label} : ${argent(c.raw)}` } } },
-          scales: { x: axeX, y: axeY(v => argent(v).replace(/,00/, '')) } },
-      });
-      graphiques.pnl = new Chart($('#c-pnl'), {
-        type: 'line',
-        data: { labels, datasets: [
-          { label: '+/- value (€)', data: points.map(p => p.pnl_eur), borderColor: '#1E6A48', pointRadius: 0, borderWidth: 2, tension: .15, yAxisID: 'y',
-            segment: { borderColor: c => c.p1.parsed.y < 0 ? '#B23A2E' : '#1E6A48' } },
-          { label: 'Performance TWR (%)', data: points.map(p => p.perf_twr_pct), borderColor: '#2B5680', borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, yAxisID: 'y2' },
-        ] },
-        options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-          plugins: { tooltip: { callbacks: { label: c => c.datasetIndex ? ` ${c.dataset.label} : ${pct(c.raw)}` : ` ${c.dataset.label} : ${argent(c.raw, 'EUR', true)}` } } },
-          scales: { x: axeX, y: axeY(v => argent(v).replace(/,00/, '')), y2: { position: 'right', grid: { display: false }, ticks: { callback: v => v + ' %', color: '#2B5680' } } } },
-      });
+      palmares();
+      const [courbe, tableau] = await Promise.all([
+        api(`/compte/historique?indice=${indiceChoisi}&periode=${CODES_PERIODE[perfJours] || 'tout'}&mode=${modeIndice}`),
+        api(`/compte/performances?indice=${indiceChoisi}&mode=${modeIndice}`),
+      ]);
+      PERF = courbe;
+      PERFS = tableau;
+      dessinerPerformance();
+      afficherPerformances();
     } catch (ex) { toast(ex.message); }
+  }
+
+  /* L'échelle de temps appartient au graphique qu'elle commande : elle est posée dans
+     l'en-tête de chacun, et non plus en haut de la page où l'on ne savait pas à quoi
+     elle s'appliquait. Les deux jeux de boutons restent synchronisés : c'est la même
+     fenêtre d'analyse, montrée sous deux angles. */
+  const HORIZONS = [[5, '5 J'], [21, '1 M'], [63, '3 M'], [126, '6 M'],
+                    [252, '1 A'], [1260, '5 A'], [0, 'Tout']];
+  function majHorizons() {
+    document.querySelectorAll('.periodes-perf button').forEach(b =>
+      b.setAttribute('aria-pressed', parseInt(b.dataset.p, 10) === perfJours));
+  }
+  document.querySelectorAll('.periodes-perf').forEach(groupe => {
+    groupe.innerHTML = HORIZONS.map(([j, t]) =>
+      `<button data-p="${j}" aria-pressed="${j === perfJours}">${t}</button>`).join('');
+    groupe.querySelectorAll('button').forEach(b => b.onclick = () => {
+      perfJours = parseInt(b.dataset.p, 10);
+      majHorizons();
+      chargerPerformance();        // 5 J / 1 M passent en cotations horaires côté serveur
+    });
+  });
+  document.querySelectorAll('#unites button').forEach(b => b.onclick = () => {
+    perfUnite = b.dataset.u;
+    document.querySelectorAll('#unites button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    dessinerPerformance();
+  });
+
+  function afficherPerformances() {
+    const zone = $('#table-perfs');
+    if (!PERFS || !PERFS.lignes.length) {
+      zone.innerHTML = `<div class="vide">Historique trop court pour calculer une performance.</div>`;
+      return;
+    }
+    // Une annualisation calculée sur moins d'un an reste une extrapolation : elle est
+    // affichée, mais signalée par un astérisque, jamais présentée comme une mesure.
+    const cel = (v, extrapole = false) => v === null || v === undefined
+      ? '<td class="num discret">—</td>'
+      : `<td class="num ${classe(v)}${extrapole ? ' extrapole' : ''}"${extrapole
+          ? ' title="Extrapolation : moins d’un an de recul."'
+          : ''}>${pct(v)}${extrapole ? ' *' : ''}</td>`;
+    zone.innerHTML = `<table class="perf-table"><thead>
+        <tr><th rowspan="2">Période</th>
+            <th colspan="2" class="num principal">Mon portefeuille</th>
+            <th colspan="2" class="num">${echap(PERFS.libelle_indice)}</th>
+            <th rowspan="2" class="num">Écart</th></tr>
+        <tr><th class="num groupe">cumulée</th><th class="num groupe">annualisée</th>
+            <th class="num groupe">cumulée</th><th class="num groupe">annualisée</th></tr>
+      </thead><tbody>
+        ${PERFS.lignes.map(l => `<tr class="${l.principal ? 'total' : ''}">
+          <td>${echap(l.libelle)}<span class="sous">${l.debut
+            ? `du ${dateFr(l.debut)} au ${dateFr(l.fin)}`
+            : ''}${l.hors_historique ? ' · hors de votre historique' : ''}</span></td>
+          ${cel(l.portefeuille_cumul_pct)}
+          ${cel(l.portefeuille_annualise_pct, l.extrapolation)}
+          ${cel(l.indice_cumul_pct)}
+          ${cel(l.indice_annualise_pct, l.extrapolation)}
+          ${cel(l.ecart_pct)}</tr>`).join('')}
+      </tbody></table>`;
+    const dev = PERFS.devise_indice || 'EUR';
+    $('#note-perfs').innerHTML =
+      `Performance TWR, versements neutralisés. ${echap(PERFS.libelle_indice)} mesuré via `
+      + `<strong>${echap(PERFS.source_indice || '—')}</strong>, en ${echap(dev)}, `
+      + (PERFS.indice_dividendes ? 'dividendes réinvestis' : '<strong>hors dividendes</strong>')
+      + `. Annualisée à partir de trois mois ; un astérisque signale moins d'un an de recul. `
+      + `Une période antérieure à l'ouverture de votre compte reste affichée pour l'indice. `
+      + `<button class="btn-lien" data-vers-fiche="twr">Comprendre le TWR</button>`;
+    $('#note-perfs').querySelectorAll('[data-vers-fiche]').forEach(b =>
+      b.onclick = () => allerFiche(b.dataset.versFiche));
+  }
+
+
+  function palmares() {
+    // Classement sur la performance en euros, cohérente avec les montants affichés
+    const lignes = (SYN?.positions || []).filter(l => l.pv_latente_eur_pct !== null)
+      .slice().sort((a, b) => b.pv_latente_eur_pct - a.pv_latente_eur_pct);
+    const table = (arr) => arr.length ? `<table><tbody>${arr.map((l, i) => `<tr>
+        <td class="rang">${i + 1}</td>
+        <td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)}</small></td>
+        <td class="num ${classe(l.pv_latente_eur)}"><strong>${pct(l.pv_latente_eur_pct)}</strong><span class="sous ${classe(l.pv_latente_eur)}">${argent(l.pv_latente_eur, 'EUR', true)}${l.devise !== 'EUR' ? ` · ${pct(l.pv_latente_pct)} en ${l.devise}` : ''}</span></td>
+      </tr>`).join('')}</tbody></table>` : '<div class="vide">Aucune position.</div>';
+    const peu = lignes.length <= 5;              // inutile de scinder un petit portefeuille
+    const blocFlop = $('#flop-titres').closest('.panneau');
+    blocFlop.classList.toggle('cache', peu);
+    const blocTop = $('#top-titres').closest('.panneau');
+    blocTop.classList.toggle('palmares', !peu);
+    blocTop.querySelector('h2').textContent = peu ? 'Performance par ligne' : '3 meilleures performances';
+    $('#top-titres').innerHTML = table(peu ? lignes : lignes.slice(0, 3));
+    $('#flop-titres').innerHTML = peu ? '' : table(lignes.slice(-3).reverse());
+  }
+
+  function dessinerPerformance() {
+    if (!PERF || !window.Chart || !PERF.points.length) return;
+    const pts = PERF.points;              // la fenêtre est déjà appliquée côté serveur
+    const horaire = PERF.granularite === 'heure';
+
+    const labels = pts.map(p => horaire ? p.date.slice(5, 16).replace('-', '/') : dateFr(p.date));
+    const axeX = { ticks: { maxTicksLimit: 8, color: teinte('--encre-2') }, grid: { display: false } };
+    const eur = v => argent(v).replace(/,00/, '');
+
+    creerGraphique('c-valo', {
+      type: 'line',
+      data: { labels, datasets: [
+        { label: 'Valorisation', data: pts.map(p => p.valorisation_eur), borderColor: '#1E6A48', backgroundColor: 'rgba(30,106,72,.08)', fill: true, pointRadius: 0, borderWidth: 2, tension: .15 },
+      ] },
+      options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: {
+            label: c => ` Valorisation : ${argent(c.raw)}`,
+            afterLabel: c => {
+              const p = pts[c.dataIndex];
+              return ` dont titres ${argent(p.titres_eur)} · espèces ${argent(p.cash_eur)}`
+                   + `\n Capital engagé : ${argent(p.capital_engage_eur)} · plus-value ${argent(p.pnl_eur, 'EUR', true)}`;
+            } } } },
+        scales: { x: axeX, y: { ticks: { callback: eur, color: teinte('--encre-2') }, grid: { color: teinte('--filet') } } } },
+    });
+
+    // Second graphique : tout est ramené au début de la période affichée.
+    // En pourcentage, la courbe est le rendement enchaîné versements neutralisés —
+    // déjà rebasé côté serveur sur le premier point de la fenêtre. En euros, c'est la
+    // plus-value accumulée depuis ce même point.
+    // En pourcentage, la courbe trace le TWR — rendement pondéré dans le temps —, base 0
+    // au début de la fenêtre. Les versements y sont neutralisés, ce qui la rend
+    // directement comparable à l'indice, lui aussi rebasé à 0 au même instant.
+    const base = pts[0], enPct = perfUnite === 'pct';
+    const perf0 = 1 + (base.perf_pct || 0) / 100;
+    const idx0 = (base.indice_pct === null || base.indice_pct === undefined)
+                 ? null : 1 + (base.indice_pct || 0) / 100;
+    const moi = pts.map(p => enPct ? ((1 + (p.perf_pct || 0) / 100) / perf0 - 1) * 100
+                                   : (p.pnl_eur || 0) - (base.pnl_eur || 0));
+    const indice = pts.map(p => (p.indice_pct === null || idx0 === null) ? null
+                                : ((1 + p.indice_pct / 100) / idx0 - 1) * 100);
+    const gain = moi[moi.length - 1] >= 0;
+    const jeux = [{ label: 'Mon portefeuille', data: moi,
+                    borderColor: gain ? '#1E6A48' : '#B23A2E',
+                    backgroundColor: gain ? 'rgba(30,106,72,.08)' : 'rgba(178,58,46,.08)',
+                    fill: enPct ? false : 'origin', pointRadius: 0, borderWidth: 2, tension: .15, yAxisID: 'y' }];
+    if (enPct && PERF.indice_disponible) {
+      jeux.push({ label: PERF.libelle_indice, data: indice, borderColor: '#C08A3E',
+                  borderDash: [5, 4], pointRadius: 0, borderWidth: 1.6, tension: .15,
+                  spanGaps: true, yAxisID: 'y' });
+    } else if (enPct && PERF.message_indice) {
+      toast(PERF.message_indice, true);
+    }
+    $('#titre-perf').textContent = enPct ? 'Performance comparée' : 'Plus ou moins-value sur la période';
+    $('#sous-perf').textContent = enPct
+      ? `Performance calculée selon la méthode TWR (rendement pondéré dans le temps), face au `
+        + `${PERF.libelle_indice}, base 0 au ${labels[0]}. Vos versements et retraits sont `
+        + `neutralisés : les deux courbes mesurent donc la même chose.`
+      : `Gain ou perte en euros depuis le ${labels[0]}, versements et retraits neutralisés.`;
+    const lien = $('#sous-perf');
+    if (enPct && lien && !lien.querySelector('[data-vers-fiche]')) {
+      const b = document.createElement('button');
+      b.className = 'btn-lien'; b.dataset.versFiche = 'twr'; b.textContent = 'Comprendre le TWR';
+      b.style.marginLeft = '6px';
+      b.onclick = () => allerFiche('twr');
+      lien.appendChild(b);
+    }
+    creerGraphique('c-pnl', {
+      type: 'line', data: { labels, datasets: jeux },
+      options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { tooltip: { callbacks: {
+          label: c => ` ${c.dataset.label} : ${enPct ? pct(c.raw) : argent(c.raw, 'EUR', true)}`,
+          afterLabel: c => {
+            if (!enPct || c.dataIndex === 0) return '';
+            const serie = c.dataset.data, v = serie[c.dataIndex], p = serie[c.dataIndex - 1];
+            if (v === null || p === null) return '';
+            // Variation d'un point au suivant, à partir des niveaux cumulés
+            return `   variation : ${pct(((1 + v / 100) / (1 + p / 100) - 1) * 100)}`;
+          } } } },
+        scales: { x: axeX, y: { ticks: { callback: v => enPct ? nombre(v, 1) + ' %' : eur(v), color: teinte('--encre-2') },
+                                grid: { color: teinte('--filet') } } } },
+    });
   }
 
   /* ── Risque ──────────────────────────────────────────── */
@@ -573,26 +1322,70 @@
     try {
       const r = await api('/compte/risque');
       if (!r.disponible) { zone.innerHTML = `<div class="panneau vide">${echap(r.message)}</div>`; return; }
-      const c = r.concentration;
+      const m = r.methode || {};
+      // Plus d'explication sous chaque chiffre : elles vivent dans l'onglet Informations,
+      // écrites une seule fois. Chaque case renvoie vers sa fiche.
       const cases = [
-        ['Volatilité annualisée', pct(r.volatilite_pct, false), 'Ampleur habituelle des variations sur un an. Un indice actions mondial tourne autour de 15 %.'],
-        ['VaR 95 % à 1 jour', argent(r.var95_1j_eur), `Perte journalière qui n'est dépassée qu'un jour sur vingt (${pct(r.var95_1j_pct, false)}).`],
-        ['Perte moyenne au-delà (CVaR)', pct(-r.cvar95_1j_pct), 'Perte moyenne lors des 5 % de pires journées.'],
-        ['Baisse maximale (max drawdown)', pct(r.max_drawdown_pct), 'Pire recul depuis un plus haut sur la période, à composition actuelle.'],
-        ['Bêta', nombre(r.beta), `Sensibilité au ${r.indice_reference} : 1,2 signifie +/-12 % quand l'indice fait +/-10 %.`],
-        ['Ratio de Sharpe', nombre(r.sharpe), 'Rendement au-delà du taux sans risque (2 %) par unité de volatilité.'],
-        ['Première ligne', pct(c.premiere_ligne_pct, false), `Les trois premières pèsent ${pct(c.trois_premieres_pct, false)} du portefeuille titres.`],
-        ['Nombre effectif de lignes', nombre(c.nb_lignes_effectif, 1), 'Diversification réelle compte tenu des poids (1 / indice de Herfindahl).'],
-        ['Exposition hors euro', pct(r.exposition_devises_hors_eur_pct, false), 'Part des titres soumise au risque de change.'],
+        ['Rendement annualisé', pct(r.rendement_1an_pct), 'rendement', ''],
+        ['Volatilité annualisée', pct(r.volatilite_pct, false), 'volatilite', ''],
+        ['VaR 95 % à 1 jour', argent(r.var95_1j_eur), 'var', ''],
+        ['Perte moyenne au-delà (CVaR)', pct(-r.cvar95_1j_pct), 'cvar', ''],
+        ['Perte maximale (max drawdown)', pct(r.max_drawdown_pct), 'drawdown', ''],
+        ['Bêta', nombre(r.beta), 'beta',
+         r.correlation_indice === null || r.correlation_indice === undefined
+           ? '' : `corrélation ${nombre(r.correlation_indice)}`],
+        ['Ratio de Sharpe', nombre(r.sharpe), 'sharpe',
+         // Le détail du calcul vit dans la fiche, pas sous le chiffre. Les deux autres
+         // termes de la formule sont de toute façon dans leurs propres cases.
+         `<label class="reglage-taux">Taux sans risque`
+         + `<input type="number" id="taux-sr" step="0.05" min="-5" max="25"`
+         + ` value="${(r.taux_sans_risque_pct ?? 2).toFixed(2)}"`
+         + ` title="Rendement d'une dette d'État à court terme, ou le taux de votre livret.">`
+         + `<span>%</span></label>`],
       ];
-      zone.innerHTML = `<p class="discret" style="margin:0 0 12px">Calculés sur ${r.n_jours} jours (${r.periode}) avec la composition actuelle, rendements convertis en euros.</p>
-        <div class="indicateurs">${cases.map(([n, v, a]) => `<div><div class="nom">${n}</div><div class="valeur">${v}</div><div class="aide">${a}</div></div>`).join('')}</div>
+      zone.innerHTML = `<p class="discret" style="margin:0 0 12px">${echap(m.base || '')} Période retenue : ${r.n_jours} jours (${r.periode}).</p>
+        <div class="indicateurs">${cases.map(([n, v, k, a]) =>
+          `<div class="cliquable" data-fiche="${k}" title="Voir la définition de ${echap(n)}">`
+          + `<div class="nom">${n}</div><div class="valeur">${v}</div>`
+          + `<div class="aide">${a}<span class="vers-fiche">Qu'est-ce que c'est ?</span></div></div>`).join('')}</div>
+
         <div class="panneau"><h2>Contribution de chaque ligne au risque</h2>
-          <p class="sous-titre">Une ligne peut peser 20 % du portefeuille mais porter 40 % de son risque si elle est volatile et corrélée au reste.</p>
-          <div class="defile"><table><thead><tr><th>Titre</th><th class="num">Poids</th><th class="num">Volatilité</th><th class="num">Bêta</th><th class="num">Part du risque</th></tr></thead>
+          <div class="defile"><table><thead><tr><th>Titre</th><th class="num">Poids</th><th class="num">Volatilité</th>
+            <th class="num" title="Sensibilité de la ligne à l'indice de référence (${echap(r.indice_reference)}). N'intervient PAS dans la part du risque.">Bêta / indice</th>
+            <th class="num" title="Sensibilité de la ligne à votre propre portefeuille. C'est celui-ci qui commande la part du risque.">Bêta / portefeuille</th>
+            <th class="num">Part du risque</th></tr></thead>
           <tbody>${r.par_ligne.map(l => `<tr><td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)}</small></td>
             <td class="num">${pct(l.poids_pct, false)}</td><td class="num">${pct(l.volatilite_pct, false)}</td>
-            <td class="num">${nombre(l.beta)}</td><td class="num"><strong>${pct(l.contribution_risque_pct, false)}</strong></td></tr>`).join('')}</tbody></table></div></div>`;
+            <td class="num discret">${nombre(l.beta)}</td>
+            <td class="num">${nombre(l.beta_portefeuille)}</td>
+            <td class="num" title="${pct(l.poids_pct, false)} × ${nombre(l.beta_portefeuille)} = ${pct(l.contribution_risque_pct, false)}"><strong>${pct(l.contribution_risque_pct, false)}</strong>
+              <span class="sous">${pct(l.poids_pct, false)} × ${nombre(l.beta_portefeuille)}</span></td></tr>`).join('')}</tbody></table></div></div>
+
+        <div class="panneau" id="bloc-regularite"></div>
+`;
+      document.querySelectorAll('.indicateurs > div.cliquable').forEach(d =>
+        d.onclick = e => { if (e.target.tagName !== 'INPUT') allerFiche(d.dataset.fiche); });
+      regularite();
+      // Le taux sans risque se règle ici, sous le ratio qu'il commande. On n'enregistre
+      // qu'une valeur plausible, et seulement quand elle a réellement changé.
+      const champ = $('#taux-sr');
+      if (champ) {
+        const avant = r.taux_sans_risque_pct ?? 2;
+        champ.onclick = e => e.stopPropagation();
+        champ.onkeydown = e => { if (e.key === 'Enter') champ.blur(); };
+        champ.onchange = async () => {
+          const v = parseFloat(champ.value);
+          if (!isFinite(v) || v < -5 || v > 25) { champ.value = avant.toFixed(2); return; }
+          if (Math.abs(v - avant) < 1e-9) return;
+          champ.disabled = true;
+          try {
+            await enregistrerReglage({ taux_sans_risque: v });
+            charge.risque = false;
+            await chargerRisque();
+            toast(`Ratio de Sharpe recalculé avec un taux sans risque de ${nombre(v)} %.`);
+          } catch (ex) { champ.disabled = false; champ.value = avant.toFixed(2); alert(ex.message); }
+        };
+      }
     } catch (ex) { zone.innerHTML = `<div class="erreur">${echap(ex.message)}</div>`; }
   }
 
@@ -611,9 +1404,337 @@
     } catch (ex) { zone.innerHTML = `<div class="erreur">${echap(ex.message)}</div>`; }
   }
 
+  /* ── Régularité des investissements ──────────────────────
+     Un achat par point, placé à sa date, dont la taille dit le montant. On ne juge
+     pas le moment choisi : seulement la discipline. Deux dimensions, car investir
+     tous les mois 200 € puis 5 000 € n'est pas être régulier.
+
+     Seules les DATES comptent. Les montants sont volontairement exclus : 300 € ne
+     pèsent pas la même chose pour tout le monde, et un score qui en dépendrait
+     mesurerait les moyens de l'investisseur plutôt que sa discipline.
+
+     Chaque intervalle entre deux achats reçoit une note sur 100 selon sa seule durée,
+     et le score est la moyenne de ces notes, chaque intervalle comptant pour sa durée.
+     Autrement dit : pour chaque jour écoulé depuis le premier achat, étiez-vous alors
+     dans un bon rythme ? Le score est la part de ces journées où la réponse est oui.
+
+       moins de 5 jours      0    des achats quasi quotidiens, c'est du trading
+       de 5 à 21 jours       0 → 100   trop rapproché, on monte vers le bon rythme
+       de 21 à 60 jours      100       le rythme mensuel, l'objectif
+       de 60 à 365 jours     100 → 0   on s'espace, la discipline se perd
+       plus d'un an          0         ce n'est plus un rythme
+
+     Deux choix qui paraissent des détails et n'en sont pas. Noter chaque intervalle
+     plutôt que leur moyenne : douze achats en un mois puis rien pendant un an donnent
+     une moyenne de trente jours, donc un score parfait, alors que c'est exactement le
+     comportement à signaler. Et pondérer par la durée : sans cela, cinq achats
+     mensuels suivis de dix-sept mois de pause obtenaient 80/100 et la mention « très
+     régulier », quatre bons intervalles suffisant à noyer le mauvais. Une pause d'un
+     an doit peser douze fois plus qu'un mois, puisqu'elle dure douze fois plus. */
+  const RYTHME = [[5, 0], [21, 100], [60, 100], [365, 0]];
+  function noteIntervalle(jours) {
+    if (jours <= RYTHME[0][0]) return 0;
+    if (jours >= RYTHME[RYTHME.length - 1][0]) return 0;
+    for (let i = 1; i < RYTHME.length; i++) {
+      const [x1, y1] = RYTHME[i - 1], [x2, y2] = RYTHME[i];
+      if (jours <= x2) return y1 + (y2 - y1) * (jours - x1) / (x2 - x1);
+    }
+    return 0;
+  }
+  const PALIERS_REGULARITE = [
+    { min: 80, libelle: 'Très régulier', couleur: '#1D7A4B',
+      message: "Vos achats s'enchaînent à un rythme proche du mensuel : votre comportement est celui d'un investissement programmé." },
+    { min: 60, libelle: 'Régulier', couleur: '#7FA83C',
+      message: 'Vous investissez à bon rythme. Quelques intervalles sortent du cadre mensuel, sans casser la discipline.' },
+    { min: 40, libelle: 'Moyennement régulier', couleur: '#C08A3E',
+      message: "Une habitude se dessine, sans être tenue. Plusieurs intervalles sont trop longs, ou trop rapprochés." },
+    { min: 0, libelle: 'Peu régulier', couleur: '#B23A2E',
+      message: 'Vos achats sont trop espacés, ou au contraire trop rapprochés. Votre résultat dépend donc beaucoup du moment choisi.' },
+  ];
+
+  async function regularite() {
+    const zone = $('#bloc-regularite');
+    if (!zone) return;
+    // Plusieurs ordres passés le même jour ne font qu'UN acte d'investissement : acheter
+    // trois ETF le 9 septembre, ce n'est pas investir trois fois régulièrement. On
+    // regroupe donc par date avant toute mesure, sans quoi un gros achat ventilé en
+    // plusieurs lignes décrocherait un score parfait.
+    let achats = [];
+    try {
+      const { ordres } = await api('/compte/operations');
+      const parDate = new Map();
+      (ordres || []).filter(o => o.type === 'ACHAT').forEach(o => {
+        const montant = Math.abs(o.montant_position_eur || 0);
+        if (montant <= 0) return;
+        const e = parDate.get(o.date) || { date: o.date, montant: 0, lignes: [] };
+        e.montant += montant;
+        e.lignes.push(o.nom || o.ticker);
+        parDate.set(o.date, e);
+      });
+      achats = [...parDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+    } catch { return; }
+
+    if (achats.length < 3) {
+      zone.innerHTML = `<h2>Régularité de vos investissements</h2>
+        <p class="sous-titre">Il faut au moins trois dates d'achat différentes pour parler de
+          régularité. Vous en avez ${achats.length}${achats.length ? ` (${achats.map(a => dateFr(a.date)).join(', ')})` : ''}.
+          Le score apparaîtra après votre prochain achat à une nouvelle date.</p>`;
+      return;
+    }
+
+    // Écarts en jours entre deux dates d'achat consécutives, et montants investis
+    const jours = [];
+    for (let i = 1; i < achats.length; i++) {
+      jours.push((new Date(achats[i].date) - new Date(achats[i - 1].date)) / 86400000);
+    }
+    const notes = jours.map(noteIntervalle);
+    const duree = jours.reduce((a, b) => a + b, 0);
+    const ecartMoyen = duree / jours.length;
+    const score = Math.round(jours.reduce((s, j, i) => s + j * notes[i], 0) / duree);
+    const palier = PALIERS_REGULARITE.find(p => score >= p.min);
+
+    zone.innerHTML = `
+      <div class="tete-panneau"><div>
+        <h2>Régularité de vos investissements</h2>
+        <p class="sous-titre">Un point par achat, placé à sa date ; sa taille dit le montant.</p>
+      </div></div>
+      <div class="jauge-regularite">
+        <div class="score" style="color:${palier.couleur}">${score}<span>/100</span></div>
+        <div class="verdict">
+          <strong style="color:${palier.couleur}">${palier.libelle}</strong>
+          <span>${palier.message}</span>
+          <div class="barre"><div class="curseur" style="left:${score}%;background:${palier.couleur}"></div></div>
+          <div class="paliers"><span>Peu régulier</span><span>Moyennement</span><span>Régulier</span><span>Très régulier</span></div>
+        </div>
+      </div>
+      <div class="courbe"><canvas id="c-regularite"></canvas></div>
+      <p class="discret" style="margin:12px 0 0">${achats.length} dates d'achat sur
+        ${nombre(duree, 0)} jours, soit une tous les ${nombre(ecartMoyen, 0)} jours en moyenne.
+        Seules les dates comptent : la taille des points indique le montant, mais il n'entre pas
+        dans le score.
+        <button class="btn-lien" data-vers-fiche="regularite">Comment le score est calculé</button></p>`;
+
+    zone.querySelectorAll('[data-vers-fiche]').forEach(b =>
+      b.onclick = () => allerFiche(b.dataset.versFiche));
+
+    if (!window.Chart) return;
+    const taille = m => {
+      const max = Math.max(...achats.map(a => a.montant));
+      return 5 + 13 * Math.sqrt(m / max);        // l'aire, pas le rayon, suit le montant
+    };
+    creerGraphique('c-regularite', {
+      type: 'scatter',
+      data: { datasets: [{
+        label: 'Achat',
+        // L'abscisse porte un horodatage, pas un rang : un trou de dix-sept mois doit se
+        // voir comme un trou de dix-sept mois. Avec un axe catégoriel, tous les écarts
+        // auraient la même largeur et le graphique démentirait le score.
+        data: achats.map(a => ({ x: new Date(a.date + 'T00:00:00Z').getTime(),
+                                 y: a.montant, jour: a.date, nom: a.lignes.join(', ') })),
+        backgroundColor: palier.couleur + 'cc', borderColor: palier.couleur,
+        pointRadius: c => taille(c.raw?.y ?? 0), pointHoverRadius: c => taille(c.raw?.y ?? 0) + 3,
+      }] },
+      options: { interaction: { mode: 'nearest', intersect: true },
+        plugins: { legend: { display: false }, tooltip: { callbacks: {
+          title: c => dateFr(c[0].raw.jour),
+          label: c => ` ${c.raw.nom} · ${argent(c.raw.y)}` } } },
+        scales: {
+          x: { type: 'linear',
+               min: new Date(achats[0].date + 'T00:00:00Z').getTime() - 15 * 86400000,
+               max: new Date(achats[achats.length - 1].date + 'T00:00:00Z').getTime() + 15 * 86400000,
+               ticks: { maxTicksLimit: 7, color: teinte('--encre-2'),
+                        callback: v => dateFr(new Date(v).toISOString().slice(0, 10)) },
+               grid: { display: false } },
+          y: { beginAtZero: true, title: { display: true, text: 'Montant investi',
+               color: teinte('--encre-2') },
+               ticks: { callback: v => argent(v).replace(/,00/, ''), color: teinte('--encre-2') },
+               grid: { color: teinte('--filet') } } } },
+    });
+  }
+
+  /* ── Informations ────────────────────────────────────────
+     Les définitions vivent ici, et seulement ici. Les indicateurs ne portent plus
+     d'explication sous eux : ils renvoient vers leur fiche. Une seule source de
+     vérité, donc pas de risque qu'une définition dérive d'un écran à l'autre. */
+  const FICHES = [
+    { id: 'rendement', titre: 'Rendement annualisé',
+      definition: `Ce qu'ont rapporté vos titres sur la période, ramené à une année. On
+        additionne les rendements de chaque séance, à composition actuelle du portefeuille.
+        C'est le numérateur du ratio de Sharpe.`,
+      formule: 'moyenne des rendements quotidiens × 252 séances',
+      lecture: [
+        ['Négatif', 'vos titres ont perdu de la valeur sur la période.'],
+        ['0 à 5 %', "en dessous de ce que rapporte généralement un placement sans risque."],
+        ['5 à 15 %', "l'ordre de grandeur d'un marché actions sur une bonne année."],
+        ['Plus de 15 %', 'année très favorable, ou portefeuille concentré sur un secteur porteur.'],
+      ],
+      exemple: `Vos titres gagnent en moyenne 0,05 % par séance. Sur les 252 séances d'une
+        année de Bourse : 0,05 % × 252 = +12,6 %.`,
+      note: `Ce chiffre additionne les rendements quotidiens, il ne les compose pas. Il
+        diffère donc du TWR de l'onglet Performance, qui les enchaîne et suit vos achats
+        réels.` },
+
+    { id: 'volatilite', titre: 'Volatilité annualisée',
+      definition: `La volatilité mesure à quel point la valeur du portefeuille varie, à la
+        hausse comme à la baisse. Plus elle est élevée, plus le parcours est agité.`,
+      lecture: [
+        ['Moins de 10 %', 'volatilité faible, le portefeuille évolue de façon régulière.'],
+        ['10 % à 20 %', "volatilité modérée, comparable à un portefeuille d'actions diversifié."],
+        ['Plus de 20 %', 'volatilité élevée, attendez-vous à de fortes variations de valeur.'],
+      ],
+      exemple: `Deux portefeuilles rapportent tous les deux 8 % en moyenne par an. Le premier
+        fait chaque année entre +6 % et +10 %. Le second fait parfois −10 %, parfois +26 %.
+        La moyenne est la même, mais le second est bien plus éprouvant à détenir.` },
+
+    { id: 'sharpe', titre: 'Ratio de Sharpe',
+      definition: `Le ratio de Sharpe indique combien de rendement le portefeuille rapporte
+        pour chaque unité de risque pris, au-delà d'un placement sans risque.`,
+      formule: '(rendement du portefeuille − taux sans risque) ÷ volatilité',
+      lecture: [
+        ['Inférieur à 0', "le portefeuille fait moins bien qu'un placement sans risque : le risque pris n'est pas récompensé."],
+        ['0 à 1', 'rendement acceptable, mais le risque est peu rémunéré.'],
+        ['1 à 2', 'bon équilibre entre rendement et risque.'],
+        ['Supérieur à 2', 'excellent, le risque est très bien rémunéré.'],
+      ],
+      exemple: `Avec un taux sans risque de 2 %, le portefeuille A rapporte 10 % avec 10 % de
+        volatilité, soit un Sharpe de (10 − 2) ÷ 10 = 0,8. Le portefeuille B rapporte 14 %
+        avec 24 % de volatilité, soit (14 − 2) ÷ 24 = 0,5. B rapporte plus, mais A est plus
+        efficace : il gagne davantage pour chaque unité de risque.`,
+      note: `Le rendement employé ici est la somme des rendements quotidiens de l'année, à
+        composition actuelle. Ce n'est pas le TWR de l'onglet Performance, qui compose les
+        rendements et suit vos achats réels.` },
+
+    { id: 'drawdown', titre: 'Perte maximale (max drawdown)',
+      definition: `La plus forte baisse subie entre un point haut et le point bas qui a suivi,
+        sur la période étudiée. Elle répond à : « quelle est la pire perte que j'aurais pu vivre ? »`,
+      lecture: [
+        ['0 % à −10 %', 'baisse limitée, portefeuille plutôt défensif.'],
+        ['−10 % à −20 %', 'baisse modérée, normale pour un portefeuille avec des actions.'],
+        ['−20 % à −35 %', 'baisse importante, il faut pouvoir la supporter psychologiquement.'],
+        ['Au-delà de −35 %', 'baisse sévère, le portefeuille est très exposé.'],
+      ],
+      exemple: `Vous investissez 10 000 €. Le portefeuille monte à 13 000 €, puis redescend à
+        9 100 €. La perte maximale vaut (9 100 − 13 000) ÷ 13 000 = −30 %. Attention : pour
+        revenir à 13 000 €, il faudra ensuite gagner environ +43 %, et non +30 %.` },
+
+    { id: 'beta', titre: 'Bêta',
+      definition: `Le bêta mesure la sensibilité du portefeuille aux mouvements du marché.
+        Un bêta de 1 signifie que le portefeuille bouge comme son indice de référence.`,
+      lecture: [
+        ['Inférieur à 0', "le portefeuille évolue à l'inverse du marché."],
+        ['0 à 0,8', 'portefeuille défensif : il amortit les mouvements du marché.'],
+        ['0,8 à 1,2', 'portefeuille proche du marché.'],
+        ['Supérieur à 1,2', 'portefeuille offensif : il amplifie les hausses comme les baisses.'],
+      ],
+      exemple: `Si le marché baisse de 10 % et que votre portefeuille a un bêta de 1,3, il
+        baissera d'environ 13 %. Si le marché monte de 10 %, il montera d'environ 13 %.` },
+
+    { id: 'var', titre: 'VaR 95 % à 1 jour',
+      definition: `La Value at Risk indique la perte journalière qui n'a été dépassée qu'un
+        jour sur vingt sur la période étudiée. Elle est calculée à partir des variations
+        réellement observées — méthode historique — et appliquée à la valeur de vos titres.`,
+      lecture: [
+        ['Moins de 1 %', 'pertes journalières habituellement très limitées.'],
+        ['1 % à 2 %', "niveau normal pour un portefeuille d'actions."],
+        ['2 % à 3 %', 'les mauvaises journées pèsent lourd.'],
+        ['Plus de 3 %', 'risque de perte journalière élevé.'],
+      ],
+      exemple: `Vos titres valent 20 000 € et la VaR est de 400 €, soit 2 %. Dix-neuf jours
+        sur vingt, vous perdez moins de 400 € dans la journée, ou vous gagnez. Mais environ
+        un jour par mois de Bourse, la perte dépasse 400 €. La VaR ne dit pas de combien :
+        c'est le rôle de la CVaR.` },
+
+    { id: 'cvar', titre: 'Perte moyenne au-delà (CVaR)',
+      definition: `La CVaR mesure la perte moyenne lors des 5 % de pires journées, c'est-à-dire
+        précisément les jours où la VaR est dépassée. Elle décrit la gravité des mauvais jours,
+        là où la VaR n'en décrit que le seuil.`,
+      lecture: [
+        ['Moins de 1,3 × la VaR', 'les mauvaises journées restent proches du seuil, pas de chute brutale.'],
+        ['1,3 à 1,6 × la VaR', 'situation habituelle pour des actions.'],
+        ['Plus de 1,6 × la VaR', 'certaines journées ont été nettement plus violentes que le seuil : le portefeuille est exposé à des chocs.'],
+      ],
+      exemple: `VaR de 2 % et CVaR de 3 % sur 20 000 € de titres : lors des pires journées,
+        environ douze par an, la perte moyenne a été de 600 €, alors que le seuil était de 400 €.` },
+
+    { id: 'regularite', titre: 'Régularité de vos investissements',
+      definition: `Un score de 0 à 100 qui mesure à quel rythme vous investissez. Chaque
+        intervalle entre deux achats reçoit une note selon sa durée. Le score est la somme
+        des durées multipliées par leur note, divisée par le nombre total de jours. Seules
+        les dates comptent : ni vos montants, ni vos choix de titres, ni le moment choisi
+        n'entrent dans le calcul.`,
+      formule: "score = Σ (durée de l'intervalle × sa note) ÷ nombre total de jours",
+      lecture: [
+        ['Moins de 5 jours entre deux achats', 'note 0 — à ce rythme ce n\'est plus de l\'investissement, c\'est du trading.'],
+        ['5 à 21 jours', 'note de 0 à 100 — encore trop rapproché, mais on se dirige vers le bon rythme.'],
+        ['21 à 60 jours', 'note 100 — le rythme mensuel, celui qu\'on vise.'],
+        ['60 à 365 jours', 'note de 100 à 0 — les achats s\'espacent, la discipline se relâche.'],
+        ['Plus d\'un an', 'note 0 — ce n\'est plus un rythme.'],
+      ],
+      exemple: `Trois intervalles : 30 jours notés 100, 34 jours notés 100, puis 365 jours
+        notés 0.
+        Score = (30 × 100 + 34 × 100 + 365 × 0) ÷ (30 + 34 + 365) = 6 400 ÷ 429 = 15.
+        La longue pause ne compte pas pour un intervalle sur trois, mais pour 365 jours
+        sur 429 — c'est tout l'effet de la pondération.`,
+      note: `Plusieurs ordres passés le même jour comptent pour un seul acte
+        d'investissement. Les montants sont volontairement exclus : 300 € ne pèsent pas la
+        même chose pour tout le monde.` },
+
+    { id: 'twr', titre: 'Performance TWR',
+      definition: `Le TWR — time-weighted return, rendement pondéré dans le temps — mesure ce
+        qu'a rapporté un euro resté investi du début à la fin. Il neutralise vos versements
+        et vos retraits, qui ne sont pas des performances.`,
+      lecture: [
+        ['Pourquoi le TWR', "c'est la seule mesure comparable à un indice, puisqu'un indice ne reçoit jamais de versement."],
+        ['Ce qu\'il répond', '« mes choix de placement étaient-ils bons ? »'],
+        ['Ce qu\'il ne dit pas', '« combien mon argent a-t-il rapporté ? » — c\'est le gain total de l\'en-tête.'],
+      ],
+      exemple: `Vous versez 1 000 € qui doublent, soit 2 000 €. Vous ajoutez 8 000 €, le
+        compte vaut 10 000 €, puis gagne 5 % et finit à 10 500 €. Le TWR enchaîne les deux
+        périodes : 2,00 × 1,05 = 2,10, soit +110 %. C'est exactement ce qu'ont fait vos
+        1 000 € du départ, devenus 2 100 €. Mais rapporté aux 9 000 € réellement versés, le
+        gain de 1 500 € ne représente que +16,7 %. Les deux chiffres sont justes : ils ne
+        répondent pas à la même question.`,
+      note: `Dans le tableau de l'onglet Performance, le MSCI World est mesuré via IWDA.AS et
+        le S&P 500 via SXR8.DE, en euros, dividendes réinvestis. La performance est annualisée
+        à partir de trois mois ; un astérisque signale moins d'un an de recul. Une période
+        antérieure à l'ouverture de votre compte reste affichée pour l'indice seul.` },
+  ];
+
+  function afficherInfos() {
+    $('#sommaire-infos').innerHTML = FICHES.map(f =>
+      `<button class="puce-info" data-vers="${f.id}">${echap(f.titre)}</button>`).join('');
+    $('#fiches-infos').innerHTML = FICHES.map(f => `
+      <section class="panneau fiche-info" id="fiche-${f.id}">
+        <h2>${echap(f.titre)}</h2>
+        <p class="definition">${f.definition}</p>
+        ${f.formule ? `<p class="formule-fiche">${echap(f.formule)}</p>` : ''}
+        <table class="lecture"><tbody>${f.lecture.map(([seuil, sens]) =>
+          `<tr><th>${seuil}</th><td>${sens}</td></tr>`).join('')}</tbody></table>
+        <p class="exemple"><strong>Exemple.</strong> ${f.exemple}</p>
+        ${f.note ? `<p class="note-fiche">${f.note}</p>` : ''}
+      </section>`).join('');
+    document.querySelectorAll('.puce-info').forEach(b =>
+      b.onclick = () => allerFiche(b.dataset.vers, false));
+  }
+
+  // Un clic sur un indicateur ouvre l'onglet Informations à la bonne fiche, et la
+  // souligne brièvement pour que l'œil la trouve sans avoir à chercher.
+  function allerFiche(id, changerOnglet = true) {
+    if (changerOnglet) ouvrirOnglet('informations');
+    const cible = $('#fiche-' + id);
+    if (!cible) return;
+    cible.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelectorAll('.fiche-info.visee').forEach(f => f.classList.remove('visee'));
+    void cible.offsetWidth;                 // force le redémarrage de l'animation
+    cible.classList.add('visee');
+  }
+
   /* ── Tiroir « Passer un ordre » ──────────────────────── */
-  function ouvrirTiroir(type = 'ACHAT', ticker = '', quantite = '') {
+  let editionId = null;
+  function ouvrirTiroir(type = 'ACHAT', ticker = '', quantite = '', existante = null) {
     $('#form-ordre').reset();
+    editionId = existante ? existante.id : null;
+    $('#titre-tiroir').textContent = editionId ? "Modifier l'opération" : 'Saisir une opération';
     $('#o-date').value = new Date().toISOString().slice(0, 10);
     $('#o-date').max = $('#o-date').value;
     $('#o-fiche').classList.add('cache'); $('#ordre-erreur').classList.add('cache');
@@ -621,26 +1742,82 @@
     choisirType(type);
     if (ticker) { $('#o-ticker').value = ticker; chercherTitre(); }
     if (quantite) $('#o-qte').value = quantite;
+    if (existante) {                               // pré-remplissage pour une correction
+      $('#o-date').value = existante.date;
+      $('#o-prix').value = existante.prix ?? '';
+      $('#o-frais').value = existante.frais_eur ?? 0;
+      $('#o-montant').value = existante.montant_eur ?? '';
+      $('#o-comm').value = existante.origine === 'auto' ? '' : (existante.commentaire || '');
+      majRecap();
+    }
     $('#voile').classList.remove('cache'); $('#tiroir').classList.add('ouvert'); $('#tiroir').setAttribute('aria-hidden', 'false');
     setTimeout(() => (ticker ? $('#o-prix') : type === 'ACHAT' ? $('#o-ticker') : $('#o-montant')).focus(), 60);
   }
   function fermerTiroir() {
     $('#voile').classList.add('cache'); $('#tiroir').classList.remove('ouvert'); $('#tiroir').setAttribute('aria-hidden', 'true');
   }
-  function vendre(ticker) {
-    const l = SYN.positions.find(p => p.ticker === ticker);
-    ouvrirTiroir('VENTE', ticker, l ? l.quantite : '');
+  /* Graphique du titre, déplié sous sa ligne */
+  let detailOuvert = null, periodeTitre = '1a';
+  function basculerDetail(ev, ticker) {
+    const tr = ev.currentTarget, suivante = tr.nextElementSibling;
+    if (suivante && suivante.classList.contains('ligne-detail')) {
+      suivante.remove(); tr.classList.remove('ouverte'); detailOuvert = null; return;
+    }
+    document.querySelectorAll('.ligne-detail').forEach(e => e.remove());
+    document.querySelectorAll('.ligne-titre').forEach(e => e.classList.remove('ouverte'));
+    tr.classList.add('ouverte'); detailOuvert = ticker;
+    const ligne = document.createElement('tr');
+    ligne.className = 'ligne-detail';
+    ligne.innerHTML = `<td colspan="${tr.children.length}"><div class="detail-titre">
+      <div class="barre-outils" style="margin-bottom:10px">
+        <div class="segments" id="periodes-titre">
+          ${[['5j', '5 J'], ['1m', '1 M'], ['3m', '3 M'], ['6m', '6 M'], ['1a', '1 A'], ['5a', '5 A']]
+            .map(([v, t]) => `<button data-pt="${v}" aria-pressed="${v === periodeTitre}">${t}</button>`).join('')}
+        </div>
+        <span class="discret" id="perf-titre"></span>
+      </div>
+      <div class="courbe"><canvas id="c-titre"></canvas></div></div></td>`;
+    tr.after(ligne);
+    ligne.querySelectorAll('#periodes-titre button').forEach(b => b.onclick = e => {
+      e.stopPropagation(); periodeTitre = b.dataset.pt;
+      ligne.querySelectorAll('#periodes-titre button').forEach(x => x.setAttribute('aria-pressed', x === b));
+      dessinerTitre(ticker);
+    });
+    ligne.onclick = e => e.stopPropagation();
+    dessinerTitre(ticker);
   }
+
+  async function dessinerTitre(ticker) {
+    const info = $('#perf-titre');
+    info.textContent = 'Chargement des cours…';
+    try {
+      const h = await api(`/titres/${encodeURIComponent(ticker)}/historique?periode=${periodeTitre}`);
+      info.innerHTML = `${echap(h.nom)} · <span class="${classe(h.perf_pct)}">${pct(h.perf_pct)}</span> sur la période · ${h.points.length} cotations ${h.granularite === 'heure' ? 'horaires' : 'journalières'}`;
+      const hausse = h.perf_pct >= 0;
+      creerGraphique('c-titre', {
+        type: 'line',
+        data: { labels: h.points.map(p => h.granularite === 'heure' ? p.t.slice(5, 16).replace('-', '/') : dateFr(p.t)),
+          datasets: [{ label: h.ticker, data: h.points.map(p => p.prix), borderColor: hausse ? '#1E6A48' : '#B23A2E',
+            backgroundColor: hausse ? 'rgba(30,106,72,.08)' : 'rgba(178,58,46,.08)', fill: true,
+            pointRadius: 0, borderWidth: 2, tension: .12 }] },
+        options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${argent(c.raw, h.devise)}` } } },
+          scales: { x: { ticks: { maxTicksLimit: 8, color: teinte('--encre-2') }, grid: { display: false } },
+                    y: { ticks: { callback: v => argent(v, h.devise), color: teinte('--encre-2') }, grid: { color: teinte('--filet') } } } },
+      });
+    } catch (ex) { info.innerHTML = `<span class="perte">${echap(ex.message)}</span>`; }
+  }
+
   function choisirType(t) {
     typeOrdre = t;
     document.querySelectorAll('#types-ordre button').forEach(b => b.setAttribute('aria-pressed', b.dataset.type === t));
     document.querySelectorAll('#form-ordre [data-pour]').forEach(el => el.classList.toggle('cache', !el.dataset.pour.split(' ').includes(t)));
     $('#o-fiche').classList.toggle('cache', !ficheOrdre || !['ACHAT', 'VENTE'].includes(t));
-    $('#o-valider').textContent = LIBELLES[t];
+    $('#o-valider').textContent = editionId ? 'Enregistrer la correction' : LIBELLES[t];
     majRecap();
   }
   document.querySelectorAll('#types-ordre button').forEach(b => b.onclick = () => choisirType(b.dataset.type));
-  $('#btn-ordre').onclick = () => ouvrirTiroir(SYN && SYN.totaux.cash_eur > 0 ? 'ACHAT' : 'DEPOT');
+  $('#btn-ordre').onclick = () => ouvrirTiroir('ACHAT');
   $('#fermer-tiroir').onclick = fermerTiroir;
   $('#voile').onclick = fermerTiroir;
   document.addEventListener('keydown', e => { if (e.key === 'Escape') fermerTiroir(); });
@@ -689,16 +1866,325 @@
     }
     const btn = $('#o-valider'); btn.disabled = true;
     try {
-      await api('/compte/operations', { method: 'POST', body: JSON.stringify(corps) });
+      await api(editionId ? '/compte/operations/' + editionId : '/compte/operations',
+                { method: editionId ? 'PUT' : 'POST', body: JSON.stringify(corps) });
       fermerTiroir();
-      toast({ ACHAT: 'Achat enregistré.', VENTE: 'Vente enregistrée.', DEPOT: 'Dépôt enregistré.', RETRAIT: 'Retrait enregistré.', DIVIDENDE: 'Dividende enregistré.' }[typeOrdre]);
+      toast(editionId ? 'Saisie corrigée.' : { ACHAT: 'Achat enregistré.', VENTE: 'Vente enregistrée.', DEPOT: 'Dépôt enregistré.', RETRAIT: 'Retrait enregistré.', DIVIDENDE: 'Dividende enregistré.' }[typeOrdre]);
       rafraichir();
     } catch (ex) { err.textContent = ex.message; err.classList.remove('cache'); }
     finally { btn.disabled = false; }
   };
 
+  /* ── Indice de comparaison ───────────────────────────── */
+  let indiceChoisi = 'MSCI_WORLD', modeIndice = 'euros_dividendes', PARAMS = null;
+  async function chargerParametres() {
+    PARAMS = await api('/compte/parametres');
+    indiceChoisi = PARAMS.indice;
+    modeIndice = PARAMS.mode_indice || 'euros_dividendes';
+    document.querySelectorAll('.sel-indice').forEach(sel => {
+      sel.innerHTML = PARAMS.indices_disponibles.map(i => `<option value="${i.code}">${i.libelle}</option>`).join('');
+      sel.value = indiceChoisi;
+    });
+    // Deux façons de mesurer un indice, et elles ne donnent pas le même chiffre :
+    // celui de la presse, et celui que vit réellement un épargnant en euros.
+    document.querySelectorAll('.sel-mode-indice').forEach(sel => {
+      sel.innerHTML = (PARAMS.modes_indice || []).map(m =>
+        `<option value="${m.code}" title="${echap(m.aide)}">${echap(m.libelle)}</option>`).join('');
+      sel.value = modeIndice;
+      sel.title = ((PARAMS.modes_indice || []).find(m => m.code === modeIndice) || {}).aide || '';
+    });
+  }
+  // L'indice ne se choisit plus que dans l'onglet Performance, et le choix est retenu
+  // d'une session à l'autre. L'onglet Risque, lui, reste aligné sur le MSCI World :
+  // un bêta n'a de sens que mesuré contre une référence stable.
+  document.querySelectorAll('.sel-mode-indice').forEach(sel => sel.onchange = async () => {
+    modeIndice = sel.value;
+    document.querySelectorAll('.sel-mode-indice').forEach(x => x.value = modeIndice);
+    try { await enregistrerReglage({ mode_indice: modeIndice }); } catch {}
+    chargerPerformance();
+  });
+  document.querySelectorAll('.sel-indice').forEach(sel => sel.onchange = async () => {
+    indiceChoisi = sel.value;
+    document.querySelectorAll('.sel-indice').forEach(x => x.value = indiceChoisi);
+    try { await enregistrerReglage({ indice: indiceChoisi }); } catch {}
+    chargerPerformance();
+  });
+
+  /* ── Import d'un export courtier ─────────────────────── */
+  let LIGNES_IMPORT = [];
+
+  let TYPE_IMPORT = 'positions';
+  let FICHIER_IMPORT = null;                   // conservé pour pouvoir relire après classement
+  $('#btn-import').onclick = () => $('#fichier-import').click();
+  $('#fichier-import').onchange = async e => {
+    const fichier = e.target.files[0];
+    if (!fichier) return;
+    e.target.value = '';                       // permet de réimporter le même fichier
+    FICHIER_IMPORT = fichier;
+    try {
+      await relireFichierImport();
+      $('#dlg-import').showModal();
+    } catch (ex) { alert("Lecture impossible : " + ex.message); }
+  };
+
+  async function relireFichierImport() {
+    const corps = new FormData();
+    corps.append('fichier', FICHIER_IMPORT);
+    const res = await api('/compte/import/apercu', { method: 'POST', body: corps });
+    TYPE_IMPORT = res.type || 'positions';
+    // Une ligne déjà présente à l'identique dans le portefeuille est décochée d'office :
+    // réimporter un relevé qui recouvre le précédent ne doit pas créer de doublons.
+    LIGNES_IMPORT = res.lignes.map(l => ({ ...l, inclure: l.importable && !l.doublon }));
+    afficherApercuImport(res);
+  }
+
+  const LIBELLES_TYPE_FICHIER = {
+    operations: ["Importer un relevé d'opérations", n => `${n} opération${n > 1 ? 's' : ''} lue${n > 1 ? 's' : ''}`,
+                 "Chaque opération est rejouée à sa date : votre historique de performance sera exact."],
+    ordres: ["Importer un carnet d'ordres", n => `${n} ordre${n > 1 ? 's' : ''} exécuté${n > 1 ? 's' : ''}`,
+             "Seuls les ordres exécutés sont repris : les ordres annulés, expirés ou encore en cours "
+             + "sont écartés et listés plus bas. La date retenue est celle de l'exécution."],
+    positions: ['Importer des positions', n => `${n} position${n > 1 ? 's' : ''} lue${n > 1 ? 's' : ''}`,
+                "Chaque ligne retenue devient un ordre d'achat daté. La date proposée est celle du dernier "
+                + "mouvement : si vous aviez renforcé la position, corrigez-la par la date de votre premier achat."],
+  };
+
+  function afficherApercuImport(res) {
+    const n = LIGNES_IMPORT.length;
+    const [titre, decompte, explication] = LIBELLES_TYPE_FICHIER[TYPE_IMPORT] || LIBELLES_TYPE_FICHIER.positions;
+    const operations = TYPE_IMPORT !== 'positions';
+    const doublons = LIGNES_IMPORT.filter(l => l.doublon).length;
+    $('#dlg-import').querySelector('h2').textContent = titre;
+    $('#import-resume').textContent =
+      `${res.fichier} · ${decompte(n)}`
+      + (doublons ? `, dont ${doublons} déjà enregistré${doublons > 1 ? 's' : ''} (décoché${doublons > 1 ? 's' : ''})` : '')
+      + `. Vérifiez, corrigez si besoin, puis importez. ` + explication;
+    $('#import-remplacer').closest('label').classList.toggle('cache', operations);
+    $('#import-erreur').classList.add('cache');
+    rendreDetailImport(res);
+    rendreTableauImport();
+  }
+
+  /* Ce que le lecteur a compris du fichier, et ce qu'il n'a pas compris.
+     Rien n'est deviné en silence : tout ce qui a été écarté est listé avec son motif. */
+  function rendreDetailImport(res) {
+    const zone = $('#import-detail');
+    if (!zone) return;
+    const cols = Object.entries(res.colonnes_reconnues || {})
+      .map(([role, col]) => `<li><strong>${role}</strong> ← « ${echap(String(col).trim())} »`
+        + (res.decisions && res.decisions[role] ? ` <span class="discret">(${echap(res.decisions[role])})</span>` : '')
+        + `</li>`).join('');
+    const alertes = (res.avertissements || []).map(a => `<li>${echap(a)}</li>`).join('');
+    const ecartees = (res.ignorees || []).map(i =>
+      `<li>ligne ${i.ligne} · ${echap(i.nom)} — ${echap(i.motif)}</li>`).join('');
+    // Libellés inconnus : on ne devine pas, on fait classer une fois pour toutes
+    const inconnus = [...new Set((res.a_classer || []).map(l => l.libelle).filter(Boolean))];
+    const classer = inconnus.length ? `<div class="panneau" style="margin-top:10px">
+        <strong>${inconnus.length} libellé(s) d'opération inconnu(s)</strong>
+        <p class="discret">Votre banque emploie un vocabulaire que l'application ne connaît pas encore.
+          Indiquez une fois à quoi correspond chaque libellé : le choix sera retenu pour tous vos
+          prochains imports, et la question ne vous sera plus posée.</p>
+        ${inconnus.map((lib, i) => `<div class="ligne-classer">
+          <code>${echap(lib)}</code>
+          <select data-libelle="${echap(lib)}" class="classer-nature">
+            <option value="">— ignorer cette ligne —</option>
+            <option value="ACHAT">Achat de titres</option>
+            <option value="VENTE">Vente de titres</option>
+            <option value="DIVIDENDE">Dividende encaissé</option>
+            <option value="DEPOT">Versement sur le compte</option>
+            <option value="RETRAIT">Retrait, frais ou taxe</option>
+          </select></div>`).join('')}
+        <button class="btn" id="import-classer">Enregistrer et relire le fichier</button>
+      </div>` : '';
+    zone.innerHTML = `<details><summary>Ce que le fichier a donné à lire</summary>
+        <p class="discret">Séparateur « ${echap(res.separateur || ';')} »,
+          dates au format ${echap(res.format_date || 'détecté ligne à ligne')}.</p>
+        <ul class="menu-detail">${cols}</ul>
+        ${alertes ? `<p><strong>À vérifier :</strong></p><ul class="menu-detail">${alertes}</ul>` : ''}
+        ${ecartees ? `<p><strong>Lignes écartées :</strong></p><ul class="menu-detail">${ecartees}</ul>` : ''}
+      </details>${classer}`;
+    const bouton = $('#import-classer');
+    if (bouton) bouton.onclick = async () => {
+      const mappages = {};
+      zone.querySelectorAll('.classer-nature').forEach(s => {
+        if (s.value) mappages[s.dataset.libelle] = s.value;
+      });
+      if (!Object.keys(mappages).length) { alert("Choisissez au moins une nature."); return; }
+      bouton.disabled = true;
+      try {
+        await api('/compte/import/mappages', { method: 'POST', body: JSON.stringify({ mappages }) });
+        await relireFichierImport();
+      } catch (ex) { alert(ex.message); bouton.disabled = false; }
+    };
+  }
+
+  function rendreTableauImport() {
+    const operations = TYPE_IMPORT !== 'positions';   // relevé d'opérations ou carnet d'ordres
+    $('#import-table').innerHTML = `<table><thead><tr>
+        <th style="width:34px"></th><th>Ligne du fichier</th><th style="min-width:150px">Titre reconnu</th>
+        ${operations ? '<th style="width:92px">Sens</th>' : ''}
+        <th class="num" style="width:110px">Quantité</th>
+        <th class="num" style="width:130px">${operations ? 'Prix / montant' : 'Prix de revient'}</th>
+        <th style="width:140px">${operations ? "Date d'opération" : "Date d'entrée"}</th></tr></thead>
+      <tbody>${LIGNES_IMPORT.map((l, i) => l.espece ? `<tr class="${l.inclure ? '' : 'exclue'} ${l.doublon ? 'doublon' : ''}">
+        <td><input type="checkbox" data-i="${i}" data-champ="inclure" ${l.inclure ? 'checked' : ''}></td>
+        <td class="titre-ligne"><strong>${echap(l.nom || '—')}</strong><small>mouvement d'espèces${l.doublon ? ' · déjà enregistré' : ''}</small></td>
+        <td colspan="${operations ? 3 : 2}"><span class="etiquette ${l.sens}">${NOMS_TYPE[l.sens] || l.sens}</span></td>
+        <td class="num"><input type="number" step="any" min="0" data-i="${i}" data-champ="montant_eur" value="${l.montant_eur ?? ''}"></td>
+        <td><input type="date" data-i="${i}" data-champ="date" value="${l.date || ''}" max="${new Date().toISOString().slice(0, 10)}"></td>
+      </tr>` : `<tr class="${l.inclure ? '' : 'exclue'} ${l.doublon ? 'doublon' : ''}">
+        <td><input type="checkbox" data-i="${i}" data-champ="inclure" ${l.inclure ? 'checked' : ''}></td>
+        <td class="titre-ligne"><strong>${echap(l.nom || '—')}</strong>
+          <small>${echap(l.isin || '')}${l.deja_en_portefeuille ? ' · déjà en portefeuille' : ''}${l.doublon ? ' · opération déjà enregistrée à l’identique' : ''}</small></td>
+        <td>
+          <input type="text" data-i="${i}" data-champ="ticker" value="${echap(l.ticker || '')}"
+                 placeholder="Ticker Yahoo" list="tickers-${i}">
+          ${l.alternatives && l.alternatives.length ? `<datalist id="tickers-${i}">
+            ${l.alternatives.map(a => `<option value="${echap(a.ticker)}">${echap(a.nom)} · ${echap(a.place_nom || a.place || '')}</option>`).join('')}
+          </datalist>` : ''}
+          <span class="sous">${l.ticker ? `${echap(l.nom_yahoo || '')} · ${echap(l.place || '')} · ${echap(l.devise || '')}` : ''}</span>
+          ${l.avertissement ? `<span class="alerte">${echap(l.avertissement)}</span>` : ''}
+        </td>
+        ${operations ? `<td><select data-i="${i}" data-champ="sens">
+            <option value="ACHAT" ${l.sens !== 'VENTE' ? 'selected' : ''}>Achat</option>
+            <option value="VENTE" ${l.sens === 'VENTE' ? 'selected' : ''}>Vente</option>
+          </select></td>` : ''}
+        <td><input type="number" step="any" min="0" data-i="${i}" data-champ="quantite" value="${l.quantite ?? ''}"></td>
+        <td><input type="number" step="any" min="0" data-i="${i}" data-champ="pru" value="${l.pru ?? ''}"
+            title="${l.frais ? 'Frais de courtage déduits : ' + l.frais + ' €' : ''}"></td>
+        <td><input type="date" data-i="${i}" data-champ="date" value="${l.date || ''}" max="${new Date().toISOString().slice(0, 10)}"></td>
+      </tr>`).join('')}</tbody></table>`;
+
+    $('#import-table').querySelectorAll('input, select').forEach(champ => {
+      champ.onchange = async ev => {
+        const { i, champ: nom } = ev.target.dataset;
+        const ligne = LIGNES_IMPORT[i];
+        if (nom === 'inclure') {
+          ligne.inclure = ev.target.checked;
+          ev.target.closest('tr').classList.toggle('exclue', !ligne.inclure);
+          return;
+        }
+        ligne[nom] = (nom === 'ticker') ? ev.target.value.trim().toUpperCase()
+                   : (nom === 'date' || nom === 'sens') ? ev.target.value
+                   : parseFloat(ev.target.value);
+        if (nom === 'ticker' && ligne.ticker) {       // vérifie le ticker saisi à la main
+          try {
+            const f = await api('/titres/' + encodeURIComponent(ligne.ticker));
+            Object.assign(ligne, { nom_yahoo: f.nom, devise: f.devise, place: f.zone,
+                                   avertissement: null, importable: true });
+          } catch {
+            ligne.avertissement = "Ticker inconnu de Yahoo Finance.";
+            ligne.importable = false;
+          }
+          rendreTableauImport();
+        }
+      };
+    });
+  }
+
+  $('#import-annuler').onclick = () => $('#dlg-import').close();
+
+  $('#import-valider').onclick = async () => {
+    const err = $('#import-erreur');
+    err.classList.add('cache');
+    const lignes = LIGNES_IMPORT.filter(l => l.inclure).map(l => (
+      l.espece
+        ? { sens: l.sens, montant_eur: l.montant_eur, date: l.date, nom: l.nom }
+        : { ticker: l.ticker, quantite: l.quantite, pru: l.pru, date: l.date,
+            sens: l.sens || 'ACHAT', frais: l.frais || 0, nom: l.nom, isin: l.isin }));
+    const invalide = lignes.find(l => !l.date || (l.montant_eur !== undefined
+      ? !(l.montant_eur > 0)
+      : (!l.ticker || !(l.quantite > 0) || !(l.pru > 0))));
+    if (!lignes.length || invalide) {
+      err.textContent = invalide
+        ? `Ligne incomplète (${invalide.nom || invalide.ticker || '?'}) : vérifiez le titre, la quantité, le prix et la date.`
+        : "Sélectionnez au moins une ligne à importer.";
+      err.classList.remove('cache');
+      return;
+    }
+    const btn = $('#import-valider');
+    btn.disabled = true;
+    try {
+      const res = await api('/compte/import/valider', {
+        method: 'POST',
+        // Le type de fichier suit l'import : il indique au serveur si les dates sont
+        // de vraies dates d'exécution ou une approximation d'export de positions.
+        body: JSON.stringify({ lignes, remplacer: $('#import-remplacer').checked,
+                               type_fichier: TYPE_IMPORT }),
+      });
+      $('#dlg-import').close();
+      toast(`${res.importees.length} ligne(s) importée(s)`
+            + (res.remplacees.length ? `, ${res.remplacees.length} remplacée(s)` : '') + '.');
+      if (res.erreurs.length) {
+        toast(`Non importé : ${res.erreurs.map(e => e.ticker).join(', ')}. ${res.erreurs[0].motif}`, true);
+      }
+      rafraichir();
+    } catch (ex) {
+      err.textContent = ex.message;
+      err.classList.remove('cache');
+    } finally { btn.disabled = false; }
+  };
+
+  /* L'écran Paramètres a disparu : chaque réglage vit désormais là où on le lit.
+     L'indice de comparaison se choisit dans l'onglet Performance, le taux sans risque
+     dans l'onglet Risque, sous le ratio de Sharpe qu'il commande. Un seul appel sert
+     aux deux : le serveur ne touche que le champ envoyé. */
+  async function enregistrerReglage(champs) {
+    await api('/compte/parametres', { method: 'PUT', body: JSON.stringify(champs) });
+    PARAMS = { ...(PARAMS || {}), ...champs };
+  }
+
+  /* ── Dividendes automatiques & notifications ─────────── */
+  async function synchroniserDividendes() {
+    try {
+      const { nouveaux } = await api('/compte/dividendes/synchroniser', { method: 'POST' });
+      if (nouveaux.length) {
+        await rafraichir();
+        nouveaux.forEach(d => alerteNavigateur('Dividende versé : ' + d.nom, `${argent(d.net_eur)} crédités en espèces.`));
+      }
+    } catch (ex) { console.warn(ex); }
+    chargerNotifs();
+  }
+  async function chargerNotifs() {
+    try {
+      const { notifications, non_lues } = await api('/compte/notifications');
+      const c = $('#nb-notifs'); c.textContent = non_lues; c.classList.toggle('cache', !non_lues);
+      $('#liste-notifs').innerHTML = notifications.length ? notifications.map(n => `<div class="notif ${n.lue ? '' : 'non-lue'}">
+          <strong>${echap(n.titre)}</strong>${echap(n.message)}<br><time>${new Date(n.cree_le).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}</time></div>`).join('')
+        : '<div class="notif discret">Aucune notification. Les dividendes versés sur vos titres apparaîtront ici.</div>';
+    } catch (ex) { console.warn(ex); }
+  }
+  function alerteNavigateur(titre, corps) {
+    if ('Notification' in window && Notification.permission === 'granted') new Notification(titre, { body: corps });
+  }
+  $('#btn-notifs').onclick = async e => {
+    e.stopPropagation();
+    const p = $('#panneau-notifs'), ouvrir = p.classList.contains('cache');
+    p.classList.toggle('cache', !ouvrir);
+    if (ouvrir && !$('#nb-notifs').classList.contains('cache')) {
+      await api('/compte/notifications/lues', { method: 'POST' }).catch(() => {});
+      $('#nb-notifs').classList.add('cache');
+    }
+  };
+  $('#effacer-notifs').onclick = async () => {
+    try { await api('/compte/notifications', { method: 'DELETE' }); chargerNotifs(); toast('Notifications effacées.'); }
+    catch (ex) { alert(ex.message); }
+  };
+  $('#panneau-notifs').onclick = e => e.stopPropagation();
+  document.addEventListener('click', () => $('#panneau-notifs').classList.add('cache'));
+  $('#activer-notifs').onclick = async () => {
+    if (!('Notification' in window)) return alert("Ce navigateur ne gère pas les notifications.");
+    const r = await Notification.requestPermission();
+    toast(r === 'granted' ? 'Alertes activées : vous serez prévenu quand un dividende est versé.' : 'Alertes refusées par le navigateur.');
+    majBoutonAlertes();
+  };
+  function majBoutonAlertes() {
+    $('#activer-notifs').classList.toggle('cache', !('Notification' in window) || Notification.permission === 'granted');
+  }
+
   /* ── Lancement ───────────────────────────────────────── */
-  if (jeton) demarrer();
+  // Un jeton gardé en mémoire évite un aller-retour ; sinon le serveur en délivre un.
+  if (jeton && utilisateur) demarrer(); else ouvrirSession();
 </script>
 </body>
 </html>

@@ -10,3 +10,10 @@ openpyxl>=3.1.0
 httpx>=0.25.0
 pdfplumber>=0.10.0
 python-multipart>=0.0.6
+pypdf>=4.0.0    # lecture des pages d'un relevé PDF
+pypdfium2>=4.25.0    # rendu des pages, pour les relevés scannés
+rapidocr-onnxruntime>=1.3.0    # reconnaissance optique, sans logiciel externe
+
+# Facultatif, volontairement non déclaré : Pillow et pytesseract ne servent qu'au
+# dernier repli de lecture d'un PDF scanné. Leurs imports sont protégés, leur absence
+# n'empêche ni le démarrage ni la lecture d'un PDF ordinaire. RapidOCR ci-dessus suffit.
