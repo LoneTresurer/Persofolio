@@ -23,6 +23,29 @@ dans `backend/archive_optimiseur/` ; voir le README de ce dossier pour le réact
 
 ---
 
+## Deux façons de lancer PersoFolio
+
+**Pour vous et l'équipe, pendant le développement** : le serveur, lancé à la
+main. C'est ce que décrit ce guide, et rien n'a changé.
+
+**Pour tous les autres — un professeur, un ami, un jury** : l'exécutable Windows.
+Un double-clic, l'application s'ouvre dans leur navigateur, ni Python ni
+terminal. Pour le fabriquer, double-cliquez `construire.bat` à la racine du
+projet ; le détail est dans la section « Fabriquer l'exécutable » en bas de page.
+
+Les deux partagent le même code, mais pas le même dossier de données :
+
+| | Base de données |
+|---|---|
+| Lancé à la main | `backend/data/portefeuille.db` |
+| Exécutable Windows | `C:\Users\<vous>\AppData\Local\PersoFolio\portefeuille.db` |
+
+L'exécutable ne peut pas écrire dans son propre dossier : Windows le déballe
+dans un dossier temporaire qu'il efface en sortant, et les comptes
+disparaîtraient à chaque fermeture.
+
+---
+
 ## Ce dont tu as besoin (à installer une seule fois)
 
 ### 1. Python 3.11 ou plus récent
@@ -119,3 +142,53 @@ backend/
 | Les graphiques restent vides | Chart.js vient d'Internet : vérifier la connexion, ou recharger la page |
 | Les cours des titres ne s'affichent pas | `yfinance` interroge Yahoo Finance : Internet requis |
 | Un relevé scanné n'est pas lu | Premier usage : RapidOCR télécharge ses modèles, laisser le temps au premier import |
+
+---
+
+## Fabriquer l'exécutable Windows
+
+À faire sur une machine **Windows** — un exécutable Windows ne se fabrique pas
+ailleurs. Double-cliquez, à la racine du projet :
+
+```
+construire.bat
+```
+
+Le script vérifie que Python est là, crée un environnement isolé dans
+`.venv-build` (le Python de la machine n'est pas touché), installe les
+bibliothèques, contrôle que la reconnaissance optique est bien présente, puis
+appelle PyInstaller. Comptez **5 à 15 minutes la première fois** : environ
+300 Mo à télécharger. Les constructions suivantes sont bien plus rapides.
+
+Le résultat : `dist\PersoFolio.exe`, autour de **260 Mo**, à envoyer avec
+`LISEZ-MOI.txt`.
+
+### Avant de le distribuer, essayez-le
+
+Trois points que seule une machine Windows peut confirmer :
+
+1. **Il démarre.** Double-clic, la petite fenêtre « PersoFolio est ouvert »
+   apparaît et le navigateur s'ouvre. Premier lancement : 5 à 15 secondes, le
+   temps du déballage.
+2. **Un relevé scanné se lit.** C'est le contrôle qui compte : c'est la partie
+   la plus fragile de la construction, et elle ne se voit qu'à l'usage. Le
+   fichier `.spec` vérifie à la construction que les modèles sont embarqués,
+   mais un essai réel vaut mieux.
+3. **Les comptes survivent.** Créez un compte, fermez par le bouton
+   « Quitter », rouvrez : le compte doit être là.
+
+### Ce que Windows dira à vos destinataires
+
+Un exécutable non signé déclenche « Windows a protégé votre ordinateur » au
+premier lancement : *Informations complémentaires* → *Exécuter quand même*.
+C'est écrit dans `LISEZ-MOI.txt`, à envoyer avec le fichier. Le faire taire
+demande un certificat de signature de code, plusieurs centaines d'euros par an.
+
+Gmail refuse les pièces jointes `.exe`, même dans un `.zip` : passez par un lien
+Drive, WeTransfer, ou une clé USB.
+
+### Si quelque chose se passe mal chez un utilisateur
+
+Le journal de démarrage est dans
+`C:\Users\<lui>\AppData\Local\PersoFolio\journal.txt`. Il indique le port
+retenu, le dossier des données, et l'erreur complète en cas d'échec.

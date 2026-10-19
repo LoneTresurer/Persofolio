@@ -1,5 +1,6 @@
 __pycache__/
-*.py[cod]
+*.pyc
 *.db
-.vscode/
-.DS_Store
+.venv-build/
+build/
+dist/

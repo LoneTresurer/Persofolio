@@ -15,7 +15,12 @@ import sqlite3
 from datetime import datetime
 from typing import List, Optional
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "portefeuille.db")
+from core.emplacements import fichier_base
+
+# Lancé depuis les sources : backend/data/portefeuille.db, comme toujours.
+# Lancé depuis l'exécutable Windows : %LOCALAPPDATA%\PersoFolio\portefeuille.db,
+# le dossier temporaire de l'exécutable étant effacé à la fermeture.
+DB_PATH = fichier_base()
 
 
 class PortfolioDB:

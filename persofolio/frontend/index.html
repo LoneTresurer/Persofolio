@@ -481,7 +481,10 @@
     /* ══════════════════════════════════════════════
        CONFIG
     ══════════════════════════════════════════════ */
-    const API_URL = /:8000$/.test(location.host) ? location.origin : 'http://localhost:8000';
+    /* Servie par l'API : on lui parle sur sa propre adresse, quel que soit le port.
+     L'exécutable Windows prend le premier port libre, qui n'est pas toujours 8000.
+     Page ouverte en double-clic (file://) : on tente le port habituel. */
+  const API_URL = location.protocol.startsWith('http') ? location.origin : 'http://localhost:8000';
 
     function goTo(page) {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));

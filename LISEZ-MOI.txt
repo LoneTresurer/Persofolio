@@ -1,0 +1,87 @@
+PersoFolio
+==========
+
+Budget, épargne et compte-titres, sur votre ordinateur.
+
+
+POUR OUVRIR L'APPLICATION
+-------------------------
+
+Double-cliquez sur PersoFolio.exe.
+
+Une petite fenêtre « PersoFolio est ouvert » apparaît, et l'application
+s'affiche dans votre navigateur habituel. Au premier lancement, comptez une
+dizaine de secondes : le programme se déballe. Les fois suivantes sont plus
+rapides.
+
+Gardez la petite fenêtre ouverte pendant que vous utilisez l'application.
+Pour quitter, cliquez sur « Quitter » dans cette fenêtre — fermer l'onglet du
+navigateur ne suffit pas.
+
+
+« WINDOWS A PROTÉGÉ VOTRE ORDINATEUR »
+--------------------------------------
+
+Au premier lancement, Windows affichera probablement un écran bleu avec ce
+message. C'est normal et attendu : Windows prévient pour tout programme qui
+n'a pas été signé auprès de Microsoft, ce qui coûte plusieurs centaines
+d'euros par an et n'a pas de sens pour un projet d'étudiant.
+
+Pour continuer :
+
+    1. Cliquez sur « Informations complémentaires »
+    2. Cliquez sur « Exécuter quand même »
+
+Windows ne le redemandera plus pour ce fichier.
+
+Si votre antivirus met le fichier en quarantaine, c'est la même cause. Vous
+pouvez l'autoriser, ou demander le code source : l'application est écrite en
+Python et entièrement lisible.
+
+
+OÙ SONT MES DONNÉES
+-------------------
+
+Tout reste sur votre ordinateur. Rien n'est envoyé nulle part, il n'y a aucun
+compte en ligne, aucune inscription.
+
+Vos comptes et vos opérations sont dans un seul fichier :
+
+    C:\Users\<vous>\AppData\Local\PersoFolio\portefeuille.db
+
+Pour sauvegarder, copiez ce fichier. Pour repartir de zéro, supprimez-le,
+l'application fermée. Pour déménager vos données sur un autre ordinateur,
+copiez-le au même endroit là-bas.
+
+Les mots de passe y sont hachés (PBKDF2), jamais écrits en clair.
+
+Le journal de démarrage, utile si quelque chose se passe mal, est à côté :
+
+    C:\Users\<vous>\AppData\Local\PersoFolio\journal.txt
+
+
+CE QUI DEMANDE INTERNET
+-----------------------
+
+L'application fonctionne hors ligne, à deux exceptions près :
+
+  - les cours de bourse et les actualités des titres (compte-titres) ;
+  - la mise en forme des pages, qui charge ses polices et ses graphiques
+    depuis internet au premier affichage.
+
+Sans connexion, le budget, l'import de relevés et les crédits fonctionnent
+normalement ; les graphiques peuvent rester vides.
+
+
+SI RIEN NE S'OUVRE
+------------------
+
+  - Attendez une minute : le premier lancement est lent.
+  - Regardez si la petite fenêtre « PersoFolio est ouvert » est apparue
+    derrière une autre fenêtre.
+  - Ouvrez vous-même votre navigateur à l'adresse indiquée dans cette fenêtre.
+  - En dernier recours, envoyez le fichier journal.txt ci-dessus.
+
+
+---
+Projet de Master 2 Asset Management, Risk Control & Compliance — IAE Caen, 2026

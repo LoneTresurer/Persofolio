@@ -618,7 +618,10 @@
 </aside>
 
 <script>
-  const API = /:8000$/.test(location.host) ? location.origin : 'http://localhost:8000';
+  /* Servie par l'API : on lui parle sur sa propre adresse, quel que soit le port.
+     L'exécutable Windows prend le premier port libre, qui n'est pas toujours 8000.
+     Page ouverte en double-clic (file://) : on tente le port habituel. */
+  const API = location.protocol.startsWith('http') ? location.origin : 'http://localhost:8000';
   const LIBELLES = { ACHAT: "Valider l'achat", VENTE: 'Valider la vente', DEPOT: 'Enregistrer le dépôt', RETRAIT: 'Enregistrer le retrait', DIVIDENDE: 'Enregistrer le dividende' };
   const NOMS_TYPE = { ACHAT: 'Achat', VENTE: 'Vente', DEPOT: 'Dépôt', RETRAIT: 'Retrait', DIVIDENDE: 'Dividende', SPLIT: "Division d'actions" };
   const PALETTE = ['#1E6A48', '#4F9A74', '#9CC5A9', '#2B5680', '#7FA7CB', '#C08A3E', '#8E6BA8', '#B23A2E', '#6B7A70', '#D5C9A1'];

@@ -52,8 +52,12 @@ def root():
     return RedirectResponse("/app/")
 
 
-# Interface web servie par l'API : une seule origine (http://localhost:8000/app/),
-# donc un seul jeton de connexion partagé par toutes les pages.
+# Interface web servie par l'API : une seule origine, donc un seul jeton de
+# connexion partagé par toutes les pages.
 # Monté en dernier : le préfixe /app ne doit capter aucune route de l'API.
-FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+# Le chemin passe par core.emplacements : dans l'exécutable Windows, les pages
+# sont déballées ailleurs que dans le dépôt.
+from core.emplacements import dossier_pages
+
+FRONTEND_DIR = dossier_pages()
 app.mount("/app", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

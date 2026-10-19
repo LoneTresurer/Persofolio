@@ -81,9 +81,10 @@ verifier("une seule base de données", "from core.portfolio_db import DB_PATH" i
 
 # ── Frontend : connexion unique, même origine ───────────────────────────────
 for nom, t in (("index.html", index), ("banque.html", banque), ("portefeuille.html", pf)):
-    verifier(f"{nom} suit l'origine du serveur",
-             "location.origin" in t,
-             "remplacer l'adresse figée par : /:8000$/.test(location.host) ? location.origin : 'http://localhost:8000'")
+    # Le port n'est pas toujours 8000 : l'exécutable prend le premier port libre.
+    verifier(f"{nom} suit l'origine du serveur, quel que soit le port",
+             "location.origin" in t and "/:8000$/" not in t,
+             "remplacer l'adresse figée par : location.protocol.startsWith('http') ? location.origin : 'http://localhost:8000'")
 
 verifier("index.html : connexion serveur", "/auth/connexion" in index and "/auth/inscription" in index,
          "la connexion locale par navigateur a été réintroduite : reprendre index.html de la branche perso-finance")
