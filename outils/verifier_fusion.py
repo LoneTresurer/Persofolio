@@ -12,6 +12,7 @@ Aucune dépendance : à lancer depuis la racine du dépôt, serveur éteint.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -135,6 +136,24 @@ for paquet in ("fastapi", "uvicorn", "pandas", "yfinance", "httpx"):
 avertir("requirements : dépendances de l'optimiseur retirées",
         not re.search(r"^(scipy|scikit-learn|openpyxl)", req, re.M),
         "l'optimiseur est archivé ; ces paquets ne servent plus (les commenter)")
+
+# ── Scripts Windows ─────────────────────────────────────────────────────────
+# Un .bat enregistré en fins de ligne Unix, ou contenant des accents, n'est pas
+# lu correctement par cmd.exe : la fenêtre se referme avant d'exécuter quoi que
+# ce soit, sans rien afficher. Le défaut ne se voit donc pas à la lecture.
+for bat in sorted(Path(".").glob("*.bat")):
+    brut = bat.read_bytes()
+    verifier(f"{bat.name} : ASCII pur",
+             all(b < 128 for b in brut),
+             "cmd.exe et la page de code ne s'entendent pas sur les accents ; "
+             "écrire ce fichier sans caractère accentué")
+    verifier(f"{bat.name} : fins de ligne Windows (CRLF)",
+             brut.count(b"\n") > 0 and brut.count(b"\n") == brut.count(b"\r\n"),
+             "convertir en CRLF, sinon cmd.exe échoue sur les blocs ( ) et les boucles for")
+    verifier(f"{bat.name} : contrôles détaillés",
+             subprocess.run([sys.executable, "outils/verifier_bat.py", str(bat)],
+                            capture_output=True).returncode == 0,
+             f"lancer : python outils/verifier_bat.py {bat.name}")
 
 # ── Rapport ─────────────────────────────────────────────────────────────────
 print(f"\n{len(ok)} contrôles passés.\n")
