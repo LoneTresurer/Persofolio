@@ -48,9 +48,15 @@ from typing import List, Optional
 
 from core.portfolio_db import DB_PATH
 
-#: Marque portée par les opérations créées depuis le budget. Elle les distingue
-#: de celles saisies dans le compte-titres, et sert au rapprochement.
+#: Marque portée par les versements venus du compte courant suivi dans le budget.
+#: Eux seuls comptent dans la part de l'épargne investie.
 ORIGINE = "budget"
+
+#: Versements que l'utilisateur a déclarés comme venant d'ailleurs — héritage,
+#: autre banque, salaire versé sur un compte non suivi. Ils entrent bien dans le
+#: portefeuille, mais n'ont jamais fait partie de l'épargne que le budget observe :
+#: les compter gonflerait le taux d'épargne investie au-delà de 100 %.
+ORIGINE_EXTERNE = "externe"
 
 #: Colonnes de `operations` dont nous dépendons.
 COLONNES_ATTENDUES = {"portefeuille_id", "username", "date", "type",
@@ -122,7 +128,8 @@ def reference(virement_id: str) -> str:
 # ── Écriture ────────────────────────────────────────────────────────────────
 def virer(username: str, etat: dict, version_attendue: int,
           virement_id: str, date: str, montant_eur: float,
-          portefeuille: Optional[int] = None, sens: str = "DEPOT") -> dict:
+          portefeuille: Optional[int] = None, sens: str = "DEPOT",
+          origine: str = ORIGINE) -> dict:
     """Enregistre, en une seule transaction, l'état du budget et le mouvement d'espèces.
 
     `sens` vaut DEPOT (le budget alimente le compte-titres) ou RETRAIT
@@ -133,6 +140,8 @@ def virer(username: str, etat: dict, version_attendue: int,
     """
     if sens not in ("DEPOT", "RETRAIT"):
         raise ValueError(f"sens inattendu : {sens}")
+    if origine not in (ORIGINE, ORIGINE_EXTERNE):
+        raise ValueError(f"origine inattendue : {origine}")
     if not (montant_eur > 0):
         raise ValueError("le montant d'un virement doit être strictement positif")
 
@@ -169,7 +178,7 @@ def virer(username: str, etat: dict, version_attendue: int,
                 "INSERT INTO operations (portefeuille_id, username, date, type, montant_eur,"
                 " commentaire, saisi_le, origine) VALUES (?,?,?,?,?,?,?,?)",
                 (pf, username, date, sens, round(float(montant_eur), 2),
-                 ref, maintenant, ORIGINE))
+                 ref, maintenant, origine))
             operation_id = cur.lastrowid
         else:
             operation_id = deja
@@ -233,10 +242,12 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
     etat = rejouer(operations)
     titres_cout = round(sum(p.cout_eur for p in etat.positions.values()
                             if p.quantite > 1e-9), 2)
-    depuis_budget = round(sum(
+    net = lambda marque: round(sum(
         float(o.get("montant_eur") or 0) * (1 if o["type"] == "DEPOT" else -1)
         for o in operations
-        if o["type"] in ("DEPOT", "RETRAIT") and (o.get("origine") or "") == ORIGINE), 2)
+        if o["type"] in ("DEPOT", "RETRAIT") and (o.get("origine") or "") == marque), 2)
+    depuis_budget = net(ORIGINE)
+    declare_externe = net(ORIGINE_EXTERNE)
     entre_en_tout = round(etat.depots_nets_eur + etat.apports_implicites_eur, 2)
 
     return {
@@ -244,7 +255,12 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
         "cash_eur": round(etat.cash_eur, 2),
         "titres_cout_eur": titres_cout,
         "verses_depuis_budget_eur": depuis_budget,
+        "verses_exterieurs_eur": declare_externe,
         "entre_en_tout_eur": entre_en_tout,
-        "apports_hors_budget_eur": round(entre_en_tout - depuis_budget, 2),
+        # Argent entré dans le portefeuille sans que son origine soit connue :
+        # un achat passé chez le courtier sans versement enregistré. Ce n'est pas
+        # une anomalie, c'est une question à poser. Déclarer le versement le fait
+        # tomber à zéro, puisque l'achat n'est alors plus à découvert.
+        "a_expliquer_eur": round(etat.apports_implicites_eur, 2),
         "nb_lignes": sum(1 for p in etat.positions.values() if p.quantite > 1e-9),
     }

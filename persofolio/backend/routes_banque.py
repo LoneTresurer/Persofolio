@@ -97,6 +97,14 @@ class VirementIn(BaseModel):
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     montant_eur: float = Field(gt=0, le=10_000_000)
     sens: str = Field(default="DEPOT", pattern="^(DEPOT|RETRAIT)$")
+    #: "budget" : l'argent vient du compte courant suivi ici, et compte dans la
+    #: part de l'épargne investie. "externe" : héritage, autre banque, salaire
+    #: versé ailleurs — l'argent entre dans le portefeuille mais n'a jamais fait
+    #: partie de l'épargne observée, et reste donc hors du calcul.
+    origine: str = Field(default="budget", pattern="^(budget|externe)$")
+    #: Enregistrer malgré un avertissement. L'application décrit une situation,
+    #: elle ne la corrige pas à la place de l'utilisateur.
+    force: bool = False
 
     @field_validator("montant_eur")
     @classmethod
@@ -123,17 +131,31 @@ def lire_investissement(user: str = Depends(utilisateur_courant)):
 def virer(corps: VirementIn, user: str = Depends(utilisateur_courant)):
     """Écrit le budget et le mouvement d'espèces du compte-titres en une transaction."""
     corps.etat["utilisateur"] = user
+    avertissement = None
     if corps.sens == "RETRAIT":
-        # On ne rapatrie que des espèces : ce qui est en titres demande une vente
-        # d'abord. Sans ce contrôle, le solde espèces passerait sous zéro.
+        # L'application observe des finances, elle ne les commande pas. Un
+        # rapatriement supérieur aux espèces connues n'est pas forcément une
+        # erreur de l'utilisateur : il a pu vendre des titres sans l'enregistrer,
+        # ou alimenter son compte ailleurs. On le dit, on ne refuse pas.
         dispo = passerelle.etat_investissement(user)["cash_eur"]
+        if corps.montant_eur > dispo + 0.005 and not corps.force:
+            raise HTTPException(status_code=409, detail={
+                "code": "especes_insuffisantes",
+                "cash_eur": dispo,
+                "message": (
+                    f"D'après ce que l'application connaît, votre compte-titres ne "
+                    f"dispose que de {dispo:.2f} € en espèces. Si vous avez vendu des "
+                    "titres sans encore l'enregistrer, saisissez la vente d'abord — "
+                    "sinon vous pouvez enregistrer ce rapatriement tel quel.")})
         if corps.montant_eur > dispo + 0.005:
-            raise HTTPException(status_code=400, detail=(
-                f"Votre compte-titres ne dispose que de {dispo:.2f} € en espèces. "
-                "Le reste est investi en titres : vendez d'abord, puis rapatriez."))
+            avertissement = (
+                "Rapatriement supérieur aux espèces connues : le solde du "
+                "compte-titres indiquera un manque tant que les ventes "
+                "correspondantes ne seront pas enregistrées.")
     try:
         r = passerelle.virer(user, corps.etat, corps.version, corps.id,
-                             corps.date, corps.montant_eur, sens=corps.sens)
+                             corps.date, corps.montant_eur, sens=corps.sens,
+                             origine=corps.origine)
     except passerelle.ConflitVersion as e:
         raise HTTPException(status_code=409, detail={
             "message": "Vos données ont été modifiées depuis un autre onglet ou appareil.",
@@ -142,6 +164,8 @@ def virer(corps: VirementIn, user: str = Depends(utilisateur_courant)):
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if avertissement:
+        r["avertissement"] = avertissement
     return r
 
 
