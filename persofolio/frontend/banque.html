@@ -633,9 +633,67 @@ function deconnecter() {
   location.replace('index.html');
 }
 
+/* ── Le compte investissement, c'est le compte-titres ───────────────────────
+   Il n'a plus de solde à lui : ses espèces et ses titres sont ceux du
+   compte-titres, vus d'ici.
+
+   Deux natures de chiffres, et c'est ce qui décide de l'affichage. Les espèces
+   et le prix de revient se déduisent des seules opérations enregistrées : ils
+   sont exacts, et disponibles sans connexion. La valeur de marché des titres,
+   elle, demande des cours. Hors ligne, on montre donc le prix de revient en le
+   disant, plutôt qu'un chiffre périmé qu'on ferait passer pour la valeur du
+   jour. */
+let INV = null;              // null tant que le compte-titres n'a pas répondu
+
+const investEspeces = () => INV ? INV.cash_eur : 0;
+const investTitres  = () => INV ? (INV.titres_valeur_eur != null ? INV.titres_valeur_eur
+                                                                 : INV.titres_cout_eur) : 0;
+const investAuCout  = () => !!INV && INV.titres_valeur_eur == null && INV.titres_cout_eur > 0.005;
+
+async function chargerInvestissement() {
+  try {
+    INV = await api('/banque/investissement');
+  } catch {
+    INV = null;                       // compte-titres pas encore ouvert : on n'invente rien
+    return;
+  }
+  // La valeur de marché est un supplément : son absence ne doit jamais empêcher
+  // le reste de s'afficher.
+  INV.titres_valeur_eur = null; INV.valeur_le = null;
+  if (INV.titres_cout_eur <= 0.005) return;
+  try {
+    const s = await api('/compte/synthese');
+    const v = s?.totaux?.titres_eur;
+    if (typeof v === 'number' && isFinite(v)) {
+      INV.titres_valeur_eur = arrondi(v);
+      INV.valeur_le = AUJ;
+    }
+  } catch { /* hors ligne, ou cours indisponibles : le prix de revient fera foi */ }
+}
+
 async function charger() {
   const r = await api('/banque/etat');
   E = r.etat; VERSION = r.version;
+  if (E) migrerVersPortefeuille(E);
+  await chargerInvestissement();
+}
+
+/* Reprise des comptes créés avant que les deux modules ne soient reliés.
+   Le compte investissement était alors un simple compte d'épargne, et pouvait
+   porter des objectifs — « apport immobilier », par exemple. Ces objectifs ne
+   doivent surtout pas se retrouver investis en titres : ils passent sur le
+   compte courant, qui devient le compte d'épargne général.
+   Ce qui s'y trouvait comme solde n'est pas repris d'office : le compte-titres
+   est désormais seul à dire ce qu'il détient. On garde la trace du montant pour
+   pouvoir le dire à l'utilisateur, jamais pour l'ajouter en silence. */
+function migrerVersPortefeuille(e) {
+  if (e.investRepris) return false;
+  const ancienSolde = arrondi((e.comptes?.invest?.soldeInitial || 0)
+    + (e.operations || []).filter(o => o.compte === 'invest').reduce((s, o) => s + o.montant, 0));
+  const deplaces = (e.objectifs || []).filter(o => o.compte === 'invest');
+  deplaces.forEach(o => { o.compte = 'courant'; });
+  e.investRepris = { le: AUJ, ancienSolde, objectifs: deplaces.map(o => o.nom) };
+  return true;
 }
 
 /* Enregistrement sur le serveur : regroupé (300 ms), une requête à la fois, jamais silencieux en cas d'échec. */
@@ -779,8 +837,15 @@ function creerVirement(de, vers, montant, date, libelle, extra = {}) {
   );
 }
 
-const soldeCompte = (compte, jusquA = '9999-12-31') =>
-  E.comptes[compte].soldeInitial + E.operations.filter(o => o.compte === compte && o.date <= jusquA).reduce((s, o) => s + o.montant, 0);
+/* Le compte courant se rejoue depuis ses opérations ; le compte investissement
+   est celui du compte-titres, espèces plus titres. Le premier est une histoire,
+   le second un état : on ne peut pas remonter le temps sur la valeur d'un titre
+   sans ses cours passés, donc une date demandée ne s'applique qu'au courant. */
+const soldeCompte = (compte, jusquA = '9999-12-31') => {
+  if (compte === 'invest') return arrondi(investEspeces() + investTitres());
+  return E.comptes[compte].soldeInitial
+    + E.operations.filter(o => o.compte === compte && o.date <= jusquA).reduce((s, o) => s + o.montant, 0);
+};
 const affecteObjectifs = compte => E.objectifs.filter(o => o.compte === compte).reduce((s, o) => s + o.affecte, 0);
 const detteTotale = (jusquA) => E.dettes.reduce((s, d) => s + etatDette(d, jusquA).capital, 0);
 const patrimoineNet = (jusquA) => soldeCompte('courant', jusquA) + soldeCompte('invest', jusquA) - detteTotale(jusquA);
