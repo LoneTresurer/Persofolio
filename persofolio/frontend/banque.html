@@ -239,6 +239,9 @@
   .objectif { padding: 12px 0; border-bottom: 1px solid var(--filet-2); display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: center; }
   .objectif:last-child { border-bottom: none; }
   .objectif .titre { font-weight: 500; }
+  .objectif .rang { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 8px;
+    border-radius: 50%; background: var(--papier); border: 1px solid var(--filet);
+    font-size: 11.5px; color: var(--encre-2); vertical-align: 1px; }
   .objectif .progres { grid-column: 1 / -1; }
   .objectif .detail { grid-column: 1 / -1; font-size: 13px; color: var(--encre-2); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .statut { font-size: 12px; font-weight: 500; border-radius: 4px; padding: 1px 7px; }
@@ -692,6 +695,12 @@ function migrerVersPortefeuille(e) {
     + (e.operations || []).filter(o => o.compte === 'invest').reduce((s, o) => s + o.montant, 0));
   const deplaces = (e.objectifs || []).filter(o => o.compte === 'invest');
   deplaces.forEach(o => { o.compte = 'courant'; });
+  // Premier rang à l'épargne de précaution : c'est elle qui évite de devoir
+  // vendre au mauvais moment, donc elle se finance avant tout le reste.
+  const precaution = o => /précaution|precaution/i.test(o.nom || '');
+  (e.objectifs || [])
+    .sort((a, b) => (precaution(b) ? 1 : 0) - (precaution(a) ? 1 : 0))
+    .forEach((o, k) => { if (o.priorite == null) o.priorite = k; });
   e.investRepris = { le: AUJ, ancienSolde, objectifs: deplaces.map(o => o.nom) };
   return true;
 }
@@ -1035,6 +1044,97 @@ function fluxMois(cle) {
 }
 
 /* Capacité d'épargne réellement constatée sur les N derniers mois complets. */
+/* ════════════════════════════════════════════════════════════════════════
+   PART DE L'ÉPARGNE INVESTIE
+
+   Une question simple — de ce que je mets de côté, quelle part part investir ? —
+   dont chaque terme demande à être défini, faute de quoi le chiffre ne veut
+   rien dire.
+
+   **Ce qui est investi** : les virements partis du compte courant vers le
+   compte-titres. Pas la valeur du portefeuille, qui monte et descend avec le
+   marché : un bon trimestre afficherait un taux d'investissement supérieur à
+   100 % sans qu'un euro de plus ait été épargné. Pas non plus l'argent entré
+   directement chez le courtier, qui n'est jamais passé par l'épargne mesurée
+   ici — numérateur et dénominateur doivent couvrir le même périmètre.
+
+   **Ce qui est épargné** : (entrées − sorties) des mois civils complets, les
+   virements entre comptes exclus. C'est ce qui donne à la demande de l'énoncé
+   sa réponse naturelle : la somme épargnée comprend bien la somme investie,
+   puisque virer de l'argent vers le compte-titres ne compte pas comme une
+   sortie. Jamais la capacité d'épargne prévue : un plan n'est pas une mesure.
+
+   **Ce qui reste investissable** : l'épargne, moins ce que les objectifs
+   réclament chaque mois. Épargner dur pour un apport immobilier ne doit pas se
+   lire comme un mauvais réflexe d'investisseur. ════════════════════════════ */
+
+/* Mois civils entièrement écoulés depuis l'ouverture, du plus ancien au plus
+   récent. Le mois en cours n'en est pas : sa moitié non vécue tirerait
+   l'épargne vers le bas. */
+function moisEcoules(limite = null) {
+  const debut = moisDe(E.creeLe), fin = decalerMois(moisDe(AUJ), -1);
+  const tous = [];
+  for (let c = debut; c <= fin; c = decalerMois(c, 1)) tous.push(c);
+  return limite ? tous.slice(-limite) : tous;
+}
+
+/* Les objectifs dans l'ordre que l'utilisateur leur a donné. L'épargne de
+   précaution d'abord par défaut : c'est elle qui permet de ne pas vendre au
+   mauvais moment. */
+function normaliserPriorites() {
+  const liste = E.objectifs || [];
+  if (liste.every(o => typeof o.priorite === 'number')) return;
+  const precaution = o => /pr[ée]caution/i.test(o.nom || '');
+  [...liste]
+    .sort((a, b) => (precaution(b) ? 1 : 0) - (precaution(a) ? 1 : 0))
+    .forEach((o, k) => { if (typeof o.priorite !== 'number') o.priorite = k; });
+}
+const objectifsParPriorite = () => {
+  normaliserPriorites();
+  return [...(E.objectifs || [])]
+    .sort((a, b) => (a.priorite ?? 99) - (b.priorite ?? 99) || a.nom.localeCompare(b.nom));
+};
+
+/* Ce qu'un objectif réclame chaque mois pour être tenu à l'échéance. Un objectif
+   déjà financé ne réclame plus rien. */
+function besoinMensuel(o) {
+  const reste = Math.max(0, (o.cible || 0) - (o.affecte || 0));
+  if (reste <= 0) return 0;
+  const mois = Math.max(1, ecartMois(moisDe(AUJ), o.echeance));
+  return reste / mois;
+}
+const besoinObjectifs = () => arrondi(objectifsParPriorite().reduce((s, o) => s + besoinMensuel(o), 0));
+
+/* Part de l'épargne investie sur une fenêtre de mois complets. */
+function partInvestie(limite = null) {
+  const mois = moisEcoules(limite);
+  if (!mois.length) return null;
+  const besoin = besoinObjectifs();
+  let epargne = 0, libre = 0, verse = 0;
+  for (const c of mois) {
+    const f = fluxMois(c);
+    epargne += f.solde;
+    libre += Math.max(0, f.solde - besoin);
+    verse += f.versInvest;                       // net des rapatriements
+  }
+  verse = Math.max(0, verse);
+  return {
+    mois: mois.length, premier: mois[0], dernier: mois[mois.length - 1],
+    epargne: arrondi(epargne), besoin, libre: arrondi(libre), verse: arrondi(verse),
+    taux: libre > 0.005 ? verse / libre * 100 : null,
+  };
+}
+
+/* Le coussin de précaution est-il constitué ? Tant qu'il ne l'est pas,
+   l'application ne félicite pas d'avoir investi : elle n'en dit rien. */
+function coussinConstitue() {
+  const p = planMensuel();
+  const depenses = p.fixes + p.credits + p.variables;
+  if (depenses <= 0) return true;
+  const libre = Math.max(0, soldeCompte('courant') - affecteObjectifs('courant'));
+  return libre / depenses >= 6;
+}
+
 function capaciteConstatee(n = 3) {
   const debut = moisDe(E.creeLe);
   const mois = [];
@@ -1722,6 +1822,8 @@ Le trait marque l'avancement du mois : ${pct(avance * 100, 0)}`)}</div><div clas
         + `Les dépenses courantes à venir n'y sont pas : le solde réel sera plus bas.`, true)}</div><div class="valeur ${classe(soldePrevu)}">${argent0(soldePrevu)}</div><div class="aide">solde actuel et opérations programmées, hors dépenses courantes</div></div>
     </div>
 
+    <div class="panneau" id="bloc-investie"></div>
+
     <div class="panneau" id="accroche-simu"></div>
 
     <div class="grille-large">
@@ -1744,10 +1846,114 @@ Le trait marque l'avancement du mois : ${pct(avance * 100, 0)}`)}</div><div clas
     </div>`;
 
   afficherObjectifs(plan, constatee);
+  afficherPartInvestie();
   afficherAccrocheSimu(plan);
   vue.querySelectorAll('[data-voir]').forEach(b => b.onclick = () => { compteVu = 'courant'; ouvrirOnglet('comptes'); });
   vue.querySelectorAll('[data-virer]').forEach(b => b.onclick = () => tiroirOperation({ type: 'VIREMENT', compte: b.dataset.virer }));
   $('#btn-objectif').onclick = () => tiroirObjectif();
+}
+
+/* Part de l'épargne investie : deux fenêtres, la cible de l'utilisateur, et un
+   verdict qui reste une observation. L'application ne décide pas à sa place. */
+function afficherPartInvestie() {
+  const zone = $('#bloc-investie'); if (!zone) return;
+  const tout = partInvestie(), an = partInvestie(12);
+  const cible = E.cibleInvestie ?? null;
+
+  if (!tout) {
+    zone.innerHTML = `<h2>Part de l'épargne investie</h2>
+      <p class="sous-titre">Disponible après un premier mois civil complet : il faut un mois entier
+      pour savoir ce qui a été épargné, et donc quelle part en est partie investir.</p>`;
+    return;
+  }
+
+  const ligne = (titre, p) => {
+    if (!p) return '';
+    const detail = `Versé vers le compte-titres ÷ épargne libre, sur ${p.mois} mois complet${p.mois > 1 ? 's' : ''}
+${argent0(p.verse)} ÷ ${argent0(p.libre)} = ${p.taux == null ? '—' : pct(p.taux, 0)}
+
+Épargne libre = (entrées − sorties) − ce que vos objectifs réclament chaque mois
+${argent0(p.epargne)} − ${argent0(p.besoin * p.mois)} = ${argent0(p.libre)}`;
+    return `<div><div class="nom">${formule(titre, detail)}</div>
+      <div class="valeur">${p.taux == null ? '—' : pct(p.taux, 0)}</div>
+      <div class="aide">${p.taux == null
+        ? 'vos objectifs absorbent toute votre épargne'
+        : p.taux > 100.5
+          ? `${argent0(p.verse)} placés, soit ${argent0(p.verse - p.libre)} de plus que votre épargne libre`
+          : `${argent0(p.verse)} placés sur ${argent0(p.libre)} d'épargne libre`}</div></div>`;
+  };
+
+  // Le verdict ne félicite jamais tant que le coussin n'est pas constitué : il
+  // se tait. Investir une épargne dont on aura besoin dans trois mois oblige à
+  // vendre au pire moment, et ce n'est pas une réussite.
+  const coussin = coussinConstitue();
+  let verdict = '';
+  // Au-delà de 100 %, ce qui part investir dépasse ce que les objectifs
+  // laissaient libre : l'application le dit, et s'arrête là. C'est un arbitrage
+  // qui appartient à l'utilisateur, pas une faute à corriger.
+  if (tout.taux != null && tout.taux > 100.5) {
+    verdict = `<p class="note" style="margin:14px 0 0">Vous placez ${argent0(tout.verse - tout.libre)} de plus que
+      votre épargne libre : une partie de ce que vos objectifs réclament part vers le compte-titres. C'est votre choix —
+      si ce n'en est pas un, revoir l'ordre ou les échéances de vos objectifs suffit à le défaire.</p>`;
+  } else
+  if (cible != null && tout.taux != null) {
+    const atteint = tout.taux >= cible - 0.5;
+    verdict = atteint && coussin
+      ? `<p class="note" style="margin:14px 0 0"><strong>Objectif tenu.</strong> Vous visiez ${pct(cible, 0)}
+         de votre épargne libre, vous en placez ${pct(tout.taux, 0)}.</p>`
+      : atteint
+        ? `<p class="note" style="margin:14px 0 0">Vous placez ${pct(tout.taux, 0)} de votre épargne libre, pour une cible
+           de ${pct(cible, 0)}. Votre compte courant ne couvre pas encore six mois de dépenses : garder de quoi tenir
+           un imprévu évite d'avoir à vendre au mauvais moment.</p>`
+        : `<p class="discret" style="margin:14px 0 0">Vous visez ${pct(cible, 0)} et vous en êtes à ${pct(tout.taux, 0)}.
+           Un virement mensuel, même modeste, pèse plus qu'un versement ponctuel.</p>`;
+  }
+
+  zone.innerHTML = `<h2>Part de l'épargne investie</h2>
+    <p class="sous-titre">De ce que vous mettez de côté, ce qui part vers le compte-titres. La somme épargnée comprend
+      la somme investie : virer vers l'investissement n'est pas une dépense.</p>
+    <div class="kpis" style="margin-top:14px">
+      ${ligne('Depuis l\'ouverture', tout)}
+      ${an && an.mois < tout.mois ? ligne('Sur 12 mois glissants', an) : ''}
+      <div><div class="nom">${formule('Épargne libre', `Ce qui reste une fois vos objectifs financés, chaque mois.
+Épargne constatée − besoin mensuel des objectifs`)}</div>
+        <div class="valeur">${argent0(tout.libre / tout.mois)}</div>
+        <div class="aide">par mois${tout.besoin > 0 ? `, après ${argent0(tout.besoin)} réservés à vos objectifs` : ''}</div></div>
+      <div><div class="nom">Ma cible</div>
+        <div class="valeur"><input id="cible-investie" inputmode="decimal" value="${cible ?? ''}"
+          placeholder="—" style="width:76px;text-align:inherit;font:inherit;padding:0;border:none;border-bottom:1px solid var(--filet);background:none"> %</div>
+        <div class="aide">part de votre épargne libre que vous souhaitez investir</div></div>
+    </div>
+    ${verdict}
+    ${INV && INV.a_expliquer_eur > 0.005 ? `
+      <div class="repere" style="margin-top:16px">
+        <div class="ligne"><strong>${argent(INV.a_expliquer_eur)} sont entrés dans votre compte-titres sans passer par votre budget</strong></div>
+        <p class="discret" style="margin:0 0 12px">Un achat passé chez votre courtier sans virement enregistré ici. D'où venait cet argent ?</p>
+        <div class="choix">
+          <button class="btn" type="button" id="apport-courant">De mon compte courant</button>
+          <button class="btn btn-sec" type="button" id="apport-externe">D'ailleurs (héritage, autre compte)</button>
+        </div>
+      </div>` : ''}`;
+
+  const champ = $('#cible-investie');
+  if (champ) champ.onchange = () => {
+    const v = lireNombre(champ.value);
+    E.cibleInvestie = champ.value.trim() === '' ? null : Math.min(100, Math.max(0, v));
+    sauver(); afficherPartInvestie();
+  };
+  // Les deux réponses mènent au même enregistrement ; seule l'origine change,
+  // et avec elle le fait que cet argent compte ou non comme de l'épargne investie.
+  const repondre = origine => async () => {
+    const montant = INV.a_expliquer_eur;
+    try {
+      await virerVersPortefeuille({ sens: 'DEPOT', montant, date: AUJ, origine, force: true,
+                                    libelle: origine === 'budget' ? 'Virement vers le compte-titres' : 'Apport extérieur' });
+      rafraichir();
+      toast(origine === 'budget' ? 'Virement enregistré' : 'Apport extérieur enregistré');
+    } catch (e) { toast('Non enregistré : ' + e.message); }
+  };
+  if ($('#apport-courant')) $('#apport-courant').onclick = repondre('budget');
+  if ($('#apport-externe')) $('#apport-externe').onclick = repondre('externe');
 }
 
 function afficherObjectifs(plan, constatee) {
@@ -1758,20 +1964,23 @@ function afficherObjectifs(plan, constatee) {
   }
   // Capacité pour les objectifs, tous comptes confondus : la plus prudente entre épargne prévue et constatée
   const capacite = Math.min(plan.capacite, constatee ? constatee.moyenne : Infinity);
-  const besoins = E.objectifs.map(o => {
+  const besoins = objectifsParPriorite().map(o => {
     const reste = Math.max(0, o.cible - o.affecte), mois = Math.max(1, ecartMois(moisDe(AUJ), o.echeance));
     return { o, reste, mois, parMois: reste / mois };
   });
   const totalBesoin = besoins.reduce((s, b) => s + b.parMois, 0);
-  zone.innerHTML = besoins.map(({ o, reste, mois, parMois }) => {
+  zone.innerHTML = besoins.map(({ o, reste, mois, parMois }, rang) => {
     const part = o.affecte / o.cible * 100;
     const statut = reste <= 0 ? ['fini', 'Atteint']
       : o.echeance < moisDe(AUJ) ? ['ko', 'Échéance passée']
       : totalBesoin <= capacite ? ['ok', 'En bonne voie']
       : parMois <= capacite ? ['serre', 'Serré'] : ['ko', 'Hors de portée'];
     return `<div class="objectif">
-      <div><span class="titre">${echap(o.nom)}</span> <span class="etiquette ${o.compte}">${COMPTES[o.compte].court}</span></div>
+      <div><span class="rang" title="Ordre de priorité : les premiers servis d'abord">${rang + 1}</span>
+        <span class="titre">${echap(o.nom)}</span> <span class="etiquette ${o.compte}">${COMPTES[o.compte].court}</span></div>
       <div style="display:flex;gap:8px;align-items:center"><span class="statut ${statut[0]}">${statut[1]}</span>
+        <button class="mini-btn" data-monter="${o.id}" ${rang === 0 ? 'disabled' : ''} title="Monter d'un rang" aria-label="Monter ${echap(o.nom)}">↑</button>
+        <button class="mini-btn" data-descendre="${o.id}" ${rang === besoins.length - 1 ? 'disabled' : ''} title="Descendre d'un rang" aria-label="Descendre ${echap(o.nom)}">↓</button>
         <button class="mini-btn" data-reserver="${o.id}">Réserver</button><button class="mini-btn" data-modif-obj="${o.id}">Modifier</button></div>
       <div class="progres"><i style="width:${Math.min(100, part)}%"></i></div>
       <div class="detail"><span>${argent0(o.affecte)} sur ${argent0(o.cible)} (${pct(part, 0)})</span>
@@ -1779,7 +1988,21 @@ function afficherObjectifs(plan, constatee) {
     </div>`;
   }).join('') + `<p class="note ${totalBesoin > capacite ? 'alerte' : ''}" style="margin:12px 0 0">
       Vos objectifs demandent ${argent0(totalBesoin)} par mois, pour une capacité d'épargne de ${argent0(capacite)}${capacite < plan.capacite ? ' (la plus prudente entre prévue et constatée)' : ''}.
-      ${totalBesoin > capacite ? `Il manque ${argent0(totalBesoin - capacite)} : repousser une échéance ou réduire un budget rééquilibre le plan.` : `Il reste ${argent0(capacite - totalBesoin)} de marge.`}</p>`;
+      ${totalBesoin > capacite ? `Il manque ${argent0(totalBesoin - capacite)} : repousser une échéance ou réduire un budget rééquilibre le plan.` : `Il reste ${argent0(capacite - totalBesoin)} de marge.`}</p>
+    <p class="discret" style="margin:8px 0 0">L'ordre compte : vos objectifs sont financés du premier au dernier, et ce
+      qu'ils réclament est retiré de votre épargne avant de calculer la part que vous investissez.</p>`;
+  // Priorité : on réécrit les rangs de la liste entière, pour qu'ils restent
+  // consécutifs quoi qu'il arrive — un objectif supprimé ne laisse pas de trou.
+  const deplacer = (id, pas) => {
+    const ordre = objectifsParPriorite();
+    const i = ordre.findIndex(o => o.id === id), j = i + pas;
+    if (i < 0 || j < 0 || j >= ordre.length) return;
+    ordre.splice(j, 0, ordre.splice(i, 1)[0]);
+    ordre.forEach((o, k) => { o.priorite = k; });
+    sauver(); rafraichir();
+  };
+  zone.querySelectorAll('[data-monter]').forEach(b => b.onclick = () => deplacer(b.dataset.monter, -1));
+  zone.querySelectorAll('[data-descendre]').forEach(b => b.onclick = () => deplacer(b.dataset.descendre, 1));
   zone.querySelectorAll('[data-reserver]').forEach(b => b.onclick = () => tiroirReserver(b.dataset.reserver));
   zone.querySelectorAll('[data-modif-obj]').forEach(b => b.onclick = () => tiroirObjectif(b.dataset.modifObj));
 }
