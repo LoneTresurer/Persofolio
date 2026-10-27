@@ -275,6 +275,65 @@ débloqué le mois dernier n'a encore qu'une échéance au relevé.
 
 ---
 
+## 6 ter. La deuxième livraison, du 23 octobre
+
+Elle a confirmé que la méthode tient : **un seul fichier en conflit**,
+`requirements.txt`. Tout le reste s'est fusionné seul, y compris le
+renommage du dossier (`ecofolio_perso/` → `persofolio/`), que git a reconnu
+comme un déplacement. Nos quatre retouches de §4 sont passées sans y toucher.
+
+La recette, à réutiliser telle quelle pour la prochaine :
+
+```bash
+git checkout portefeuille           # leur branche, partie du commit base
+# remplacer backend/ et frontend/ par le contenu de leur livraison
+git commit -m "Livraison de l'équipe compte-titres (<date>)"
+git checkout perso-finance
+git merge portefeuille
+```
+
+Poser leur livraison **sur leur propre branche** plutôt que de repartir de
+`base` est ce qui rend la fusion triviale : git ne compare alors que ce qu'ils
+ont changé depuis leur livraison précédente — ici sept fichiers — au lieu de
+rejouer l'écart depuis le début.
+
+### Ce qu'elle apporte
+
+- **Régularité des investissements** : une cible mensuelle en euros, et un
+  score sur 100 qui croise la fréquence (combien de mois sur douze avec au
+  moins un achat) et le montant (plafonné mois par mois, de sorte qu'un gros
+  versement unique ne rattrape pas les mois vides). Plusieurs ordres le même
+  jour comptent pour un seul acte d'investissement.
+- **Classes d'actif** Action / OPC / Obligation, au lieu d'Action / ETF.
+- **Sharpe** : rendement annualisé géométrique, le même que l'onglet
+  Performance. L'ancienne annualisation arithmétique donnait un chiffre
+  supérieur et faisait coexister deux définitions dans la même application.
+- **Lecture des avis PDF réécrite** : couche de texte seule, et chaque bloc
+  confronté à ses propres égalités (quantité × cours = brut, brut ± courtage =
+  montant). Une ligne qui ne retombe pas juste est signalée, pas importée.
+
+### Deux points à savoir
+
+**Les versements et retraits d'espèces ont disparu de la saisie.** Leur
+raison : l'application suit des investissements, pas un compte bancaire. Le
+moteur de calcul les traite toujours — une base existante peut en contenir —
+mais plus rien ne permet d'en saisir à la main. Cela regarde directement le
+point resté ouvert au §8 : relier le compte investissement du budget aux
+espèces du compte-titres. Le lien reste possible, puisque le calcul accepte
+toujours un DEPOT, mais il devra être alimenté par le programme et non par
+l'utilisateur. À trancher avec eux.
+
+**La reconnaissance optique n'est plus utilisée nulle part.** Leur nouvelle
+lecture d'avis PDF s'en passe, et `core/releve.py` ne s'en est jamais servi :
+il s'appuie sur la position des montants dans la page, que la reconnaissance
+optique ne restitue pas, et sur un rapprochement au centime qu'un chiffre mal
+lu ferait échouer. Les trois paquets concernés sont donc commentés dans
+`requirements.txt` — environ 85 Mo de moins dans l'exécutable Windows.
+`outils/dependances.py` compare désormais ce que le code importe à ce qui est
+déclaré, pour que l'écart se voie tout seul la prochaine fois.
+
+---
+
 ## 7. À vérifier au premier démarrage réel
 
 ```bash

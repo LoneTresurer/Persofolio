@@ -27,7 +27,10 @@ from typing import Dict, List, Optional
 EPS = 1e-9
 TYPES_OPERATION = ("DEPOT", "RETRAIT", "ACHAT", "VENTE", "DIVIDENDE", "SPLIT")
 TYPES_ORDRE     = ("ACHAT", "VENTE")                      # onglet « Ordres »
-TYPES_MOUVEMENT = ("DEPOT", "RETRAIT", "DIVIDENDE", "SPLIT")   # onglet « Mouvements »
+# Onglet « Mouvements ». Les versements et retraits d'espèces restent traités par le
+# calcul — une base existante peut en contenir — mais ne sont plus saisissables ni
+# affichés : l'application suit des investissements, pas un compte bancaire.
+TYPES_MOUVEMENT = ("DIVIDENDE", "SPLIT")
 
 
 class OperationInvalide(ValueError):
@@ -101,6 +104,26 @@ def rejouer(operations: List[dict], jusqu_au: Optional[str] = None) -> EtatCompt
     return etat
 
 
+def _montant_obligatoire(op: dict, date: str) -> float:
+    """
+    Montant en euros d'une opération d'espèces. Une base ancienne, ou un import mal
+    classé, peut porter une ligne sans montant : à défaut, on le reconstitue par
+    quantité × prix unitaire, et on refuse proprement si même cela manque. Sans ce
+    garde-fou, une seule ligne incomplète fait échouer tout le rejeu du compte — donc
+    tous les écrans d'un coup, avec une erreur serveur illisible.
+    """
+    m = op.get("montant_eur")
+    if m is None:
+        q, p = op.get("quantite"), op.get("prix")
+        if q is not None and p is not None:
+            m = float(q) * float(p)
+    if m is None:
+        raise OperationInvalide(
+            f"Opération « {op.get('type')} » du {date} sans montant : "
+            f"impossible de l'appliquer au compte.")
+    return float(m)
+
+
 def _appliquer(etat: EtatCompte, op: dict) -> None:
     t = op["type"]
     date = op["date"]
@@ -108,13 +131,13 @@ def _appliquer(etat: EtatCompte, op: dict) -> None:
     enrichie = dict(op)
 
     if t == "DEPOT":
-        m = float(op["montant_eur"])
+        m = _montant_obligatoire(op, date)
         etat.cash_eur += m
         etat.depots_nets_eur += m
         enrichie["flux_cash_eur"] = m
 
     elif t == "RETRAIT":
-        m = float(op["montant_eur"])
+        m = _montant_obligatoire(op, date)
         etat.cash_eur -= m
         etat.depots_nets_eur -= m
         enrichie["flux_cash_eur"] = -m
@@ -196,7 +219,7 @@ def _appliquer(etat: EtatCompte, op: dict) -> None:
         enrichie["flux_cash_eur"] = 0.0
 
     elif t == "DIVIDENDE":
-        m = float(op["montant_eur"])
+        m = _montant_obligatoire(op, date)
         etat.cash_eur += m
         etat.dividendes_eur += m
         tk = op.get("ticker")

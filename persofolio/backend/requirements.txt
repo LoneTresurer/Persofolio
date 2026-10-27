@@ -1,26 +1,35 @@
-# Python 3.10, 3.11 ou 3.12. Pas 3.13 ni au-delà : rapidocr-onnxruntime, qui
-# lit les relevés scannés, est publié jusqu'à 3.12 inclus (Requires-Python <3.13).
-# Sur une version plus récente, pip ne trouve rien et l'installation s'arrête.
+# Python 3.10, 3.11 ou 3.12.
+#
+# Cette liste est tenue au plus près de ce que le code importe réellement.
+# Pour la vérifier : python outils/dependances.py
 
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pydantic>=2.0.0
-numpy>=1.24.0
-pandas>=2.0.0
-yfinance>=0.2.36
-httpx>=0.25.0
-pdfplumber>=0.10.0
-python-multipart>=0.0.6
-pypdf>=4.0.0    # lecture des pages d'un relevé PDF
-pypdfium2>=4.25.0    # rendu des pages, pour les relevés scannés
-rapidocr-onnxruntime>=1.3.0    # reconnaissance optique, sans logiciel externe
+python-multipart>=0.0.6        # dépôt de fichiers (relevés et avis d'opération)
 
-# Réservés à l'optimiseur, archivé dans backend/archive_optimiseur/ : aucun module
-# chargé par le serveur ne les importe. Décommenter si l'optimiseur revient un jour.
+numpy>=1.24.0                  # routes_portefeuille : risque, corrélations
+pandas>=2.0.0                  # market_data, séries de cours
+yfinance>=0.2.36               # cours et fiches titres
+httpx>=0.25.0                  # actualités des titres
+
+pdfplumber>=0.10.0             # couche de texte des PDF : relevés bancaires et avis
+
+# ── Retirées le 27 octobre 2026 ────────────────────────────────────────────
+# Reconnaissance optique des PDF scannés. Plus aucun module ne les importe :
+# la lecture des avis de courtier a été réécrite par l'équipe compte-titres
+# pour n'utiliser que la couche de texte, et la lecture des relevés bancaires
+# (core/releve.py) n'y a jamais fait appel — elle s'appuie sur la position des
+# montants dans la page, que la reconnaissance optique ne restitue pas.
+#
+# Elles pesaient environ 85 Mo dans l'exécutable Windows, onnxruntime compris.
+# Les décommenter suffit à les réinstaller, mais il faudra aussi du code qui
+# les appelle : à ce jour, aucun ne le fait.
+# pypdf>=4.0.0
+# pypdfium2>=4.25.0
+# rapidocr-onnxruntime>=1.3.0
+
+# ── Réservées à l'optimiseur, archivé dans backend/archive_optimiseur/ ─────
 # scipy>=1.11.0
 # scikit-learn>=1.3.0
 # openpyxl>=3.1.0
-
-# Facultatif, volontairement non déclaré : Pillow et pytesseract ne servent qu'au
-# dernier repli de lecture d'un PDF scanné. Leurs imports sont protégés, leur absence
-# n'empêche ni le démarrage ni la lecture d'un PDF ordinaire. RapidOCR ci-dessus suffit.

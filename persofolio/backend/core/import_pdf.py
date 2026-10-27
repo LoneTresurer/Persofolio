@@ -3,17 +3,15 @@ core/import_pdf.py
 ==================
 Lecture d'un avis d'opération au format PDF (Bourse Direct et assimilés).
 
-Deux cas se présentent, et le module traite les deux sans rien demander :
+Le module lit la couche de texte du PDF, celle que tout avis téléchargé chez un
+courtier contient. C'est exact, instantané, et cela ne demande qu'une bibliothèque
+(pdfplumber). Un PDF qui n'est qu'une image — relevé scanné ou photographié — est
+refusé avec un message qui dit quoi faire : aucun moteur de reconnaissance optique
+n'est embarqué, ces bibliothèques étant lourdes à installer pour un cas marginal.
 
-1. Le PDF contient une couche de texte — c'est le cas d'un document généré par le
-   courtier. On lit le texte directement : exact, instantané, aucune dépendance.
-
-2. Le PDF n'est qu'une image par page — c'est le cas d'un document imprimé puis
-   rescanné, ou exporté en image. Il faut alors de la reconnaissance optique, qui
-   se trompe parfois : « FR0011871110 » devient « FROO11871110 », « 09 » devient
-   « og », un « 1 028,16 » gagne un deux-points parasite.
-
-C'est pourquoi rien n'est cru sur parole. Un avis d'opération porte sa propre preuve :
+Rien n'est pour autant cru sur parole : une couche de texte peut être mal découpée,
+et un chiffre mal placé passerait sans bruit dans le portefeuille. Un avis
+d'opération porte sa propre preuve :
 
         QUANTITÉ × COURS = BRUT          et          BRUT ± COURTAGE = MONTANT
 
@@ -29,7 +27,7 @@ import io
 import re
 import unicodedata
 from datetime import date, datetime
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from .import_csv import ImportInvalide, _cle, _isin_valide, _nombre, _nature
 
@@ -49,15 +47,18 @@ _CHAMPS = {
 # Début d'un bloc : une ligne qui commence par une date et contient un code à douze
 # caractères. L'ISIN sert de pivot — ce qui le précède est la nature de l'opération,
 # ce qui le suit est le libellé du titre, terminé par le montant. Repérer par pivot
-# plutôt que par un gabarit figé permet de survivre aux espaces fantaisistes que
-# produit la reconnaissance optique.
+# plutôt que par un gabarit figé permet de survivre au découpage approximatif que
+# donne parfois l'extraction de texte : espaces en trop, colonnes recollées.
 _LIGNE_DATEE = re.compile(
     r"^[ \t]*(?P<date>[0-3oOlI][\doOlIgSBZ][ ]?/[ ]?[01oOlI][\doOlIgSBZ][ ]?/[ ]?[12][\doOlIgSBZ]{3})"
     r"[ \t]+(?P<reste>\S.*)$", re.MULTILINE)
 _CODE12 = re.compile(r"\b(?P<isin>[A-Z][A-Z0-9OISBZlGQ]{11})\b")
 _FIN_MONTANT = re.compile(r"(?P<montant>[-+]?\d[\d  .:]*,\d{2})[ .]*$")
 
-# Confusions courantes de la reconnaissance optique, dans les deux sens
+# Glyphes qu'un PDF mal généré peut faire ressortir à la place du bon caractère
+# (un « O » pour un zéro, un « l » pour un 1), dans les deux sens. La correction
+# n'est jamais appliquée seule : elle n'est retenue que si la clé de contrôle
+# tombe juste.
 _VERS_CHIFFRE = str.maketrans({"O": "0", "o": "0", "Q": "0", "D": "0", "I": "1", "l": "1",
                                "L": "1", "i": "1", "|": "1", "S": "5", "s": "5", "B": "8",
                                "Z": "2", "z": "2", "G": "6", "T": "7", "A": "4"})
@@ -84,142 +85,13 @@ def _texte_couche(contenu: bytes) -> str:
         return ""
 
 
-def _images_du_pdf(contenu: bytes) -> list:
-    """
-    Images des pages, pour la reconnaissance optique. On récupère d'abord l'image
-    déjà intégrée au PDF — un relevé scanné en contient une par page, et l'extraire
-    évite tout rendu. À défaut, on rend la page.
-    """
-    images = []
-    # La définition est décisive : sur une page A4, l'image intégrée d'un relevé
-    # scanné tourne autour de 1 200 px de large, et à cette taille la reconnaissance
-    # confond allègrement « 09/09/2024 » avec « oana2a24 ». On rend donc la page à
-    # environ 2 200 px, ce qui corrige l'essentiel des confusions.
-    try:
-        import pypdfium2 as pdfium
-        doc = pdfium.PdfDocument(io.BytesIO(contenu))
-        for i in range(len(doc)):
-            images.append(doc[i].render(scale=3.7).to_pil())
-        if images:
-            return images
-    except Exception:
-        pass
-    try:                                    # repli : l'image intégrée, agrandie
-        from pypdf import PdfReader
-        from PIL import Image
-        lecteur = PdfReader(io.BytesIO(contenu))
-        for page in lecteur.pages:
-            for img in page.images:
-                try:
-                    im = Image.open(io.BytesIO(img.data))
-                    if im.width < 1800:
-                        facteur = 1800 / im.width
-                        im = im.resize((int(im.width * facteur), int(im.height * facteur)),
-                                       Image.LANCZOS)
-                    images.append(im)
-                except Exception:
-                    continue
-    except Exception:
-        pass
-    return images
-
-
-def _lignes_depuis_blocs(blocs) -> str:
-    """
-    Recompose des lignes de texte à partir de blocs positionnés.
-
-    Un moteur de reconnaissance rend des morceaux avec leurs coordonnées, pas des
-    lignes. On regroupe ceux qui partagent la même hauteur, puis on les ordonne de
-    gauche à droite : « 09/09/2024 » + « ACHAT COMPTANT » + « FR0011871110 » + …
-    redeviennent la ligne du relevé, que le reste du module sait lire.
-    """
-    elements = []
-    for bloc in blocs or []:
-        boite, texte = bloc[0], str(bloc[1])
-        ys = [p[1] for p in boite]
-        xs = [p[0] for p in boite]
-        elements.append((sum(ys) / len(ys), min(xs), texte, max(ys) - min(ys)))
-    if not elements:
-        return ""
-    elements.sort(key=lambda e: (e[0], e[1]))
-    hauteur_type = sorted(e[3] for e in elements)[len(elements) // 2] or 20
-    lignes, courante, y_ligne = [], [], None
-    for y, x, texte, _h in elements:
-        if y_ligne is not None and abs(y - y_ligne) > hauteur_type * 0.7:
-            lignes.append(" ".join(t for _, t in sorted(courante)))
-            courante = []
-        if not courante:
-            y_ligne = y
-        courante.append((x, texte))
-    if courante:
-        lignes.append(" ".join(t for _, t in sorted(courante)))
-    return "\n".join(lignes)
-
-
-def _ocr_rapide(images) -> Optional[str]:
-    """
-    Reconnaissance par RapidOCR : s'installe avec pip seul, sans logiciel externe,
-    et lit mieux les codes ISIN et les dates que l'alternative. C'est donc le moteur
-    essayé en premier.
-    """
-    try:
-        import numpy as np
-        from rapidocr_onnxruntime import RapidOCR
-    except ImportError:
-        return None
-    try:
-        moteur = RapidOCR()
-        pages = []
-        for img in images:
-            resultat, _ = moteur(np.array(img.convert("RGB")))
-            pages.append(_lignes_depuis_blocs(resultat))
-        return "\n".join(pages)
-    except Exception:
-        return None
-
-
-def _ocr_tesseract(images) -> Optional[str]:
-    """Repli : Tesseract, s'il se trouve installé sur la machine."""
-    try:
-        import pytesseract
-    except ImportError:
-        return None
-    try:
-        return "\n".join(pytesseract.image_to_string(img, config="--psm 6") for img in images)
-    except Exception:
-        return None
-
-
-def _texte_ocr(contenu: bytes) -> Tuple[str, Optional[str]]:
-    """
-    Texte reconnu optiquement. Renvoie (texte, message d'erreur éventuel).
-    L'absence du moteur n'est pas une erreur du fichier : on le dit clairement, avec
-    la commande qui règle le problème, plutôt que de prétendre le relevé illisible.
-    """
-    images = _images_du_pdf(contenu)
-    if not images:
-        return "", ("Aucune page exploitable n'a pu être extraite de ce PDF. "
-                    "Installez les bibliothèques de lecture : "
-                    "pip install pypdfium2 pdfplumber pypdf")
-    for moteur in (_ocr_rapide, _ocr_tesseract):
-        texte = moteur(images)
-        if texte and len(texte.strip()) >= 50:
-            return texte, None
-    return "", ("Ce PDF ne contient aucun texte : c'est une image, et sa lecture demande "
-                "un moteur de reconnaissance optique. Installez-le avec la commande "
-                "suivante, puis relancez le serveur :\n\n"
-                "    pip install rapidocr-onnxruntime\n\n"
-                "Aucun logiciel externe n'est nécessaire. "
-                "Vous pouvez aussi exporter ce relevé en CSV depuis votre courtier.")
-
-
-# ── Réparation de ce que la reconnaissance a pu abîmer ──────────────────────
+# ── Contrôle des codes et des dates lus ──────────────────────
 
 def _corriger_isin(brut: str) -> Optional[str]:
     """
-    Remet un ISIN d'aplomb après reconnaissance optique, puis le VALIDE par sa clé
-    de contrôle. Sans cette validation, corriger reviendrait à inventer : ici, soit
-    le code corrigé est mathématiquement cohérent, soit on renonce.
+    Valide un ISIN par sa clé de contrôle, en tentant au besoin les quelques
+    substitutions de glyphes ci-dessus. Sans cette validation, corriger reviendrait
+    à inventer : ici, soit le code est mathématiquement cohérent, soit on renonce.
     """
     lu = re.sub(r"[^A-Za-z0-9]", "", brut or "")
     t = lu.upper()
@@ -300,16 +172,11 @@ def lire_releve_pdf(contenu: bytes, mappages: Optional[dict] = None) -> dict:
     texte = _texte_couche(contenu)
     source, avertissements = "texte", []
     if len(texte.strip()) < 50:
-        texte, erreur = _texte_ocr(contenu)
-        source = "reconnaissance optique"
-        if erreur:
-            raise ImportInvalide(erreur)
-        avertissements.append(
-            "Ce PDF est une image : son contenu a été lu par reconnaissance optique. "
-            "Chaque ligne a été recoupée par le calcul (quantité × cours = brut, "
-            "brut ± courtage = montant), mais relisez les montants avant de valider.")
-    if len(texte.strip()) < 50:
-        raise ImportInvalide("Aucun texte exploitable n'a pu être extrait de ce PDF.")
+        raise ImportInvalide(
+            "Ce PDF ne contient pas de texte : c'est une image (document scanné ou "
+            "photographié). Téléchargez l'avis d'opération directement depuis l'espace "
+            "de votre courtier plutôt qu'une version scannée, ou exportez vos "
+            "opérations en CSV.")
 
     entetes = []
     for m in _LIGNE_DATEE.finditer(texte):
