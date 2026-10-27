@@ -719,6 +719,15 @@ async function envoyer() {
   })();
   return envoiEnCours;
 }
+
+/* Vide la file avant une écriture qui porte sa propre version. Un virement
+   envoie l'état complet : si un enregistrement ordinaire partait en même temps,
+   l'un des deux travaillerait sur une version périmée. */
+async function attendreEnvois() {
+  clearTimeout(minuterie);
+  if (enAttente) await envoyer();
+  if (envoiEnCours) await envoiEnCours;
+}
 function indiquerSauvegarde(etat, message) {
   const z = $('#sauvegarde'); if (!z) return;
   z.classList.toggle('erreur-svg', etat === 'erreur');
@@ -793,6 +802,33 @@ function projeter(capital, tauxAnnuel, mensualite, extra = 0) {
 
 /* Poste automatiquement les opérations programmées échues (salaire, loyer, mensualités, virement mensuel),
    comme le ferait une banque. Idempotent : chaque occurrence porte une clé « id:AAAA-MM ». */
+/* Virements programmés vers le compte-titres, repérés au passage et envoyés
+   ensuite : chacun demande sa propre transaction côté serveur, ce que la boucle
+   de postage, synchrone, ne peut pas faire. */
+let enAttenteVersement = [];
+
+/* Envoie les versements programmés mis de côté, un par un — chacun porte la
+   version issue du précédent. En cas d'échec, on s'arrête : les suivants seront
+   postés au prochain chargement, et rien n'est écrit à moitié. */
+async function posterVersementsProgrammes() {
+  const file = enAttenteVersement;
+  enAttenteVersement = [];
+  for (const { rec, date, occ } of file) {
+    try {
+      await virerVersPortefeuille({
+        sens: rec.compte === 'courant' ? 'DEPOT' : 'RETRAIT',
+        montant: rec.montant, date, libelle: rec.libelle,
+        extra: { occurrence: occ, programmeeId: rec.id },
+        force: true,              // une échéance déjà due ne se discute pas
+      });
+    } catch (e) {
+      toast("Virement programmé vers le compte-titres non enregistré : " + e.message);
+      break;
+    }
+  }
+  if (file.length) rafraichir();
+}
+
 function posterEcheances() {
   const deja = new Set([...E.operations.filter(o => o.occurrence).map(o => o.occurrence), ...(E.ignorees || [])]);
   const aPoster = [];
@@ -808,7 +844,14 @@ function posterEcheances() {
   aPoster.sort((a, b) => a.date.localeCompare(b.date));
   let n = 0;
   for (const { rec, date, occ } of aPoster) {
-    if (rec.type === 'VIREMENT') { creerVirement(rec.compte, rec.versCompte, rec.montant, date, rec.libelle, { occurrence: occ, programmeeId: rec.id }); n++; continue; }
+    if (rec.type === 'VIREMENT') {
+      // Vers le compte-titres, l'échéance ne s'écrit pas ici : elle part au
+      // serveur avec son versement, en une transaction. On les met de côté et
+      // on les enverra une à une, après avoir posté le reste.
+      if (versLePortefeuille(rec.compte, rec.versCompte)) { enAttenteVersement.push({ rec, date, occ }); continue; }
+      creerVirement(rec.compte, rec.versCompte, rec.montant, date, rec.libelle, { occurrence: occ, programmeeId: rec.id });
+      n++; continue;
+    }
     if (rec.detteId) {
       const dette = E.dettes.find(d => d.id === rec.detteId);
       if (!dette) continue;
@@ -829,12 +872,102 @@ function posterEcheances() {
   return n;
 }
 
+/* Un virement entre deux comptes du budget s'écrit en deux lignes : ce qui part
+   d'un côté arrive de l'autre.
+
+   Vers le compte-titres, la contrepartie n'est pas à nous : c'est un versement
+   dans leur table d'opérations. On n'écrit donc ici que la jambe du compte
+   courant, et `virerVersPortefeuille()` se charge des deux écritures ensemble.
+   Créer la seconde ligne ici ferait compter l'argent deux fois — une fois dans
+   le budget, une fois dans le portefeuille. */
+const versLePortefeuille = (de, vers) => de === 'invest' || vers === 'invest';
+
 function creerVirement(de, vers, montant, date, libelle, extra = {}) {
   const lien = uid();
-  E.operations.push(
-    { id: uid(), date, compte: de,   montant: -montant, libelle: libelle || `Virement vers ${COMPTES[vers].nom.toLowerCase()}`, categorie: 'virement', virementId: lien, ...extra },
-    { id: uid(), date, compte: vers, montant:  montant, libelle: libelle || `Virement depuis ${COMPTES[de].nom.toLowerCase()}`, categorie: 'virement', virementId: lien, ...(extra.occurrence ? { occurrence: extra.occurrence + ':recu' } : {}) },
-  );
+  const sortant = { id: uid(), date, compte: de, montant: -montant,
+                    libelle: libelle || `Virement vers ${COMPTES[vers].nom.toLowerCase()}`,
+                    categorie: 'virement', virementId: lien, ...extra };
+  if (versLePortefeuille(de, vers)) {
+    // Le compte courant est toujours la jambe locale : vers l'investissement il
+    // se vide, depuis l'investissement il se remplit.
+    const local = de === 'courant'
+      ? sortant
+      : { ...sortant, compte: 'courant', montant: montant,
+          libelle: libelle || 'Rapatriement du compte-titres' };
+    E.operations.push(local);
+    return lien;
+  }
+  E.operations.push(sortant,
+    { id: uid(), date, compte: vers, montant: montant,
+      libelle: libelle || `Virement depuis ${COMPTES[de].nom.toLowerCase()}`,
+      categorie: 'virement', virementId: lien,
+      ...(extra.occurrence ? { occurrence: extra.occurrence + ':recu' } : {}) });
+  return lien;
+}
+
+/* Enveloppe de `virerVersPortefeuille` pour l'interface : elle ferme le tiroir,
+   rafraîchit, et sait quoi faire quand le serveur demande confirmation.
+
+   Rapatrier plus que les espèces connues n'est pas interdit : l'utilisateur a pu
+   vendre sans l'enregistrer, ou recevoir l'argent ailleurs. L'application dit ce
+   qu'elle sait et le laisse décider. */
+async function virementPortefeuille(params) {
+  try {
+    const r = await virerVersPortefeuille(params);
+    fermerTiroir(); rafraichir();
+    toast(r.avertissement ? 'Rapatriement enregistré' : 'Virement effectué');
+    if (r.avertissement) toast(r.avertissement);
+  } catch (e) {
+    const d = e.detail;
+    if (d && d.code === 'especes_insuffisantes') {
+      if (!confirm(`${d.message}\n\nEnregistrer ce rapatriement malgré tout ?`)) return;
+      return virementPortefeuille({ ...params, force: true });
+    }
+    erreurTiroir(e.message);
+  }
+}
+
+/* Virement vers le compte-titres, ou retour. Les deux écritures — la ligne du
+   budget et le mouvement d'espèces — partent ensemble au serveur, qui les
+   enregistre dans une seule transaction. Rien ne peut passer à moitié.
+
+   L'identifiant rend l'envoi rejouable : si la réponse se perd et que le client
+   réessaie, le versement n'est pas créé deux fois. */
+/* Les virements s'enchaînent, jamais en parallèle : chacun envoie l'état complet
+   avec le numéro de version qu'il croit courant. Deux envois simultanés — le
+   report de l'épargne déjà placée et les échéances programmées, par exemple — et
+   le second travaillerait sur une version déjà périmée, se ferait refuser, et
+   l'échéance serait perdue jusqu'au prochain chargement. */
+let chaineVirements = Promise.resolve();
+
+function virerVersPortefeuille(params) {
+  const suite = chaineVirements.then(() => _virer(params), () => _virer(params));
+  chaineVirements = suite.catch(() => {});        // un échec ne bloque pas la file
+  return suite;
+}
+
+async function _virer({ sens, montant, date, libelle, extra = {}, origine = 'budget', force = false }) {
+  const lien = origine === 'externe'
+    ? uid()                                   // argent venu d'ailleurs : rien ne sort du budget
+    : creerVirement(sens === 'DEPOT' ? 'courant' : 'invest',
+                    sens === 'DEPOT' ? 'invest' : 'courant',
+                    montant, date, libelle, extra);
+  const avant = JSON.parse(JSON.stringify(E));
+  try {
+    await attendreEnvois();                   // pas d'enregistrement ordinaire en vol
+    const r = await api('/banque/virement', {
+      method: 'POST',
+      body: JSON.stringify({ etat: E, version: VERSION, id: lien, date,
+                             montant_eur: montant, sens, origine, force }),
+    });
+    VERSION = r.version;
+    indiquerSauvegarde('ok');
+    await chargerInvestissement();
+    return r;
+  } catch (e) {
+    E = avant;                                // le serveur n'a rien écrit : on revient en arrière
+    throw e;
+  }
 }
 
 /* Le compte courant se rejoue depuis ses opérations ; le compte investissement
@@ -846,7 +979,10 @@ const soldeCompte = (compte, jusquA = '9999-12-31') => {
   return E.comptes[compte].soldeInitial
     + E.operations.filter(o => o.compte === compte && o.date <= jusquA).reduce((s, o) => s + o.montant, 0);
 };
-const affecteObjectifs = compte => E.objectifs.filter(o => o.compte === compte).reduce((s, o) => s + o.affecte, 0);
+// Tolère l'absence d'état : l'assistant de configuration s'en sert avant que
+// les comptes n'existent, pour juger du coussin qu'ils auront.
+const affecteObjectifs = compte => (E?.objectifs || [])
+  .filter(o => o.compte === compte).reduce((s, o) => s + o.affecte, 0);
 const detteTotale = (jusquA) => E.dettes.reduce((s, d) => s + etatDette(d, jusquA).capital, 0);
 const patrimoineNet = (jusquA) => soldeCompte('courant', jusquA) + soldeCompte('invest', jusquA) - detteTotale(jusquA);
 const estFlux = o => o.categorie !== 'virement';
@@ -884,7 +1020,14 @@ function fluxMois(cle) {
   const flux = ops.filter(estFlux);
   const entrees = flux.filter(o => o.montant > 0).reduce((s, o) => s + o.montant, 0);
   const sorties = -flux.filter(o => o.montant < 0).reduce((s, o) => s + o.montant, 0);
-  const versInvest = ops.filter(o => o.categorie === 'virement' && o.compte === 'invest').reduce((s, o) => s + o.montant, 0);
+  // Les virements vers le compte-titres ne laissent plus de ligne sur le compte
+  // investissement — leur contrepartie est un versement chez eux. On les compte
+  // donc à la sortie du courant, en changeant le signe : ce qui part est placé.
+  // Il n'y a que deux comptes : tout virement du courant va au compte-titres, et
+  // tout virement vers le courant en revient. Le net des deux est ce qui a été
+  // placé ce mois-ci.
+  const versInvest = ops.filter(o => o.categorie === 'virement' && o.compte === 'courant')
+                        .reduce((s, o) => s - o.montant, 0);
   const parCat = {};
   flux.forEach(o => { parCat[o.categorie] = (parCat[o.categorie] || 0) + Math.abs(o.montant); });
   const fixes = Math.abs(flux.filter(o => o.montant < 0 && o.programmeeId).reduce((s, o) => s + o.montant, 0));
@@ -1122,7 +1265,11 @@ function majApercus() {
   const bilan = $('#bilan-epargne');
   if (bilan) {
     const reste = p.capacite - p.virement, depensesMois = p.totFixes + p.totCredits + p.variables;
-    const coussin = depensesMois > 0 ? p.soldeCourant / depensesMois : null;
+    // Sur le DISPONIBLE, pas sur le solde : depuis que les objectifs du compte
+    // investissement ont rejoint le courant, un apport immobilier mis de côté y
+    // dort et ferait croire à un matelas qui n'existe pas.
+    const libreCourant = Math.max(0, p.soldeCourant - affecteObjectifs('courant'));
+    const coussin = depensesMois > 0 ? libreCourant / depensesMois : null;
     bilan.innerHTML = `
       <div class="ligne"><span>Revenus</span><span>${argent(p.totRev)}</span></div>
       <div class="ligne"><span>Charges fixes</span><span>${argent(-p.totFixes)}</span></div>
@@ -1159,7 +1306,10 @@ function terminerAssistant() {
   const p = calculBrouillon(), demain = decalerJours(AUJ, 1);
   E = {
     version: 1, creeLe: AUJ, utilisateur: UTILISATEUR,
-    comptes: { courant: { soldeInitial: p.soldeCourant }, invest: { soldeInitial: p.soldeInvest } },
+    // Le compte investissement n'a plus de solde propre : ce qu'il contient est
+    // celui du compte-titres. Ce que l'utilisateur a déclaré à la configuration
+    // part donc comme un premier virement, enregistré des deux côtés.
+    comptes: { courant: { soldeInitial: p.soldeCourant }, invest: { soldeInitial: 0 } },
     operations: [], programmees: [], dettes: [], objectifs: [],
     budgets: Object.fromEntries(Object.entries(B.budgets).map(([k, v]) => [k, lireNombre(v)]).filter(([, v]) => v > 0)),
   };
@@ -1172,6 +1322,17 @@ function terminerAssistant() {
     E.objectifs.push({ id: uid(), nom: 'Épargne de précaution', cible: p.precaution, echeance: decalerMois(moisDe(AUJ), 24), compte: 'courant', affecte: Math.min(p.precaution, Math.max(0, p.soldeCourant - (p.totFixes + p.totCredits + p.variables))) });
   sauver(); demarrer();
   toast('Comptes créés');
+  // Ce que l'utilisateur a déclaré avoir déjà placé rejoint le compte-titres,
+  // mais ne sort pas de son compte courant : cet argent en était parti bien
+  // avant que l'application n'existe. Il entre donc comme position d'ouverture
+  // — « externe » — et reste hors du taux d'épargne investie, qui ne mesure que
+  // ce que le budget a vu passer.
+  if (p.soldeInvest > 0) {
+    virerVersPortefeuille({ sens: 'DEPOT', montant: arrondi(p.soldeInvest), date: AUJ,
+                            libelle: 'Épargne déjà placée', origine: 'externe', force: true })
+      .then(() => { rafraichir(); toast(`${argent0(p.soldeInvest)} reportés sur votre compte-titres`); })
+      .catch(e => toast("Épargne déjà placée non reportée sur le compte-titres : " + e.message));
+  }
 }
 
 function ajouterDette({ nom, type, capital, taux, mensualite, jour, echeance, assurance }, debut) {
@@ -1293,7 +1454,7 @@ function chargerExemple() {
   const debutMois = decalerMois(moisDe(AUJ), -4), debut = debutMois + '-01';
   E = {
     version: 1, creeLe: debut, utilisateur: UTILISATEUR, exemple: true,
-    comptes: { courant: { soldeInitial: 2850 }, invest: { soldeInitial: 11500 } },
+    comptes: { courant: { soldeInitial: 2850 }, invest: { soldeInitial: 0 } },
     operations: [], programmees: [], dettes: [], objectifs: [],
     budgets: { courses: 330, transport: 45, sorties: 170, loisirs: 90, shopping: 100, sante: 30, divers: 40 },
   };
@@ -1347,9 +1508,15 @@ function chargerExemple() {
 
   E.objectifs.push({ id: uid(), nom: 'Épargne de précaution', cible: 14000, echeance: decalerMois(moisDe(AUJ), 36), compte: 'courant', affecte: 2200 });
   E.objectifs.push({ id: uid(), nom: 'Voyage au Japon', cible: 3200, echeance: decalerMois(moisDe(AUJ), 14), compte: 'courant', affecte: 550 });
-  E.objectifs.push({ id: uid(), nom: 'Apport immobilier', cible: 15000, echeance: decalerMois(moisDe(AUJ), 60), compte: 'invest', affecte: 3000 });
+  E.objectifs.push({ id: uid(), nom: 'Apport immobilier', cible: 15000, echeance: decalerMois(moisDe(AUJ), 60), compte: 'courant', affecte: 3000 });
   sauver(); demarrer();
   toast('Exemple chargé : quatre mois d\'historique');
+  // Le profil fictif a déjà placé de l'argent : il part sur le compte-titres,
+  // comme le ferait un vrai utilisateur, au lieu de dormir dans le budget.
+  virerVersPortefeuille({ sens: 'DEPOT', montant: 11500, date: debut,
+                          libelle: 'Épargne déjà placée', origine: 'externe', force: true })
+    .then(() => rafraichir())
+    .catch(() => { /* compte-titres pas encore ouvert : l'exemple reste lisible */ });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1370,6 +1537,7 @@ function demarrer() {
   const n = posterEcheances();
   if (n && !E.exemple) toast(`${n} opération${n > 1 ? 's' : ''} programmée${n > 1 ? 's' : ''} enregistrée${n > 1 ? 's' : ''} depuis votre dernière visite`);
   rafraichir();
+  posterVersementsProgrammes();        // les virements vers le compte-titres, un par un
 }
 
 function rafraichir() {
@@ -1453,12 +1621,11 @@ function vueSynthese() {
   const il30 = decalerJours(AUJ, -30);
   const carte = cpt => {
     const s = soldeCompte(cpt), aff = affecteObjectifs(cpt), v = il30 >= E.creeLe ? s - soldeCompte(cpt, il30) : null;
-    const lignes = cpt === 'courant'
-      ? `<span>Entrées ce mois</span><span class="gain">${argent(mois.ops.filter(o => o.compte === 'courant' && o.montant > 0 && estFlux(o)).reduce((x, o) => x + o.montant, 0), true)}</span>
-         <span>Sorties ce mois</span><span>${argent(mois.ops.filter(o => o.compte === 'courant' && o.montant < 0 && estFlux(o)).reduce((x, o) => x + o.montant, 0))}</span>`
-      : `<span>Versé ce mois</span><span>${argent(mois.versInvest, true)}</span>
-         <span>Virement programmé</span><span>${plan.virementInvest ? argent(plan.virementInvest) + ' / mois' : 'aucun'}</span>`;
-    return `<div class="compte ${cpt === 'invest' ? 'invest' : ''}">
+    if (cpt === 'invest') return carteInvestissement(s);
+    const lignes =
+      `<span>Entrées ce mois</span><span class="gain">${argent(mois.ops.filter(o => o.compte === 'courant' && o.montant > 0 && estFlux(o)).reduce((x, o) => x + o.montant, 0), true)}</span>
+       <span>Sorties ce mois</span><span>${argent(mois.ops.filter(o => o.compte === 'courant' && o.montant < 0 && estFlux(o)).reduce((x, o) => x + o.montant, 0))}</span>`;
+    return `<div class="compte">
       <div><div class="nom">${COMPTES[cpt].nom}</div><div class="role">${COMPTES[cpt].role}</div></div>
       <div><div class="solde">${argent(s)}</div>${v != null ? `<div class="discret"><span class="${classe(v)}">${argent(v, true)}</span> sur 30 jours</div>` : ''}</div>
       <div class="lignes">${lignes}
@@ -1467,7 +1634,40 @@ function vueSynthese() {
 ${argent0(s)} − ${argent0(aff)} = ${argent0(s - aff)}`)}</span><strong>${argent(s - aff)}</strong></div>
       <div class="actions">
         <button class="mini-btn" data-voir="${cpt}">Voir les opérations</button>
-        <button class="mini-btn" data-virer="${cpt}">${cpt === 'courant' ? 'Virer vers l\'investissement' : 'Rapatrier sur le courant'}</button>
+        <button class="mini-btn" data-virer="${cpt}">Virer vers l'investissement</button>
+      </div></div>`;
+  };
+
+  /* Le compte investissement montre deux choses de nature différente, et le dit.
+     Les espèces sont exactes et connues sans réseau ; la valeur des titres
+     demande des cours. Hors ligne, on affiche le prix de revient en le nommant,
+     plutôt qu'une valeur du jour qui n'en serait pas une. */
+  const carteInvestissement = total => {
+    const esp = investEspeces(), tit = investTitres(), auCout = investAuCout();
+    if (!INV) return `<div class="compte invest">
+      <div><div class="nom">${COMPTES.invest.nom}</div><div class="role">${COMPTES.invest.role}</div></div>
+      <div><div class="solde discret">—</div></div>
+      <div class="lignes"><span class="discret" style="grid-column:1/-1">Le compte-titres n'a pas encore été ouvert.
+        Les sommes que vous y virerez apparaîtront ici.</span></div>
+      <div class="actions"><a class="mini-btn" href="portefeuille.html">Ouvrir le compte-titres</a></div></div>`;
+    return `<div class="compte invest">
+      <div><div class="nom">${COMPTES.invest.nom}</div><div class="role">${COMPTES.invest.role}</div></div>
+      <div><div class="solde">${argent(total)}</div>
+        <div class="discret">espèces et titres du compte-titres</div></div>
+      <div class="lignes">
+        <span>${formule(esp < 0 ? 'Espèces manquantes' : 'Espèces à investir', `Versements reçus − achats + ventes et dividendes
+Calculé sur les seules opérations enregistrées : exact, et connu sans connexion.`)}</span><span class="${esp < 0 ? 'perte' : ''}">${argent(esp)}</span>
+        <span>Titres${auCout ? ' <span class="discret">(prix de revient)</span>' : ''}</span><span>${argent(tit)}</span>
+        <span>Versé ce mois</span><span>${argent(mois.versInvest, true)}</span>
+        <span>Virement programmé</span><span>${plan.virementInvest ? argent(plan.virementInvest) + ' / mois' : 'aucun'}</span></div>
+      ${esp < 0 ? `<p class="note alerte" style="margin:10px 0 0">Vous avez rapatrié ou investi plus d'espèces que le compte-titres
+        n'en a reçu. C'est le signe qu'une vente, ou un versement fait directement chez votre courtier, n'a pas encore été
+        enregistré. Saisissez-le dans le compte-titres et ce montant se résorbera.</p>` : ''}
+      ${auCout ? `<p class="note" style="margin:10px 0 0">Les cours n'ont pas pu être relevés : les titres sont affichés à leur
+        prix de revient, pas à leur valeur du jour. Les espèces, elles, sont exactes.</p>` : ''}
+      <div class="actions">
+        <a class="mini-btn" href="portefeuille.html">Voir le compte-titres</a>
+        <button class="mini-btn" data-virer="invest">Rapatrier sur le courant</button>
       </div></div>`;
   };
 
@@ -1545,7 +1745,7 @@ Le trait marque l'avancement du mois : ${pct(avance * 100, 0)}`)}</div><div clas
 
   afficherObjectifs(plan, constatee);
   afficherAccrocheSimu(plan);
-  vue.querySelectorAll('[data-voir]').forEach(b => b.onclick = () => { compteVu = b.dataset.voir; ouvrirOnglet('comptes'); });
+  vue.querySelectorAll('[data-voir]').forEach(b => b.onclick = () => { compteVu = 'courant'; ouvrirOnglet('comptes'); });
   vue.querySelectorAll('[data-virer]').forEach(b => b.onclick = () => tiroirOperation({ type: 'VIREMENT', compte: b.dataset.virer }));
   $('#btn-objectif').onclick = () => tiroirObjectif();
 }
@@ -1727,11 +1927,14 @@ function vueComptes() {
   vue.innerHTML = `
     <div class="filtres" style="justify-content:space-between">
       <div class="segments" role="group" aria-label="Compte affiché">
-        ${Object.entries(COMPTES).map(([k, c]) => `<button data-compte="${k}" aria-pressed="${k === compteVu}">${c.nom}</button>`).join('')}
+        ${Object.entries(COMPTES).filter(([k]) => k !== 'invest')
+            .map(([k, c]) => `<button data-compte="${k}" aria-pressed="${k === compteVu}">${c.nom}</button>`).join('')}
+        <a class="mini-btn" href="portefeuille.html" style="margin-left:8px;align-self:center">Compte-titres →</a>
       </div>
       <div style="display:flex;gap:8px"><button class="btn btn-sec" data-virer-ici>Faire un virement</button><button class="btn" data-ajout-ici>Ajouter une opération</button></div>
     </div>
-    ${compteVu === 'invest' ? `<p class="note" style="margin:0 0 18px">Ce solde correspond aux liquidités que vous destinez au portefeuille. À l'étape suivante, il alimentera les espèces du compte-titres : chaque virement ici deviendra un dépôt là-bas.</p>` : ''}
+    <p class="discret" style="margin:0 0 18px">Vos titres et les espèces qui les attendent se tiennent dans le compte-titres.
+      Un virement d'ici y devient un versement, enregistré des deux côtés en même temps.</p>
     <div class="panneau">
       <div class="tete-panneau"><div><h2>Évolution du solde</h2><p class="sous-titre">Solde en fin de journée, sur les 120 derniers jours.</p></div>
         <div style="text-align:right"><div class="discret">Solde actuel</div><div style="font-size:22px;font-weight:500">${argent(soldeCompte(compteVu))}</div></div></div>
@@ -2468,7 +2671,7 @@ function blocAffectation(comptes) {
       <td>${echap(c.libelle || c.numero)}<span class="sous">${echap(c.banque || '')}${c.banque ? ' · ' : ''}${c.nb_operations} opérations · ${c.debut ? dateCourte(c.debut) : ''} → ${c.fin ? dateCourte(c.fin) : ''}</span></td>
       <td class="num">${argent(c.solde_cloture)}</td>
       <td class="num"><select class="saisie" data-affect="${echap(c.numero)}" style="width:auto">
-        ${[['courant', COMPTES.courant.nom], ['invest', COMPTES.invest.nom], ['ignorer', 'Ne pas importer']]
+        ${[['courant', COMPTES.courant.nom], ['ignorer', 'Ne pas importer']]
           .map(([v, l]) => `<option value="${v}" ${IMP.affectation[c.numero] === v ? 'selected' : ''}>${l}</option>`).join('')}
       </select></td></tr>`).join('')}</tbody></table></div></div>`;
 }
@@ -2912,6 +3115,14 @@ function tiroirOperation({ id, type, compte } = {}) {
           const envoi = E.operations.find(o => o.virementId === op.virementId && o.montant < 0);
           if (envoi?.occurrence) garde = { occurrence: envoi.occurrence, programmeeId: envoi.programmeeId };
           E.operations = E.operations.filter(o => o.virementId !== op.virementId);
+        }
+        if (versLePortefeuille(a, b)) {
+          // Vers le compte-titres : les deux écritures partent ensemble, et la
+          // réponse du serveur peut demander une confirmation.
+          virementPortefeuille({ sens: a === 'courant' ? 'DEPOT' : 'RETRAIT', montant,
+                                 date: garde.occurrence ? op.date : date,
+                                 libelle: libelle || null, extra: garde });
+          return;
         }
         creerVirement(a, b, montant, garde.occurrence ? op.date : date, libelle || null, garde);
       } else if (op) {
