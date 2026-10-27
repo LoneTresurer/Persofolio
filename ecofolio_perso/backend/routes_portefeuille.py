@@ -207,6 +207,22 @@ async def _fiche(ticker: str, avec_prix: bool = False) -> Optional[dict]:
     return fiche
 
 
+# Trois familles, celles d'un relevé de courtier français. Yahoo ne connaît que ses
+# propres libellés (quoteType) : on les ramène ici. Un ETF est un OPC indiciel coté,
+# il rejoint donc les fonds plutôt que les actions. Défaut « Action » : c'est le cas
+# de loin le plus fréquent, et un titre mal classé reste visible, jamais perdu.
+CLASSES_ACTIF = {
+    "EQUITY": "Action", "EQUITYINDEX": "Action",
+    "ETF": "OPC", "MUTUALFUND": "OPC", "FUND": "OPC", "MONEYMARKET": "OPC",
+    "BOND": "Obligation", "CORPORATEBOND": "Obligation", "GOVERNMENTBOND": "Obligation",
+}
+ORDRE_CLASSES = ("Action", "OPC", "Obligation")
+
+
+def _classe_actif(type_yahoo: str | None) -> str:
+    return CLASSES_ACTIF.get((type_yahoo or "").upper(), "Action")
+
+
 @router.get("/titres/{ticker}")
 async def titre(ticker: str):
     tk = ticker.strip().upper()
@@ -381,7 +397,7 @@ async def _synthese(user: str, pf: int) -> dict:
         lignes.append({
             **p.to_dict(),
             "nom": fiche.get("nom") or p.ticker,
-            "type_actif": "ETF" if est_etf else "Action",
+            "type_actif": _classe_actif(fiche.get("type_actif")),
             "secteur": "ETF" if est_etf else md.secteur_fr(fiche.get("secteur")),
             "pays": "Diversifié (ETF)" if est_etf else md.pays_fr(fiche.get("pays")),
             "zone": "Diversifié (ETF)" if est_etf else md.zone_de(fiche.get("pays")),
@@ -503,12 +519,16 @@ async def _synthese(user: str, pf: int) -> dict:
             "actif": agreger((l["type_actif"], l["valeur_eur"]) for l in lignes),
             "devise": agreger((l["devise"], l["valeur_eur"]) for l in lignes),
             "etf_ventiles": etf_ventiles,
+            # Les espèces n'apparaissent que si elles existent vraiment — produit d'une
+            # vente pas encore réinvesti. Sans versement saisi, elles sont le plus
+            # souvent nulles, et une ligne à 0 € n'apprend rien.
             "classe": [
-                {"label": "Actions / ETF", "valeur_eur": _r(total_titres),
+                {"label": "Titres", "valeur_eur": _r(total_titres),
                  "poids_pct": _r(total_titres / valorisation * 100 if valorisation > 0 else 0)},
+            ] + ([
                 {"label": "Liquidités", "valeur_eur": _r(etat.cash_eur),
                  "poids_pct": _r(etat.cash_eur / valorisation * 100 if valorisation > 0 else 0)},
-            ],
+            ] if etat.cash_eur > 0.005 else []),
         },
     }
 
@@ -1187,13 +1207,25 @@ async def risque(user: str = Depends(utilisateur_courant), pf: int = Depends(por
     cov = np.cov(rdt.values, rowvar=False) * 252
     cov = np.atleast_2d(cov)
     vol = float(np.sqrt(w @ cov @ w))
-    rend = float(r_p.mean() * 252)
 
     q5 = float(np.percentile(r_p, 5))
     var95 = -q5
     cvar95 = -float(r_p[r_p <= q5].mean())
     trajectoire = np.cumprod(1 + r_p)
     max_dd = float((trajectoire / np.maximum.accumulate(trajectoire) - 1).min())
+
+    # Rendement annualisé, formule géométrique — la même que celle de l'onglet
+    # Performance : (1 + performance cumulée) ^ (1 / nombre d'années) − 1.
+    #
+    # L'annualisation arithmétique (moyenne quotidienne × 252) est l'autre convention
+    # admise pour le numérateur du Sharpe, et elle a sa justification : la moyenne et
+    # l'écart-type sont alors mis à l'échelle de la même manière. Mais elle donne
+    # toujours un chiffre supérieur — l'écart étant d'environ σ²/2 — et surtout elle
+    # ferait coexister dans la même application deux « rendement annualisé » calculés
+    # différemment. Une seule définition, vérifiable à la main, vaut mieux.
+    cumul = float(trajectoire[-1]) - 1
+    annees = len(r_p) / 252
+    rend = ((1 + cumul) ** (1 / annees) - 1) if (cumul > -1 and annees > 0) else None
 
     beta = correl = None
     r_idx = None
@@ -1233,8 +1265,10 @@ async def risque(user: str = Depends(utilisateur_courant), pf: int = Depends(por
         "indice_reference": md.libelle_indice(code),
         "methode": _METHODE_RISQUE,
         "volatilite_pct": _r(vol * 100),
-        "rendement_1an_pct": _r(rend * 100),
-        "sharpe": _r((rend - taux_sans_risque) / vol if vol > 0 else None),
+        # Une perte totale rend l'annualisation géométrique indéfinie : on affiche alors
+        # un tiret plutôt qu'un nombre inventé, et le Sharpe suit.
+        "rendement_1an_pct": _r(rend * 100) if rend is not None else None,
+        "sharpe": _r((rend - taux_sans_risque) / vol) if (rend is not None and vol > 0) else None,
         "taux_sans_risque_pct": _r(taux_sans_risque * 100),
         "var95_1j_pct": _r(var95 * 100),
         "var95_1j_eur": _r(var95 * valeur_titres),
@@ -1288,6 +1322,9 @@ class ParametresIn(BaseModel):
     indice: Optional[str] = None
     mode_indice: Optional[str] = None
     taux_sans_risque: Optional[float] = Field(default=None, ge=-5, le=25)
+    # Cible d'investissement mensuel, en euros. Propre à chacun, et appelée à bouger :
+    # elle se modifie depuis l'onglet Risque, au-dessus du score de régularité.
+    cible_mensuelle_eur: Optional[float] = Field(default=None, ge=0, le=1_000_000)
 
     @field_validator("mode_indice")
     @classmethod
@@ -1334,7 +1371,9 @@ def ecrire_parametres(p: ParametresIn, user: str = Depends(utilisateur_courant),
         actuels.get("prelevement_div_pct", 0.0) if p.prelevement_div_pct is None else p.prelevement_div_pct,
         choisi,
         actuels.get("mode_indice") or "euros_dividendes" if p.mode_indice is None else p.mode_indice,
-        actuels.get("taux_sans_risque", 2.0) if p.taux_sans_risque is None else p.taux_sans_risque)
+        actuels.get("taux_sans_risque", 2.0) if p.taux_sans_risque is None else p.taux_sans_risque,
+        actuels.get("cible_mensuelle_eur", 0.0) if p.cible_mensuelle_eur is None
+        else p.cible_mensuelle_eur)
     return pdb.parametres(user)
 
 
@@ -1378,7 +1417,7 @@ async def synchroniser_dividendes(user: str = Depends(utilisateur_courant), pf: 
                 "date": date_split, "type": "SPLIT", "ticker": tk, "quantite": ratio,
                 "devise": pos.devise, "taux_eur": 1.0, "origine": "auto",
                 "commentaire": f"Division par {_frg(ratio)} : {_frg(pos.quantite)} → "
-                               f"{_frg(pos.quantite * ratio)} titres, PRU divisé par {_frg(ratio)}"})
+                               f"{_frg(pos.quantite * ratio)} titres, PAM divisé par {_frg(ratio)}"})
             pdb.notifier(user, f"Division d'actions : {nom}",
                          f"{_frg(ratio)} nouvelles actions pour 1 ancienne le "
                          f"{pd.Timestamp(date_split).strftime('%d/%m/%Y')} : votre position passe de "

@@ -29,6 +29,12 @@ class SessionDB:
 
     def __init__(self, db_path: str = None):
         self.db_path = str(db_path or DB_PATH)
+        # Le dossier data/ n'existe pas sur une installation neuve — il ne contient
+        # que des bases, et une archive partagée ne les emporte pas. On le crée
+        # plutôt que de laisser sqlite échouer au démarrage sur « unable to open
+        # database file », message qui n'indique en rien ce qu'il faut faire.
+        import os
+        os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:

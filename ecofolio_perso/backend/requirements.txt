@@ -8,12 +8,10 @@ scikit-learn>=1.3.0
 yfinance>=0.2.36
 openpyxl>=3.1.0
 httpx>=0.25.0
-pdfplumber>=0.10.0
 python-multipart>=0.0.6
-pypdf>=4.0.0    # lecture des pages d'un relevé PDF
-pypdfium2>=4.25.0    # rendu des pages, pour les relevés scannés
-rapidocr-onnxruntime>=1.3.0    # reconnaissance optique, sans logiciel externe
+pdfplumber>=0.10.0    # lecture de la couche texte d'un avis d'opération PDF
 
-# Facultatif, volontairement non déclaré : Pillow et pytesseract ne servent qu'au
-# dernier repli de lecture d'un PDF scanné. Leurs imports sont protégés, leur absence
-# n'empêche ni le démarrage ni la lecture d'un PDF ordinaire. RapidOCR ci-dessus suffit.
+# Aucune bibliothèque de rendu d'image ni de reconnaissance optique : un avis
+# téléchargé chez un courtier contient toujours sa couche de texte, et pdfplumber
+# suffit à la lire. Un PDF scanné est refusé avec un message explicite plutôt que
+# de faire installer un moteur d'OCR de plusieurs centaines de mégaoctets.

@@ -138,6 +138,11 @@
   td { padding: 10px; border-bottom: 1px solid var(--filet); vertical-align: middle; }
   tbody tr:last-child td { border-bottom: none; }
   .defile { overflow-x: auto; }
+  /* Sous-totaux par famille d'actif dans le tableau des positions */
+  tr.groupe-actif td { background: var(--papier); border-top: 1px solid var(--filet);
+    border-bottom: 1px solid var(--filet); font-weight: 500; padding: 7px 10px; }
+  tr.groupe-actif .nom-groupe { letter-spacing: .02em; }
+  tr.groupe-actif .nom-groupe small { color: var(--encre-2); font-weight: 400; margin-left: 8px; }
   .titre-ligne strong { display: block; font-weight: 500; }
   .titre-ligne small { color: var(--encre-2); }
   .sous { display: block; font-size: 12px; color: var(--encre-2); }
@@ -152,12 +157,6 @@
   .segments { display: inline-flex; background: var(--papier); border-radius: 8px; padding: 3px; gap: 2px; }
   .segments button { border: none; background: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; color: var(--encre-2); }
   .segments button[aria-pressed="true"] { background: var(--carte); color: var(--encre); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-  .grille-palmares { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
-  .grille-palmares .panneau { margin-bottom: 18px; }
-  .palmares.vert { background: linear-gradient(180deg, #F3F9F5, var(--carte) 60%); border-color: #CFE3D6; }
-  .palmares.rouge { background: linear-gradient(180deg, #FCF4F2, var(--carte) 60%); border-color: #EBD2CD; }
-  .palmares table { font-size: 14px; }
-  .palmares .rang { color: var(--encre-2); font-size: 12px; width: 18px; }
   tr.ligne-titre { cursor: pointer; }
   tr.ligne-titre:hover td { background: #FAFBFA; }
   tr.ligne-titre.ouverte td { background: var(--foret-clair); }
@@ -260,6 +259,13 @@
   .indicateurs .aide { font-size: 12.5px; color: var(--encre-2); line-height: 1.4; }
   /* Le taux sans risque se règle dans la tuile du ratio de Sharpe, pas dans un écran à part. */
   /* ── Jauge de régularité ─────────────────────────────── */
+  .cible-mensuelle { border: 1px solid var(--filet); border-radius: var(--rayon);
+    padding: 12px 14px; margin: 4px 0 18px; background: var(--papier); }
+  .cible-mensuelle > label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; }
+  .saisie-cible { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .saisie-cible input { width: 130px; }
+  .saisie-cible .unite { color: var(--encre-2); font-size: 13.5px; }
+  .cible-mensuelle .aide-champ { display: block; margin-top: 8px; }
   .jauge-regularite { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; margin: 14px 0 6px; }
   .jauge-regularite .score { font-size: 46px; font-weight: 500; line-height: 1; flex: none; }
   .jauge-regularite .score span { font-size: 17px; color: var(--encre-2); font-weight: 400; }
@@ -416,7 +422,7 @@
         <div class="tete-panneau">
           <div>
             <h2>Positions ouvertes</h2>
-            <p class="sous-titre"><strong>Brute</strong> : (cours − PRU) × quantité, dans la devise de cotation, hors frais.
+            <p class="sous-titre"><strong>Brute</strong> : (cours − PAM) × quantité, dans la devise de cotation, hors frais.
               <strong>Nette</strong> : ce qui reste réellement, frais de courtage et effet de change déduits.
               L'écart entre les deux colonnes, ce sont vos frais.</p>
           </div>
@@ -447,15 +453,15 @@
     <!-- Mouvements -->
     <div data-vue="mouvements" class="cache">
       <div class="panneau">
-        <h2>Mouvements d'espèces et opérations sur titres</h2>
-        <p class="sous-titre">Dépôts, retraits, dividendes et divisions d'actions. Les dividendes et les splits sont détectés automatiquement sur Yahoo Finance.</p>
+        <h2>Dividendes et opérations sur titres</h2>
+        <p class="sous-titre">Dividendes encaissés et divisions d'actions, détectés automatiquement sur Yahoo Finance.</p>
         <div class="defile" id="table-mouvements"></div>
       </div>
     </div>
 
     <!-- Répartition -->
     <div data-vue="repartition" class="cache">
-      <p class="discret" style="margin:0 0 14px">Les ETF sont ventilés selon leur contenu (par exemple un ETF S&amp;P 500 compte 100 % en Amérique du Nord), comme sur Boursorama. <span id="note-etf"></span></p>
+      <p class="discret" style="margin:0 0 14px"><span id="note-etf"></span></p>
       <div class="grille-2">
         <div class="panneau"><h2>Par titre</h2><div class="donut"><canvas id="d-titre"></canvas></div><ul class="legende" id="l-titre"></ul></div>
         <div class="panneau"><h2>Par secteur</h2><div class="donut"><canvas id="d-secteur"></canvas></div><ul class="legende" id="l-secteur"></ul></div>
@@ -490,14 +496,10 @@
         <div class="defile" id="table-perfs"></div>
         <p class="discret" id="note-perfs" style="margin:12px 0 0"></p>
       </div>
-      <div class="grille-palmares">
-        <div class="panneau palmares vert"><h2>3 meilleures performances</h2><p class="sous-titre">Latente, en euros, effet de change inclus.</p><div id="top-titres"></div></div>
-        <div class="panneau palmares rouge"><h2>3 moins bonnes performances</h2><p class="sous-titre">Latente, en euros, effet de change inclus.</p><div id="flop-titres"></div></div>
-      </div>
       <div class="panneau">
         <div class="tete-panneau"><div>
-          <h2>Valorisation du portefeuille</h2>
-          <p class="sous-titre">Valeur de vos positions et de vos liquidités, reconstituée jour par jour à partir des cours de clôture.</p>
+          <h2>Valorisation de vos lignes</h2>
+          <p class="sous-titre">Valeur de vos positions jour par jour, aux cours de clôture, face au montant que vous y avez investi. L'écart entre les deux courbes est votre plus-value latente.</p>
         </div>
           <div class="segments periodes-perf"></div>
         </div>
@@ -586,8 +588,6 @@
   <div class="types" id="types-ordre">
     <button data-type="ACHAT" aria-pressed="true">Achat</button>
     <button data-type="VENTE">Vente</button>
-    <button data-type="DEPOT">Dépôt</button>
-    <button data-type="RETRAIT">Retrait</button>
     <button data-type="DIVIDENDE">Dividende</button>
   </div>
   <div id="ordre-erreur" class="erreur cache"></div>
@@ -601,7 +601,7 @@
       <div class="champ"><label for="o-qte">Quantité</label><input id="o-qte" type="number" min="0" step="any"></div>
       <div class="champ"><label for="o-prix">Prix unitaire <span id="o-devise-lbl"></span></label><input id="o-prix" type="number" min="0" step="any"></div>
     </div>
-    <div class="champ" data-pour="DEPOT RETRAIT DIVIDENDE">
+    <div class="champ" data-pour="DIVIDENDE">
       <label for="o-montant">Montant (€)</label><input id="o-montant" type="number" min="0" step="0.01">
     </div>
     <div class="deux-col">
@@ -964,16 +964,30 @@
     });
     if (!p.length) {
       $('#table-positions').innerHTML = `<div class="vide"><p>Aucune position suivie pour l'instant.</p>
-        <p class="discret">Saisissez vos lignes avec leur quantité, leur prix de revient et leur date d'entrée. Déclarer vos versements d'espèces est facultatif.</p>
+        <p class="discret">Saisissez vos lignes avec leur quantité, leur prix d'achat moyen et leur date d'entrée.</p>
         <button class="btn" onclick="ouvrirTiroir('ACHAT')">Saisir une position</button></div>`;
     } else {
-      $('#table-positions').innerHTML = `<table><thead><tr>
-        <th>Titre</th><th class="num">Quantité</th><th class="num">PRU</th><th class="num">Cours</th><th class="num">Jour</th>
-        <th class="num">Valeur</th>
-        <th class="num" title="(cours − PRU) × quantité, dans la devise de cotation. Le mouvement du titre seul, hors frais et hors change.">+/- value brute (devise)</th>
-        <th class="num" title="Valeur − prix de revient, frais de courtage et TVA inclus, effet de change appliqué. Ce qui reste réellement.">+/- value nette (€)</th>
-        <th class="num">Poids</th>
-      </tr></thead><tbody>${p.map(l => `<tr class="ligne-titre" onclick="basculerDetail(event, '${l.ticker}')">
+      // Les lignes sont rangées par famille — action, OPC, obligation — avec le
+      // sous-total de chacune. La +/- value brute n'est pas sommée : elle est exprimée
+      // dans la devise de cotation, et additionner des dollars à des euros ne veut
+      // rien dire. Seule la colonne nette, ramenée en euros, se totalise.
+      const ORDRE = ['Action', 'OPC', 'Obligation'];
+      const familles = [...new Set(p.map(l => l.type_actif || 'Action'))]
+        .sort((a, b) => (ORDRE.indexOf(a) + 1 || 99) - (ORDRE.indexOf(b) + 1 || 99));
+      const somme = (arr, cle) => arr.reduce((s, l) => s + (l[cle] || 0), 0);
+
+      const corps = familles.map(f => {
+        const lignes = p.filter(l => (l.type_actif || 'Action') === f);
+        const valeur = somme(lignes, 'valeur_eur'), pv = somme(lignes, 'pv_latente_eur');
+        const cout = valeur - pv;
+        return `<tr class="groupe-actif">
+          <td colspan="5" class="nom-groupe">${echap(f)}<small>${lignes.length} ligne${lignes.length > 1 ? 's' : ''}</small></td>
+          <td class="num">${argent(valeur)}</td>
+          <td class="num discret">—</td>
+          <td class="num ${classe(pv)}">${argent(pv, 'EUR', true)}${cout > 0.005
+            ? `<span class="sous ${classe(pv)}">${pct(pv / cout * 100)}</span>` : ''}</td>
+          <td class="num">${pct(somme(lignes, 'poids_pct'), false)}</td>
+        </tr>` + lignes.map(l => `<tr class="ligne-titre" onclick="basculerDetail(event, '${l.ticker}')">
         <td class="titre-ligne"><strong>${echap(l.nom)}<span class="chevron">▾</span></strong><small>${echap(l.ticker)} · depuis le ${dateFr(l.date_entree)}</small></td>
         <td class="num">${nombre(l.quantite, l.quantite % 1 ? 4 : 0)}</td>
         <td class="num">${argent(l.pru, l.devise)}</td>
@@ -983,11 +997,22 @@
         <td class="num ${classe(l.pv_latente_devise)}">${argent(l.pv_latente_devise, l.devise, true)}<span class="sous">${pct(l.pv_latente_pct)}</span></td>
         <td class="num ${classe(l.pv_latente_eur)}">${argent(l.pv_latente_eur, 'EUR', true)}<span class="sous ${classe(l.pv_latente_eur)}">${pct(l.pv_eur_pct)}</span></td>
         <td class="num">${pct(l.poids_pct, false)}</td>
-      </tr>`).join('')}</tbody></table>`;
+      </tr>`).join('');
+      }).join('');
+
+      $('#table-positions').innerHTML = `<table><thead><tr>
+        <th>Titre</th><th class="num">Quantité</th>
+        <th class="num" title="Prix d'achat moyen : ce que vous a coûté une unité du titre, frais exclus.">PAM</th>
+        <th class="num">Cours</th><th class="num">Jour</th>
+        <th class="num">Valeur</th>
+        <th class="num" title="(cours − PAM) × quantité, dans la devise de cotation. Le mouvement du titre seul, hors frais et hors change.">+/- value brute (devise)</th>
+        <th class="num" title="Valeur − prix de revient, frais de courtage et TVA inclus, effet de change appliqué. Ce qui reste réellement.">+/- value nette (€)</th>
+        <th class="num">Poids</th>
+      </tr></thead><tbody>${corps}</tbody></table>`;
     }
     const s = SYN.positions_soldees;
     $('#bloc-soldees').classList.toggle('cache', !s.length);
-    $('#table-soldees').innerHTML = s.length ? `<table><thead><tr><th>Titre</th><th class="num" title="(prix de vente − PRU) × quantité, dans la devise de cotation. Hors frais.">+/- value brute (devise)</th><th class="num" title="Produit de la vente diminué du prix de revient, frais d'achat ET de vente inclus, effet de change appliqué.">+/- value nette (€)</th><th class="num">Dividendes</th></tr></thead>
+    $('#table-soldees').innerHTML = s.length ? `<table><thead><tr><th>Titre</th><th class="num" title="(prix de vente − PAM) × quantité, dans la devise de cotation. Hors frais.">+/- value brute (devise)</th><th class="num" title="Produit de la vente diminué du prix de revient, frais d'achat ET de vente inclus, effet de change appliqué.">+/- value nette (€)</th><th class="num">Dividendes</th></tr></thead>
       <tbody>${s.map(l => `<tr><td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)}</small></td>
         <td class="num ${classe(l.pv_realisee_devise)}">${argent(l.pv_realisee_devise, l.devise, true)}</td>
         <td class="num ${classe(l.pv_realisee_eur)}">${argent(l.pv_realisee_eur, 'EUR', true)}</td>
@@ -1034,11 +1059,13 @@
   function afficherMouvements() {
     const zone = $('#table-mouvements'), mvts = OPS.mouvements;
     if (!mvts.length) {
-      zone.innerHTML = `<div class="vide"><p>Aucun mouvement.</p><button class="btn" onclick="ouvrirTiroir('DEPOT')">Enregistrer un dépôt</button></div>`;
+      zone.innerHTML = `<div class="vide"><p>Aucun mouvement.</p>
+        <p class="discret">Les dividendes encaissés et les divisions d'actions apparaîtront ici.</p>
+        <button class="btn" onclick="ouvrirTiroir('DIVIDENDE')">Enregistrer un dividende</button></div>`;
       return;
     }
     zone.innerHTML = `<table><thead><tr><th>Date</th><th>Nature</th><th>Titre</th><th class="num">Quantité</th>
-      <th class="num">Montant unitaire</th><th class="num">Mouvement espèces</th><th class="num">Solde espèces</th><th></th></tr></thead>
+      <th class="num">Montant unitaire</th><th class="num">Montant encaissé</th><th></th></tr></thead>
       <tbody>${mvts.map(o => `<tr>
         <td>${dateFr(o.date)}</td>
         <td><span class="etiquette ${o.type}">${NOMS_TYPE[o.type]}</span>${o.origine === 'auto' ? '<span class="etiquette auto" title="Détecté automatiquement sur Yahoo Finance">auto</span>' : ''}${o.commentaire ? `<span class="sous">${echap(o.commentaire)}</span>` : ''}</td>
@@ -1046,7 +1073,6 @@
         <td class="num">${o.type === 'SPLIT' ? '—' : o.quantite ? nombre(o.quantite, o.quantite % 1 ? 4 : 0) : '—'}</td>
         <td class="num">${o.type === 'SPLIT' ? `${nombre(o.quantite, 0)} pour 1` : o.prix ? argent(o.prix, o.devise) : '—'}</td>
         <td class="num ${classe(o.flux_cash_eur)}">${o.flux_cash_eur ? argent(o.flux_cash_eur, 'EUR', true) : '—'}</td>
-        <td class="num">${argent(o.cash_apres_eur)}</td>
         <td class="num">${boutonsLigne(o)}</td></tr>`).join('')}</tbody></table>`;
   }
 
@@ -1131,7 +1157,6 @@
 
   async function chargerPerformance() {
     try {
-      palmares();
       const [courbe, tableau] = await Promise.all([
         api(`/compte/historique?indice=${indiceChoisi}&periode=${CODES_PERIODE[perfJours] || 'tout'}&mode=${modeIndice}`),
         api(`/compte/performances?indice=${indiceChoisi}&mode=${modeIndice}`),
@@ -1212,25 +1237,6 @@
   }
 
 
-  function palmares() {
-    // Classement sur la performance en euros, cohérente avec les montants affichés
-    const lignes = (SYN?.positions || []).filter(l => l.pv_latente_eur_pct !== null)
-      .slice().sort((a, b) => b.pv_latente_eur_pct - a.pv_latente_eur_pct);
-    const table = (arr) => arr.length ? `<table><tbody>${arr.map((l, i) => `<tr>
-        <td class="rang">${i + 1}</td>
-        <td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)}</small></td>
-        <td class="num ${classe(l.pv_latente_eur)}"><strong>${pct(l.pv_latente_eur_pct)}</strong><span class="sous ${classe(l.pv_latente_eur)}">${argent(l.pv_latente_eur, 'EUR', true)}${l.devise !== 'EUR' ? ` · ${pct(l.pv_latente_pct)} en ${l.devise}` : ''}</span></td>
-      </tr>`).join('')}</tbody></table>` : '<div class="vide">Aucune position.</div>';
-    const peu = lignes.length <= 5;              // inutile de scinder un petit portefeuille
-    const blocFlop = $('#flop-titres').closest('.panneau');
-    blocFlop.classList.toggle('cache', peu);
-    const blocTop = $('#top-titres').closest('.panneau');
-    blocTop.classList.toggle('palmares', !peu);
-    blocTop.querySelector('h2').textContent = peu ? 'Performance par ligne' : '3 meilleures performances';
-    $('#top-titres').innerHTML = table(peu ? lignes : lignes.slice(0, 3));
-    $('#flop-titres').innerHTML = peu ? '' : table(lignes.slice(-3).reverse());
-  }
-
   function dessinerPerformance() {
     if (!PERF || !window.Chart || !PERF.points.length) return;
     const pts = PERF.points;              // la fenêtre est déjà appliquée côté serveur
@@ -1240,19 +1246,24 @@
     const axeX = { ticks: { maxTicksLimit: 8, color: teinte('--encre-2') }, grid: { display: false } };
     const eur = v => argent(v).replace(/,00/, '');
 
+    // Deux courbes et rien d'autre : ce que valent les lignes, et ce qu'elles ont coûté.
+    // Les espèces n'entrent dans ni l'une ni l'autre — l'application suit des
+    // investissements. L'écart vertical entre les deux est la plus-value latente.
     creerGraphique('c-valo', {
       type: 'line',
       data: { labels, datasets: [
-        { label: 'Valorisation', data: pts.map(p => p.valorisation_eur), borderColor: '#1E6A48', backgroundColor: 'rgba(30,106,72,.08)', fill: true, pointRadius: 0, borderWidth: 2, tension: .15 },
+        { label: 'Valeur des titres', data: pts.map(p => p.titres_eur), borderColor: '#1E6A48', backgroundColor: 'rgba(30,106,72,.08)', fill: true, pointRadius: 0, borderWidth: 2, tension: .15 },
+        { label: 'Montant investi', data: pts.map(p => p.cout_titres_eur), borderColor: '#6B7A70', borderDash: [5, 4], fill: false, pointRadius: 0, borderWidth: 1.6, tension: .15 },
       ] },
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { display: false },
+        plugins: { legend: { display: true, position: 'bottom',
+            labels: { boxWidth: 12, usePointStyle: true, color: teinte('--encre-2') } },
           tooltip: { callbacks: {
-            label: c => ` Valorisation : ${argent(c.raw)}`,
-            afterLabel: c => {
-              const p = pts[c.dataIndex];
-              return ` dont titres ${argent(p.titres_eur)} · espèces ${argent(p.cash_eur)}`
-                   + `\n Capital engagé : ${argent(p.capital_engage_eur)} · plus-value ${argent(p.pnl_eur, 'EUR', true)}`;
+            label: c => ` ${c.dataset.label} : ${argent(c.raw)}`,
+            afterBody: items => {
+              const p = pts[items[0].dataIndex], ecart = (p.titres_eur || 0) - (p.cout_titres_eur || 0);
+              return ` Plus-value latente : ${argent(ecart, 'EUR', true)}`
+                   + (p.cout_titres_eur > 0.005 ? ` (${pct(p.pv_titres_pct)})` : '');
             } } } },
         scales: { x: axeX, y: { ticks: { callback: eur, color: teinte('--encre-2') }, grid: { color: teinte('--filet') } } } },
     });
@@ -1405,63 +1416,63 @@
   }
 
   /* ── Régularité des investissements ──────────────────────
-     Un achat par point, placé à sa date, dont la taille dit le montant. On ne juge
-     pas le moment choisi : seulement la discipline. Deux dimensions, car investir
-     tous les mois 200 € puis 5 000 € n'est pas être régulier.
+     Deux questions, pas une de plus : avez-vous investi chaque mois, et avez-vous
+     investi ce que vous vous étiez fixé ?
 
-     Seules les DATES comptent. Les montants sont volontairement exclus : 300 € ne
-     pèsent pas la même chose pour tout le monde, et un score qui en dépendrait
-     mesurerait les moyens de l'investisseur plutôt que sa discipline.
+       note de fréquence = mois où vous avez investi ÷ N
+       note de montant   = Σ min(versement du mois, cible) ÷ (cible × N)
+       score             = (note de fréquence + note de montant) ÷ 2 × 100
 
-     Chaque intervalle entre deux achats reçoit une note sur 100 selon sa seule durée,
-     et le score est la moyenne de ces notes, chaque intervalle comptant pour sa durée.
-     Autrement dit : pour chaque jour écoulé depuis le premier achat, étiez-vous alors
-     dans un bon rythme ? Le score est la part de ces journées où la réponse est oui.
+     N est le nombre de mois écoulés depuis votre premier achat, plafonné à douze —
+     et non douze par principe : on ne peut pas reprocher à quelqu'un de n'avoir pas
+     investi avant d'avoir ouvert son compte. Un compte de deux mois parfaitement tenu
+     obtient donc 100, comme il le doit.
 
-       moins de 5 jours      0    des achats quasi quotidiens, c'est du trading
-       de 5 à 21 jours       0 → 100   trop rapproché, on monte vers le bon rythme
-       de 21 à 60 jours      100       le rythme mensuel, l'objectif
-       de 60 à 365 jours     100 → 0   on s'espace, la discipline se perd
-       plus d'un an          0         ce n'est plus un rythme
+     La fenêtre est celle des N derniers mois. Un mois compte pour un, qu'on y ait
+     acheté une fois ou quatre : viser une fois par mois est une discipline, en faire
+     trois le même mois n'en est pas une meilleure. C'est aussi ce qui rend le score
+     insensible au fractionnement — acheter trois ETF le même matin reste un acte.
 
-     Deux choix qui paraissent des détails et n'en sont pas. Noter chaque intervalle
-     plutôt que leur moyenne : douze achats en un mois puis rien pendant un an donnent
-     une moyenne de trente jours, donc un score parfait, alors que c'est exactement le
-     comportement à signaler. Et pondérer par la durée : sans cela, cinq achats
-     mensuels suivis de dix-sept mois de pause obtenaient 80/100 et la mention « très
-     régulier », quatre bons intervalles suffisant à noyer le mauvais. Une pause d'un
-     an doit peser douze fois plus qu'un mois, puisqu'elle dure douze fois plus. */
-  const RYTHME = [[5, 0], [21, 100], [60, 100], [365, 0]];
-  function noteIntervalle(jours) {
-    if (jours <= RYTHME[0][0]) return 0;
-    if (jours >= RYTHME[RYTHME.length - 1][0]) return 0;
-    for (let i = 1; i < RYTHME.length; i++) {
-      const [x1, y1] = RYTHME[i - 1], [x2, y2] = RYTHME[i];
-      if (jours <= x2) return y1 + (y2 - y1) * (jours - x1) / (x2 - x1);
-    }
-    return 0;
-  }
+     La cible est propre à chacun et appelée à bouger : elle se saisit juste au-dessus,
+     et s'enregistre côté serveur. Tant qu'elle n'est pas renseignée, seul le rythme
+     est noté — juger un montant sans savoir ce qu'il représente n'aurait aucun sens. */
   const PALIERS_REGULARITE = [
     { min: 80, libelle: 'Très régulier', couleur: '#1D7A4B',
-      message: "Vos achats s'enchaînent à un rythme proche du mensuel : votre comportement est celui d'un investissement programmé." },
+      message: "Vous investissez presque chaque mois, et à la hauteur de ce que vous visez. C'est le comportement d'un investissement programmé." },
     { min: 60, libelle: 'Régulier', couleur: '#7FA83C',
-      message: 'Vous investissez à bon rythme. Quelques intervalles sortent du cadre mensuel, sans casser la discipline.' },
+      message: 'Une habitude est installée. Quelques mois manquent, ou les montants restent en deçà de votre cible.' },
     { min: 40, libelle: 'Moyennement régulier', couleur: '#C08A3E',
-      message: "Une habitude se dessine, sans être tenue. Plusieurs intervalles sont trop longs, ou trop rapprochés." },
+      message: "Vous investissez, mais par à-coups. La moitié des mois environ reste sans versement, ou bien loin de la cible." },
     { min: 0, libelle: 'Peu régulier', couleur: '#B23A2E',
-      message: 'Vos achats sont trop espacés, ou au contraire trop rapprochés. Votre résultat dépend donc beaucoup du moment choisi.' },
+      message: 'Vos versements sont rares ou très inférieurs à votre cible. Votre résultat dépend donc beaucoup du moment choisi.' },
   ];
+
+  let CIBLE_MENSUELLE = 0;
+
+  async function enregistrerCible(valeur) {
+    try {
+      await api('/compte/parametres', { method: 'PUT',
+                                        body: JSON.stringify({ cible_mensuelle_eur: valeur }) });
+      CIBLE_MENSUELLE = valeur;
+      toast(valeur > 0 ? `Cible enregistrée : ${argent(valeur)} par mois.`
+                       : 'Cible retirée : seul le rythme sera noté.');
+      regularite();
+    } catch (ex) { toast(ex.message, true); }
+  }
 
   async function regularite() {
     const zone = $('#bloc-regularite');
     if (!zone) return;
+
     // Plusieurs ordres passés le même jour ne font qu'UN acte d'investissement : acheter
-    // trois ETF le 9 septembre, ce n'est pas investir trois fois régulièrement. On
-    // regroupe donc par date avant toute mesure, sans quoi un gros achat ventilé en
-    // plusieurs lignes décrocherait un score parfait.
+    // trois ETF le 9 septembre, ce n'est pas investir trois fois.
     let achats = [];
     try {
-      const { ordres } = await api('/compte/operations');
+      const [{ ordres }, params] = await Promise.all([
+        api('/compte/operations'),
+        api('/compte/parametres').catch(() => ({})),
+      ]);
+      CIBLE_MENSUELLE = Number(params?.cible_mensuelle_eur) || 0;
       const parDate = new Map();
       (ordres || []).filter(o => o.type === 'ACHAT').forEach(o => {
         const montant = Math.abs(o.montant_position_eur || 0);
@@ -1474,30 +1485,90 @@
       achats = [...parDate.values()].sort((a, b) => a.date.localeCompare(b.date));
     } catch { return; }
 
-    if (achats.length < 3) {
-      zone.innerHTML = `<h2>Régularité de vos investissements</h2>
-        <p class="sous-titre">Il faut au moins trois dates d'achat différentes pour parler de
-          régularité. Vous en avez ${achats.length}${achats.length ? ` (${achats.map(a => dateFr(a.date)).join(', ')})` : ''}.
-          Le score apparaîtra après votre prochain achat à une nouvelle date.</p>`;
-      return;
-    }
+    // Fenêtre : les douze derniers mois AU PLUS, mais jamais plus que l'âge du compte.
+    // Le dénominateur est le nombre de mois pendant lesquels il était possible
+    // d'investir, pas douze par principe. Sans cela, un compte ouvert il y a deux mois
+    // et parfaitement tenu — deux versements, au bon montant — plafonnerait à 17/100,
+    // ce qui ne mesure plus la régularité mais l'ancienneté.
+    //
+    // On raisonne en mois civils et non en 252 séances : la cible étant mensuelle, les
+    // deux doivent se compter dans la même unité.
+    const aujourdhui = new Date();
+    const cleMois = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const premier = new Date(achats[0].date + 'T00:00:00');
+    const moisDepuisPremier = (aujourdhui.getFullYear() - premier.getFullYear()) * 12
+                            + (aujourdhui.getMonth() - premier.getMonth()) + 1;
+    const nbMois = Math.max(1, Math.min(12, moisDepuisPremier));
+    const debut = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth() - (nbMois - 1), 1);
 
-    // Écarts en jours entre deux dates d'achat consécutives, et montants investis
-    const jours = [];
-    for (let i = 1; i < achats.length; i++) {
-      jours.push((new Date(achats[i].date) - new Date(achats[i - 1].date)) / 86400000);
+    const MOIS = [];
+    for (let i = 0; i < nbMois; i++) {
+      const d = new Date(debut.getFullYear(), debut.getMonth() + i, 1);
+      MOIS.push({ cle: cleMois(d), date: d, montant: 0 });
     }
-    const notes = jours.map(noteIntervalle);
-    const duree = jours.reduce((a, b) => a + b, 0);
-    const ecartMoyen = duree / jours.length;
-    const score = Math.round(jours.reduce((s, j, i) => s + j * notes[i], 0) / duree);
+    const indexMois = new Map(MOIS.map((m, i) => [m.cle, i]));
+
+    achats.forEach(a => {
+      const i = indexMois.get(a.date.slice(0, 7));
+      if (i !== undefined) MOIS[i].montant += a.montant;
+    });
+
+    const moisInvestis = MOIS.filter(m => m.montant > 0).length;
+    const totalInvesti = MOIS.reduce((s, m) => s + m.montant, 0);
+    const noteFrequence = moisInvestis / nbMois;
+    const cibleAnnuelle = CIBLE_MENSUELLE * nbMois;
+
+    // Le plafond s'applique MOIS PAR MOIS, et non au résultat final. Plafonner à la fin
+    // laissait un versement unique de dix fois la cible décrocher 100 % sur cette note,
+    // soit la moitié du score, alors qu'il n'y a eu qu'un seul acte d'investissement.
+    // En plafonnant chaque terme, un mois ne peut jamais rattraper les autres — et le
+    // total ne peut plus dépasser le montant visé, donc il n'y a plus rien à plafonner
+    // au bout.
+    const retenu = MOIS.reduce((s, m) => s + Math.min(m.montant, CIBLE_MENSUELLE), 0);
+    const noteMontant = cibleAnnuelle > 0 ? retenu / cibleAnnuelle : null;
+    const score = Math.round(100 * (noteMontant === null
+      ? noteFrequence
+      : (noteFrequence + noteMontant) / 2));
     const palier = PALIERS_REGULARITE.find(p => score >= p.min);
+
+    const champCible = `
+      <div class="cible-mensuelle">
+        <label for="champ-cible">Ma cible d'investissement mensuel</label>
+        <div class="saisie-cible">
+          <input type="number" id="champ-cible" min="0" step="10" placeholder="200"
+                 value="${CIBLE_MENSUELLE || ''}" aria-describedby="aide-cible">
+          <span class="unite">€ par mois</span>
+          <button class="btn btn-sec" id="btn-cible" type="button">Enregistrer</button>
+        </div>
+        <span class="aide-champ" id="aide-cible">${CIBLE_MENSUELLE > 0
+          ? `Soit ${argent(cibleAnnuelle)} sur vos ${nbMois} mois d'historique. Modifiable à tout moment.`
+          : "Tant qu'elle est vide, seul votre rythme est noté, pas vos montants."}</span>
+      </div>`;
+
+    // « 2 mois sur 12 » se lisait comme une fenêtre réduite à deux mois, alors que c'est
+    // le numérateur. On écrit la phrase en entier : la fenêtre est nommée, le compte
+    // aussi, et il n'y a plus de fraction à interpréter.
+    const libelleFreq = nbMois === 12
+      ? `${moisInvestis} des 12 derniers mois`
+      : `${moisInvestis} des ${nbMois} mois écoulés depuis votre premier achat`;
+    const detailScore = noteMontant === null
+      ? `<span>Fréquence seule : vous avez investi pendant <strong>${libelleFreq}</strong>.
+           Renseignez votre cible ci-dessus pour que les montants comptent aussi.</span>`
+      : `<span>Fréquence : vous avez investi pendant <strong>${libelleFreq}</strong>
+           (${Math.round(noteFrequence * 100)} / 100).
+           Montant : <strong>${argent(retenu)}</strong> retenus sur ${argent(cibleAnnuelle)} visés
+           (${Math.round(noteMontant * 100)} / 100)${retenu < totalInvesti - 0.005
+             ? `, sur ${argent(totalInvesti)} réellement versés — chaque mois ne compte que
+                jusqu'à votre cible` : ''}.
+           Le score est la moyenne des deux.</span>`;
 
     zone.innerHTML = `
       <div class="tete-panneau"><div>
         <h2>Régularité de vos investissements</h2>
-        <p class="sous-titre">Un point par achat, placé à sa date ; sa taille dit le montant.</p>
+        <p class="sous-titre">Sur ${nbMois === 12 ? 'les douze derniers mois' : `vos ${nbMois} mois d'historique`} :
+          à quelle fréquence vous investissez, et à quelle hauteur face à la cible que vous vous fixez.</p>
       </div></div>
+      ${champCible}
       <div class="jauge-regularite">
         <div class="score" style="color:${palier.couleur}">${score}<span>/100</span></div>
         <div class="verdict">
@@ -1508,45 +1579,52 @@
         </div>
       </div>
       <div class="courbe"><canvas id="c-regularite"></canvas></div>
-      <p class="discret" style="margin:12px 0 0">${achats.length} dates d'achat sur
-        ${nombre(duree, 0)} jours, soit une tous les ${nombre(ecartMoyen, 0)} jours en moyenne.
-        Seules les dates comptent : la taille des points indique le montant, mais il n'entre pas
-        dans le score.
+      <p class="discret" style="margin:12px 0 0">${detailScore}
         <button class="btn-lien" data-vers-fiche="regularite">Comment le score est calculé</button></p>`;
+
+    const champ = $('#champ-cible');
+    const valider = () => {
+      const v = Math.max(0, Number(champ.value) || 0);
+      if (v !== CIBLE_MENSUELLE) enregistrerCible(v);
+    };
+    $('#btn-cible').onclick = valider;
+    champ.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); valider(); } };
 
     zone.querySelectorAll('[data-vers-fiche]').forEach(b =>
       b.onclick = () => allerFiche(b.dataset.versFiche));
 
     if (!window.Chart) return;
-    const taille = m => {
-      const max = Math.max(...achats.map(a => a.montant));
-      return 5 + 13 * Math.sqrt(m / max);        // l'aire, pas le rayon, suit le montant
-    };
+    // Un histogramme : une barre par mois, sa hauteur est ce qui a été investi. Un mois
+    // sans versement laisse un trou visible — c'est exactement ce que mesure la note de
+    // fréquence. La cible, quand elle existe, est tracée en repère horizontal.
+    const jeux = [{
+      label: 'Investi dans le mois', type: 'bar',
+      data: MOIS.map(m => m.montant),
+      backgroundColor: MOIS.map(m => m.montant > 0 ? palier.couleur + 'cc' : 'transparent'),
+      borderColor: palier.couleur, borderWidth: 1, borderRadius: 3, maxBarThickness: 46,
+    }];
+    if (CIBLE_MENSUELLE > 0) {
+      jeux.push({ label: 'Cible mensuelle', type: 'line',
+                  data: MOIS.map(() => CIBLE_MENSUELLE),
+                  borderColor: '#6B7A70', borderDash: [5, 4], borderWidth: 1.6,
+                  pointRadius: 0, fill: false, tension: 0 });
+    }
+    const moisCourt = d => d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
     creerGraphique('c-regularite', {
-      type: 'scatter',
-      data: { datasets: [{
-        label: 'Achat',
-        // L'abscisse porte un horodatage, pas un rang : un trou de dix-sept mois doit se
-        // voir comme un trou de dix-sept mois. Avec un axe catégoriel, tous les écarts
-        // auraient la même largeur et le graphique démentirait le score.
-        data: achats.map(a => ({ x: new Date(a.date + 'T00:00:00Z').getTime(),
-                                 y: a.montant, jour: a.date, nom: a.lignes.join(', ') })),
-        backgroundColor: palier.couleur + 'cc', borderColor: palier.couleur,
-        pointRadius: c => taille(c.raw?.y ?? 0), pointHoverRadius: c => taille(c.raw?.y ?? 0) + 3,
-      }] },
-      options: { interaction: { mode: 'nearest', intersect: true },
-        plugins: { legend: { display: false }, tooltip: { callbacks: {
-          title: c => dateFr(c[0].raw.jour),
-          label: c => ` ${c.raw.nom} · ${argent(c.raw.y)}` } } },
+      type: 'bar',
+      data: { labels: MOIS.map(m => moisCourt(m.date)), datasets: jeux },
+      options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: CIBLE_MENSUELLE > 0, position: 'bottom',
+                    labels: { boxWidth: 12, usePointStyle: true, color: teinte('--encre-2') } },
+          tooltip: { callbacks: {
+            label: c => c.dataset.type === 'line'
+              ? ` Cible : ${argent(c.raw)}`
+              : (c.raw > 0 ? ` Investi : ${argent(c.raw)}` : ' Aucun versement ce mois-ci') } } },
         scales: {
-          x: { type: 'linear',
-               min: new Date(achats[0].date + 'T00:00:00Z').getTime() - 15 * 86400000,
-               max: new Date(achats[achats.length - 1].date + 'T00:00:00Z').getTime() + 15 * 86400000,
-               ticks: { maxTicksLimit: 7, color: teinte('--encre-2'),
-                        callback: v => dateFr(new Date(v).toISOString().slice(0, 10)) },
-               grid: { display: false } },
-          y: { beginAtZero: true, title: { display: true, text: 'Montant investi',
-               color: teinte('--encre-2') },
+          x: { ticks: { color: teinte('--encre-2') }, grid: { display: false } },
+          y: { beginAtZero: true,
+               title: { display: true, text: 'Montant investi', color: teinte('--encre-2') },
                ticks: { callback: v => argent(v).replace(/,00/, ''), color: teinte('--encre-2') },
                grid: { color: teinte('--filet') } } } },
     });
@@ -1558,21 +1636,21 @@
      vérité, donc pas de risque qu'une définition dérive d'un écran à l'autre. */
   const FICHES = [
     { id: 'rendement', titre: 'Rendement annualisé',
-      definition: `Ce qu'ont rapporté vos titres sur la période, ramené à une année. On
-        additionne les rendements de chaque séance, à composition actuelle du portefeuille.
-        C'est le numérateur du ratio de Sharpe.`,
-      formule: 'moyenne des rendements quotidiens × 252 séances',
+      definition: `Ce qu'ont rapporté vos titres sur un an glissant, à composition actuelle
+        du portefeuille. Les rendements quotidiens sont composés les uns après les autres,
+        puis le total est ramené à une année. C'est le numérateur du ratio de Sharpe.`,
+      formule: '(1 + performance cumulée) ^ (1 ÷ nombre d\'années) − 1',
       lecture: [
         ['Négatif', 'vos titres ont perdu de la valeur sur la période.'],
         ['0 à 5 %', "en dessous de ce que rapporte généralement un placement sans risque."],
         ['5 à 15 %', "l'ordre de grandeur d'un marché actions sur une bonne année."],
         ['Plus de 15 %', 'année très favorable, ou portefeuille concentré sur un secteur porteur.'],
       ],
-      exemple: `Vos titres gagnent en moyenne 0,05 % par séance. Sur les 252 séances d'une
-        année de Bourse : 0,05 % × 252 = +12,6 %.`,
-      note: `Ce chiffre additionne les rendements quotidiens, il ne les compose pas. Il
-        diffère donc du TWR de l'onglet Performance, qui les enchaîne et suit vos achats
-        réels.` },
+      exemple: `Sur 378 séances, soit 1,5 an, vos rendements quotidiens composés donnent
+        +18,0 % au total.
+        Rendement annualisé = (1,18) ^ (1 ÷ 1,5) − 1 = +11,66 %.`,
+      note: `Même formule que dans l'onglet Performance, appliquée ici au portefeuille tel
+        qu'il est composé aujourd'hui. Les deux chiffres peuvent donc différer.` },
 
     { id: 'volatilite', titre: 'Volatilité annualisée',
       definition: `La volatilité mesure à quel point la valeur du portefeuille varie, à la
@@ -1596,13 +1674,11 @@
         ['1 à 2', 'bon équilibre entre rendement et risque.'],
         ['Supérieur à 2', 'excellent, le risque est très bien rémunéré.'],
       ],
-      exemple: `Avec un taux sans risque de 2 %, le portefeuille A rapporte 10 % avec 10 % de
-        volatilité, soit un Sharpe de (10 − 2) ÷ 10 = 0,8. Le portefeuille B rapporte 14 %
-        avec 24 % de volatilité, soit (14 − 2) ÷ 24 = 0,5. B rapporte plus, mais A est plus
-        efficace : il gagne davantage pour chaque unité de risque.`,
-      note: `Le rendement employé ici est la somme des rendements quotidiens de l'année, à
-        composition actuelle. Ce n'est pas le TWR de l'onglet Performance, qui compose les
-        rendements et suit vos achats réels.` },
+      exemple: `Taux sans risque 2 %. Le portefeuille A rapporte 10 % avec 10 % de
+        volatilité : (10 − 2) ÷ 10 = 0,8. Le B rapporte 14 % avec 24 % : (14 − 2) ÷ 24 = 0,5.
+        B rapporte plus, mais A gagne davantage pour chaque unité de risque.`,
+      note: `Le rendement employé au numérateur est le rendement annualisé affiché juste
+        à côté.` },
 
     { id: 'drawdown', titre: 'Perte maximale (max drawdown)',
       definition: `La plus forte baisse subie entre un point haut et le point bas qui a suivi,
@@ -1657,27 +1733,30 @@
         environ douze par an, la perte moyenne a été de 600 €, alors que le seuil était de 400 €.` },
 
     { id: 'regularite', titre: 'Régularité de vos investissements',
-      definition: `Un score de 0 à 100 qui mesure à quel rythme vous investissez. Chaque
-        intervalle entre deux achats reçoit une note selon sa durée. Le score est la somme
-        des durées multipliées par leur note, divisée par le nombre total de jours. Seules
-        les dates comptent : ni vos montants, ni vos choix de titres, ni le moment choisi
-        n'entrent dans le calcul.`,
-      formule: "score = Σ (durée de l'intervalle × sa note) ÷ nombre total de jours",
+      definition: `Un score de 0 à 100 qui répond à deux questions : avez-vous investi
+        chaque mois, et avez-vous investi ce que vous vous étiez fixé ? Les deux sont
+        rapportées au nombre de mois écoulés depuis votre premier achat, douze au maximum,
+        et chaque mois ne compte que jusqu'à votre cible.
+        Ni le moment choisi, ni les titres retenus, ni leur performance n'entrent dans le
+        calcul.`,
+      formule: 'score = (mois investis ÷ mois écoulés + montant retenu ÷ montant visé) ÷ 2 × 100',
       lecture: [
-        ['Moins de 5 jours entre deux achats', 'note 0 — à ce rythme ce n\'est plus de l\'investissement, c\'est du trading.'],
-        ['5 à 21 jours', 'note de 0 à 100 — encore trop rapproché, mais on se dirige vers le bon rythme.'],
-        ['21 à 60 jours', 'note 100 — le rythme mensuel, celui qu\'on vise.'],
-        ['60 à 365 jours', 'note de 100 à 0 — les achats s\'espacent, la discipline se relâche.'],
-        ['Plus d\'un an', 'note 0 — ce n\'est plus un rythme.'],
+        ['80 à 100', 'vous investissez presque chaque mois, à la hauteur de votre cible.'],
+        ['60 à 80', 'habitude installée, avec quelques mois manquants ou en deçà de la cible.'],
+        ['40 à 60', 'vous investissez par à-coups, environ un mois sur deux.'],
+        ['Moins de 40', 'versements rares, ou très inférieurs à ce que vous visez.'],
       ],
-      exemple: `Trois intervalles : 30 jours notés 100, 34 jours notés 100, puis 365 jours
-        notés 0.
-        Score = (30 × 100 + 34 × 100 + 365 × 0) ÷ (30 + 34 + 365) = 6 400 ÷ 429 = 15.
-        La longue pause ne compte pas pour un intervalle sur trois, mais pour 365 jours
-        sur 429 — c'est tout l'effet de la pondération.`,
-      note: `Plusieurs ordres passés le même jour comptent pour un seul acte
-        d'investissement. Les montants sont volontairement exclus : 300 € ne pèsent pas la
-        même chose pour tout le monde.` },
+      exemple: `Cible de 200 € par mois, compte ouvert depuis 12 mois : 2 400 € visés.
+        Vous avez investi 9 mois sur 12, 200 € à chaque fois, soit 1 800 € retenus.
+        Fréquence = 9 ÷ 12 = 75 %. Montant = 1 800 ÷ 2 400 = 75 %.
+        Score = (75 + 75) ÷ 2 = 75, soit « Régulier ».
+        Même cible, mais 24 000 € versés en une seule fois : ce mois-là ne compte que
+        pour 200 €. Fréquence = 1 ÷ 12 = 8 %. Montant = 200 ÷ 2 400 = 8 %. Score = 8.`,
+      note: `Le montant visé, c'est votre cible multipliée par le nombre de mois écoulés
+        depuis votre premier achat, douze au maximum. Chaque mois ne compte que jusqu'à
+        votre cible : un gros versement unique ne rachète donc pas les mois sautés.
+        Plusieurs achats dans le même mois comptent pour un seul mois investi. Sans cible
+        renseignée, seule la fréquence est notée.` },
 
     { id: 'twr', titre: 'Performance TWR',
       definition: `Le TWR — time-weighted return, rendement pondéré dans le temps — mesure ce
@@ -1694,10 +1773,8 @@
         1 000 € du départ, devenus 2 100 €. Mais rapporté aux 9 000 € réellement versés, le
         gain de 1 500 € ne représente que +16,7 %. Les deux chiffres sont justes : ils ne
         répondent pas à la même question.`,
-      note: `Dans le tableau de l'onglet Performance, le MSCI World est mesuré via IWDA.AS et
-        le S&P 500 via SXR8.DE, en euros, dividendes réinvestis. La performance est annualisée
-        à partir de trois mois ; un astérisque signale moins d'un an de recul. Une période
-        antérieure à l'ouverture de votre compte reste affichée pour l'indice seul.` },
+      note: `La performance n'est annualisée qu'à partir de trois mois ; un astérisque
+        signale moins d'un an de recul.` },
   ];
 
   function afficherInfos() {
@@ -1991,8 +2068,6 @@
             <option value="ACHAT">Achat de titres</option>
             <option value="VENTE">Vente de titres</option>
             <option value="DIVIDENDE">Dividende encaissé</option>
-            <option value="DEPOT">Versement sur le compte</option>
-            <option value="RETRAIT">Retrait, frais ou taxe</option>
           </select></div>`).join('')}
         <button class="btn" id="import-classer">Enregistrer et relire le fichier</button>
       </div>` : '';
@@ -2024,7 +2099,7 @@
         <th style="width:34px"></th><th>Ligne du fichier</th><th style="min-width:150px">Titre reconnu</th>
         ${operations ? '<th style="width:92px">Sens</th>' : ''}
         <th class="num" style="width:110px">Quantité</th>
-        <th class="num" style="width:130px">${operations ? 'Prix / montant' : 'Prix de revient'}</th>
+        <th class="num" style="width:130px">${operations ? 'Prix / montant' : "Prix d'achat moyen"}</th>
         <th style="width:140px">${operations ? "Date d'opération" : "Date d'entrée"}</th></tr></thead>
       <tbody>${LIGNES_IMPORT.map((l, i) => l.espece ? `<tr class="${l.inclure ? '' : 'exclue'} ${l.doublon ? 'doublon' : ''}">
         <td><input type="checkbox" data-i="${i}" data-champ="inclure" ${l.inclure ? 'checked' : ''}></td>

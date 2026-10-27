@@ -76,7 +76,10 @@ class PortfolioDB:
                 -- 'devise_origine'   : indice de prix dans sa monnaie, comme dans la presse.
                 mode_indice         TEXT DEFAULT 'euros_dividendes',
                 -- Taux sans risque annuel, en %, utilisé au dénominateur du Sharpe.
-                taux_sans_risque    REAL DEFAULT 2.0
+                taux_sans_risque    REAL DEFAULT 2.0,
+                -- Montant que l'investisseur se fixe d'investir chaque mois, en euros.
+                -- 0 = non renseigné : le score de régularité ne juge alors que le rythme.
+                cible_mensuelle_eur REAL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS dividendes_traites (   -- évite de créditer deux fois
                 username    TEXT NOT NULL,
@@ -128,6 +131,8 @@ class PortfolioDB:
                           "DEFAULT 'euros_dividendes'")
             if "taux_sans_risque" not in colonnes_par:
                 c.execute("ALTER TABLE parametres ADD COLUMN taux_sans_risque REAL DEFAULT 2.0")
+            if "cible_mensuelle_eur" not in colonnes_par:
+                c.execute("ALTER TABLE parametres ADD COLUMN cible_mensuelle_eur REAL DEFAULT 0")
 
             # Les opérations saisies avant l'arrivée des portefeuilles multiples sont
             # rattachées à un portefeuille par défaut, créé pour l'occasion. Personne ne
@@ -252,17 +257,19 @@ class PortfolioDB:
             row = c.execute("SELECT * FROM parametres WHERE username=?", (username,)).fetchone()
         defauts = {"username": username, "prelevement_div_pct": 0.0,
                    "indice": "MSCI_WORLD", "mode_indice": "euros_dividendes",
-                   "taux_sans_risque": 2.0}
+                   "taux_sans_risque": 2.0, "cible_mensuelle_eur": 0.0}
         return {**defauts, **{k: v for k, v in dict(row).items() if v is not None}} if row else defauts
 
     def enregistrer_parametres(self, username: str, prelevement_div_pct: float, indice: str,
                                mode_indice: str = "euros_dividendes",
-                               taux_sans_risque: float = 2.0):
+                               taux_sans_risque: float = 2.0,
+                               cible_mensuelle_eur: float = 0.0):
         with self._connect() as c:
             c.execute("INSERT OR REPLACE INTO parametres "
-                      "(username, prelevement_div_pct, indice, mode_indice, taux_sans_risque) "
-                      "VALUES (?,?,?,?,?)",
-                      (username, prelevement_div_pct, indice, mode_indice, taux_sans_risque))
+                      "(username, prelevement_div_pct, indice, mode_indice, taux_sans_risque,"
+                      " cible_mensuelle_eur) VALUES (?,?,?,?,?,?)",
+                      (username, prelevement_div_pct, indice, mode_indice, taux_sans_risque,
+                       cible_mensuelle_eur))
 
     # ── Dividendes automatiques ──────────────────────────────────────────────
 
