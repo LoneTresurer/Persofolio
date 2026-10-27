@@ -8,6 +8,8 @@ Même authentification que le compte-titres : en-tête « Authorization: Bearer 
   PUT    /banque/etat     enregistre l'état ; refusé (409) si la version envoyée est périmée
   DELETE /banque/etat     efface le module pour relancer la configuration
   POST   /banque/releves  lit des relevés PDF et renvoie une proposition d'import
+  GET    /banque/investissement  espèces et prix de revient du compte-titres
+  POST   /banque/virement      budget et compte-titres écrits en une transaction
 
 La lecture des relevés ne modifie rien : elle renvoie ce qu'elle a compris, le
 navigateur le fait relire à l'utilisateur, et seul l'enregistrement de l'état
@@ -23,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
+from core import passerelle
 from core.banque_db import BanqueDB, ConflitVersion
 from core.categorisation import categoriser
 from core.habitudes import analyser
@@ -74,6 +77,72 @@ def ecrire_etat(corps: EtatIn, user: str = Depends(utilisateur_courant)):
 def effacer_etat(user: str = Depends(utilisateur_courant)):
     bdb.supprimer(user)
     return {"ok": True}
+
+
+# ──────────────────── Jonction avec le compte-titres ────────────────────────
+# Le compte investissement du budget n'est plus un compte à part : ce sont les
+# espèces et les titres du compte-titres, vus depuis le budget. Deux routes
+# suffisent — une pour lire, une pour virer.
+
+class VirementIn(BaseModel):
+    """Un virement entre le compte courant et le compte-titres.
+
+    L'état du budget voyage avec le virement : les deux sont écrits ensemble, ou
+    pas du tout. `id` rend l'envoi rejouable sans risque — un double-clic ou une
+    reprise après erreur ne crée pas deux versements.
+    """
+    etat: Dict[str, Any]
+    version: int = Field(ge=0)
+    id: str = Field(min_length=6, max_length=64)
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    montant_eur: float = Field(gt=0, le=10_000_000)
+    sens: str = Field(default="DEPOT", pattern="^(DEPOT|RETRAIT)$")
+
+    @field_validator("montant_eur")
+    @classmethod
+    def _arrondi(cls, v: float) -> float:
+        return round(v, 2)
+
+
+@router.get("/banque/investissement")
+def lire_investissement(user: str = Depends(utilisateur_courant)):
+    """Espèces, prix de revient et rapprochement — sans toucher au marché.
+
+    Aucun de ces chiffres ne demande de cours, donc aucun ne demande internet :
+    ils se déduisent des seules opérations enregistrées. C'est ce qui permet au
+    budget d'afficher un patrimoine exact hors ligne, la valeur de marché des
+    titres étant la seule chose à pouvoir manquer.
+    """
+    try:
+        return passerelle.etat_investissement(user)
+    except passerelle.PasserelleIndisponible as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.post("/banque/virement")
+def virer(corps: VirementIn, user: str = Depends(utilisateur_courant)):
+    """Écrit le budget et le mouvement d'espèces du compte-titres en une transaction."""
+    corps.etat["utilisateur"] = user
+    if corps.sens == "RETRAIT":
+        # On ne rapatrie que des espèces : ce qui est en titres demande une vente
+        # d'abord. Sans ce contrôle, le solde espèces passerait sous zéro.
+        dispo = passerelle.etat_investissement(user)["cash_eur"]
+        if corps.montant_eur > dispo + 0.005:
+            raise HTTPException(status_code=400, detail=(
+                f"Votre compte-titres ne dispose que de {dispo:.2f} € en espèces. "
+                "Le reste est investi en titres : vendez d'abord, puis rapatriez."))
+    try:
+        r = passerelle.virer(user, corps.etat, corps.version, corps.id,
+                             corps.date, corps.montant_eur, sens=corps.sens)
+    except passerelle.ConflitVersion as e:
+        raise HTTPException(status_code=409, detail={
+            "message": "Vos données ont été modifiées depuis un autre onglet ou appareil.",
+            "version": e.version_actuelle})
+    except passerelle.PasserelleIndisponible as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return r
 
 
 # ─────────────────────── Lecture de relevés bancaires ───────────────────────
