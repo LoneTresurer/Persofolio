@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.intel && '[{"os":"windows-latest","nom":"Windows","arch":""},{"os":"macos-14","nom":"macOS (Apple)","arch":"arm64"},{"os":"macos-15-intel","nom":"macOS (Intel)","arch":"x86_64"}]' || '[{"os":"windows-latest","nom":"Windows","arch":""},{"os":"macos-14","nom":"macOS (Apple)","arch":"arm64"}]') }}
+        include: ${{ fromJSON(inputs.intel && '[{"os":"windows-latest","nom":"Windows","arch":""},{"os":"macos-15","nom":"macOS (Apple)","arch":"arm64"},{"os":"macos-15-intel","nom":"macOS (Intel)","arch":"x86_64"}]' || '[{"os":"windows-latest","nom":"Windows","arch":""},{"os":"macos-15","nom":"macOS (Apple)","arch":"arm64"}]') }}
     env:
       PERSOFOLIO_ARCH: ${{ matrix.arch }}
     steps:
