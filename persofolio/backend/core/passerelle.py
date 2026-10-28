@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import date as _date, datetime, timedelta
 from typing import List, Optional
 
 from core.portfolio_db import DB_PATH
@@ -65,6 +65,18 @@ COLONNES_ATTENDUES = {"portefeuille_id", "username", "date", "type",
 
 class PasserelleIndisponible(RuntimeError):
     """La table du compte-titres n'a pas la forme attendue : on refuse d'écrire."""
+
+
+class ExplicationPerimee(RuntimeError):
+    """Ce que le navigateur propose d'expliquer ne correspond plus à la base.
+
+    Un deuxième clic, un autre onglet, une opération saisie entre-temps : l'écran
+    montrait un montant qui n'est plus le bon. On n'écrit rien, on renvoie ce qui
+    reste réellement à expliquer, et le navigateur se met à jour.
+    """
+    def __init__(self, restant: list):
+        super().__init__("explication périmée")
+        self.restant = restant
 
 
 class ConflitVersion(RuntimeError):
@@ -115,25 +127,210 @@ def portefeuille_unique(c: sqlite3.Connection, username: str) -> Optional[int]:
 
 def _depot_existant(c: sqlite3.Connection, username: str, reference: str) -> Optional[int]:
     row = c.execute(
-        "SELECT id FROM operations WHERE username=? AND type='DEPOT' AND commentaire=?",
+        "SELECT id FROM operations WHERE username=? AND type IN ('DEPOT','RETRAIT')"
+        " AND commentaire=?",
         (username, reference)).fetchone()
     return row["id"] if row else None
 
 
+PREFIXE = "virement budget "
+
+
 def reference(virement_id: str) -> str:
     """Texte inscrit dans le commentaire de l'opération, qui rend le virement unique."""
-    return f"virement budget {virement_id}"
+    return f"{PREFIXE}{virement_id}"
+
+
+def _ecrire_etat(c: sqlite3.Connection, username: str, etat: dict, existe: bool,
+                 actuelle: int, maintenant: str) -> int:
+    """Écrit l'état du budget dans la transaction en cours ; renvoie la nouvelle version."""
+    texte = json.dumps(etat, ensure_ascii=False, separators=(",", ":"))
+    nouvelle = actuelle + 1
+    if existe:
+        c.execute("UPDATE banque_etats SET etat=?, version=?, maj_le=? WHERE username=?",
+                  (texte, nouvelle, maintenant, username))
+    else:
+        # Colonnes nommées : banque_db insère par position, et une colonne
+        # ajoutée là-bas ferait ici une erreur de contrainte plutôt qu'un
+        # décalage silencieux.
+        c.execute("INSERT INTO banque_etats (username, etat, version, maj_le, cree_le) "
+                  "VALUES (?,?,?,?,?)",
+                  (username, texte, nouvelle, maintenant, maintenant))
+    return nouvelle
+
+
+def _ouvrir_transaction(username: str, version_attendue: int):
+    """Connexion, verrou d'écriture, contrôle de version. Renvoie (conn, existe, actuelle)."""
+    conn = _connect()
+    try:
+        _verifier_schema(conn)
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT version FROM banque_etats WHERE username=?",
+                           (username,)).fetchone()
+        actuelle = row["version"] if row else 0
+        if actuelle != version_attendue:
+            conn.rollback()
+            raise ConflitVersion(actuelle)
+        return conn, row is not None, actuelle
+    except Exception:
+        conn.close()
+        raise
+
+
+def _retirer_mouvement(c: sqlite3.Connection, username: str, ref: str) -> int:
+    """Supprime le mouvement d'espèces portant cette référence. Jamais un ordre :
+    seuls les versements et retraits écrits par cette passerelle sont visés."""
+    cur = c.execute("DELETE FROM operations WHERE username=? AND type IN ('DEPOT','RETRAIT')"
+                    " AND commentaire=?", (username, ref))
+    return cur.rowcount
+
+
+def _operations(c: sqlite3.Connection, username: str, pf: Optional[int]) -> List[dict]:
+    if pf is None:
+        rows = c.execute("SELECT * FROM operations WHERE username=? ORDER BY date, id",
+                         (username,)).fetchall()
+    else:
+        rows = c.execute("SELECT * FROM operations WHERE username=? AND portefeuille_id=?"
+                         " ORDER BY date, id", (username, pf)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def achats_a_decouvert(operations: List[dict]) -> List[dict]:
+    """Les achats que les espèces connues ne couvraient pas, et de combien.
+
+    C'est le détail de `a_expliquer_eur`. Un montant global ne suffit pas pour
+    l'expliquer : un versement daté d'aujourd'hui arrive *après* des achats
+    passés, n'en couvre aucun, et s'ajoute simplement aux espèces. C'était le
+    défaut d'origine — chaque réponse à la question gonflait le patrimoine du
+    même montant, et la question restait posée.
+    """
+    from core.portfolio_calc import rejouer
+    trous = []
+    for op in rejouer(operations).operations:
+        m = op.get("apport_implicite_eur")
+        if op.get("type") == "ACHAT" and m and m > 0.005:
+            trous.append({"achat_id": op["id"], "date": op["date"],
+                          "ticker": op.get("ticker"), "montant_eur": round(m, 2)})
+    return trous
+
+
+def _veille(jour: str) -> str:
+    return (_date.fromisoformat(jour) - timedelta(days=1)).isoformat()
+
+
+def identifiant_apport(achat_id: int) -> str:
+    """Un achat ne s'explique qu'une fois : l'identifiant découle de l'achat."""
+    return f"apport-{achat_id}"
+
+
+# ── Déclarer l'origine des achats à découvert ───────────────────────────────
+def declarer_apports(username: str, etat: dict, version_attendue: int,
+                     origine: str, attendus: List[dict],
+                     portefeuille: Optional[int] = None) -> dict:
+    """Enregistre le versement qui manquait devant chaque achat à découvert.
+
+    Répondre « de mon compte courant » ou « d'ailleurs » ne doit **jamais**
+    changer le patrimoine : l'argent est déjà compté, dans les titres qu'il a
+    achetés. La réponse ne fait que nommer son origine. Pour cela, chaque
+    versement est daté **la veille de l'achat** qu'il finance : rejoué dans
+    l'ordre, il est consommé par cet achat, l'apport implicite disparaît, et les
+    espèces restent ce qu'elles étaient. (La veille et non le jour même : à date
+    égale, le rejeu du compte-titres range les opérations par ordre de saisie, et
+    un versement saisi après l'achat passerait derrière lui.)
+
+    Le serveur recalcule lui-même ce qui reste à expliquer, sous verrou. Si cela
+    ne correspond pas à ce que l'écran montrait — deuxième clic, autre onglet —
+    rien n'est écrit (`ExplicationPerimee`). Une fois écrit, les achats sont
+    couverts et la question disparaît : un second envoi ne trouve plus rien.
+
+    L'état du budget voyage avec : il porte, pour « de mon compte courant », les
+    sorties du compte courant correspondantes. Tout est écrit ensemble ou rien.
+    """
+    if origine not in (ORIGINE, ORIGINE_EXTERNE):
+        raise ValueError(f"origine inattendue : {origine}")
+    maintenant = datetime.now().isoformat(timespec="seconds")
+    conn, existe, actuelle = _ouvrir_transaction(username, version_attendue)
+    try:
+        pf = portefeuille if portefeuille is not None else portefeuille_unique(conn, username)
+        if pf is None:
+            raise PasserelleIndisponible(
+                "Plusieurs portefeuilles existent : précisez lequel est concerné.")
+        trous = achats_a_decouvert(_operations(conn, username, pf))
+        vus = {(int(a["achat_id"]), round(float(a["montant_eur"]), 2)) for a in attendus}
+        reels = {(t["achat_id"], t["montant_eur"]) for t in trous}
+        if not trous or vus != reels:
+            raise ExplicationPerimee(trous)
+
+        crees = []
+        for t in trous:
+            vid = identifiant_apport(t["achat_id"])
+            if _depot_existant(conn, username, reference(vid)) is not None:
+                continue
+            jour = _veille(t["date"])
+            conn.execute(
+                "INSERT INTO operations (portefeuille_id, username, date, type, montant_eur,"
+                " commentaire, saisi_le, origine) VALUES (?,?,?,?,?,?,?,?)",
+                (pf, username, jour, "DEPOT", t["montant_eur"], reference(vid),
+                 maintenant, origine))
+            crees.append({"id": vid, "date": jour, "montant_eur": t["montant_eur"]})
+
+        # Contrôle avant de valider : plus rien à découvert. Si ce n'était pas le
+        # cas, le patrimoine aurait bougé — on préfère ne rien écrire.
+        restant = achats_a_decouvert(_operations(conn, username, pf))
+        if restant:
+            raise ExplicationPerimee(restant)
+
+        nouvelle = _ecrire_etat(conn, username, etat, existe, actuelle, maintenant)
+        conn.commit()
+        return {"version": nouvelle, "apports": crees, "portefeuille": pf}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# ── Annuler un virement ─────────────────────────────────────────────────────
+def annuler_virement(username: str, etat: dict, version_attendue: int,
+                     virement_id: str) -> dict:
+    """Retire un virement des deux côtés, en une transaction.
+
+    L'état du budget arrive déjà débarrassé de sa ligne (s'il en avait une) ; le
+    mouvement d'espèces du compte-titres est supprimé ici. Supprimer la ligne du
+    budget sans le versement laissait l'argent dans le compte-titres : le
+    patrimoine montait d'autant.
+
+    Annuler un versement qui expliquait un achat fait simplement réapparaître la
+    question : l'achat redevient à découvert, rien n'est perdu.
+    """
+    maintenant = datetime.now().isoformat(timespec="seconds")
+    conn, existe, actuelle = _ouvrir_transaction(username, version_attendue)
+    try:
+        n = _retirer_mouvement(conn, username, reference(virement_id))
+        nouvelle = _ecrire_etat(conn, username, etat, existe, actuelle, maintenant)
+        conn.commit()
+        return {"version": nouvelle, "supprimes": n}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 # ── Écriture ────────────────────────────────────────────────────────────────
 def virer(username: str, etat: dict, version_attendue: int,
           virement_id: str, date: str, montant_eur: float,
           portefeuille: Optional[int] = None, sens: str = "DEPOT",
-          origine: str = ORIGINE) -> dict:
+          origine: str = ORIGINE, remplace: Optional[str] = None) -> dict:
     """Enregistre, en une seule transaction, l'état du budget et le mouvement d'espèces.
 
     `sens` vaut DEPOT (le budget alimente le compte-titres) ou RETRAIT
     (l'utilisateur rapatrie des espèces sur son compte courant).
+
+    `remplace` est l'identifiant d'un virement que celui-ci corrige : son
+    mouvement d'espèces est retiré dans la même transaction. Sans cela, modifier
+    un virement depuis le budget laissait l'ancien versement en place dans le
+    compte-titres, et l'argent y était compté deux fois.
 
     Renvoie la nouvelle version de l'état du budget, l'identifiant de l'opération
     créée, et `deja_enregistre` si ce virement avait déjà été écrit.
@@ -145,7 +342,6 @@ def virer(username: str, etat: dict, version_attendue: int,
     if not (montant_eur > 0):
         raise ValueError("le montant d'un virement doit être strictement positif")
 
-    texte = json.dumps(etat, ensure_ascii=False, separators=(",", ":"))
     maintenant = datetime.now().isoformat(timespec="seconds")
     ref = reference(virement_id)
 
@@ -171,6 +367,9 @@ def virer(username: str, etat: dict, version_attendue: int,
             raise PasserelleIndisponible(
                 "Plusieurs portefeuilles existent : précisez lequel reçoit les virements.")
 
+        if remplace and remplace != virement_id:
+            _retirer_mouvement(conn, username, reference(remplace))
+
         # Idempotence : ce virement a-t-il déjà donné lieu à une opération ?
         deja = _depot_existant(conn, username, ref)
         if deja is None:
@@ -183,17 +382,7 @@ def virer(username: str, etat: dict, version_attendue: int,
         else:
             operation_id = deja
 
-        nouvelle = actuelle + 1
-        if row:
-            conn.execute("UPDATE banque_etats SET etat=?, version=?, maj_le=? WHERE username=?",
-                         (texte, nouvelle, maintenant, username))
-        else:
-            # Colonnes nommées : banque_db insère par position, et une colonne
-            # ajoutée là-bas ferait ici une erreur de contrainte plutôt qu'un
-            # décalage silencieux.
-            conn.execute("INSERT INTO banque_etats (username, etat, version, maj_le, cree_le) "
-                         "VALUES (?,?,?,?,?)",
-                         (username, texte, nouvelle, maintenant, maintenant))
+        nouvelle = _ecrire_etat(conn, username, etat, row is not None, actuelle, maintenant)
         conn.commit()
         return {"version": nouvelle, "operation_id": operation_id,
                 "portefeuille": pf, "deja_enregistre": deja is not None}
@@ -227,15 +416,7 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
     try:
         _verifier_schema(conn)
         pf = portefeuille if portefeuille is not None else portefeuille_unique(conn, username)
-        if pf is None:
-            rows = conn.execute(
-                "SELECT * FROM operations WHERE username=? ORDER BY date, id",
-                (username,)).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM operations WHERE username=? AND portefeuille_id=? ORDER BY date, id",
-                (username, pf)).fetchall()
-        operations: List[dict] = [dict(r) for r in rows]
+        operations = _operations(conn, username, pf)
     finally:
         conn.close()
 
@@ -262,5 +443,17 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
         # une anomalie, c'est une question à poser. Déclarer le versement le fait
         # tomber à zéro, puisque l'achat n'est alors plus à découvert.
         "a_expliquer_eur": round(etat.apports_implicites_eur, 2),
+        "a_expliquer_detail": achats_a_decouvert(operations),
+        # Tous les mouvements d'espèces, pour pouvoir les relire et annuler ceux
+        # que la passerelle a écrits. `virement_id` est nul pour un versement saisi
+        # dans le compte-titres lui-même : celui-là se corrige là-bas.
+        "mouvements": [{
+            "operation_id": o["id"], "date": o["date"], "type": o["type"],
+            "montant_eur": round(float(o.get("montant_eur") or 0), 2),
+            "origine": o.get("origine") or None,
+            "virement_id": (o.get("commentaire") or "")[len(PREFIXE):]
+                           if (o.get("commentaire") or "").startswith(PREFIXE) else None,
+            "saisi_le": o.get("saisi_le"),
+        } for o in operations if o["type"] in ("DEPOT", "RETRAIT")],
         "nb_lignes": sum(1 for p in etat.positions.values() if p.quantite > 1e-9),
     }

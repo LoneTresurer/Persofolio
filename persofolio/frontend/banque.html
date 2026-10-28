@@ -99,6 +99,7 @@
   .btn-lien { background: none; border: none; color: var(--foret); padding: 0; text-decoration: underline; }
   .btn-danger { border-color: var(--perte); background: transparent; color: var(--perte); }
   .btn-danger:hover { background: var(--perte-clair); }
+  .btn:disabled, .mini-btn:disabled { opacity: .55; cursor: progress; }
   .mini-btn { border: 1px solid var(--filet); background: var(--carte); border-radius: 6px; padding: 4px 10px; font-size: 13px; white-space: nowrap; text-decoration: none; }
   .mini-btn:hover { border-color: var(--foret); color: var(--foret); }
   .mini-btn.danger:hover { border-color: var(--perte); color: var(--perte); }
@@ -518,6 +519,9 @@ const CATEGORIES = {
   autre_rev:   { nom: 'Autres revenus',           sens: 'ENTREE', couleur: '#A8B2AB' },
   // Mouvement interne, jamais compté comme revenu ou dépense
   virement:    { nom: 'Virement entre comptes',   sens: 'INTERNE', couleur: '#2B5680' },
+  // Écart entre le solde suivi et le solde réel, rattrapé à la main. Ni revenu ni
+  // dépense : une erreur de suivi corrigée n'est pas de l'argent gagné ou perdu.
+  correction:  { nom: 'Correction de solde',      sens: 'INTERNE', couleur: '#8A9690' },
   // Ce que la lecture des relevés n'a pas su classer : visible, jamais deviné.
   inconnu:     { nom: 'Non catégorisé',           sens: 'TOUS',    couleur: '#C3CCC5' },
 };
@@ -921,6 +925,10 @@ function creerVirement(de, vers, montant, date, libelle, extra = {}) {
    vendre sans l'enregistrer, ou recevoir l'argent ailleurs. L'application dit ce
    qu'elle sait et le laisse décider. */
 async function virementPortefeuille(params) {
+  // Un double-clic sur « Effectuer le virement » en créerait deux, chacun avec son
+  // identifiant : le bouton reste inactif tant que le premier n'a pas abouti.
+  const bouton = $('#t-form button[type=submit]');
+  if (bouton) bouton.disabled = true;
   try {
     const r = await virerVersPortefeuille(params);
     fermerTiroir(); rafraichir();
@@ -929,9 +937,10 @@ async function virementPortefeuille(params) {
   } catch (e) {
     const d = e.detail;
     if (d && d.code === 'especes_insuffisantes') {
-      if (!confirm(`${d.message}\n\nEnregistrer ce rapatriement malgré tout ?`)) return;
+      if (!confirm(`${d.message}\n\nEnregistrer ce rapatriement malgré tout ?`)) { if (bouton) bouton.disabled = false; return; }
       return virementPortefeuille({ ...params, force: true });
     }
+    if (bouton) bouton.disabled = false;
     erreurTiroir(e.message);
   }
 }
@@ -948,35 +957,119 @@ async function virementPortefeuille(params) {
    le second travaillerait sur une version déjà périmée, se ferait refuser, et
    l'échéance serait perdue jusqu'au prochain chargement. */
 let chaineVirements = Promise.resolve();
+const copieEtat = () => JSON.parse(JSON.stringify(E));
 
-function virerVersPortefeuille(params) {
-  const suite = chaineVirements.then(() => _virer(params), () => _virer(params));
+/* Tout ce qui écrit des deux côtés passe par cette file : virements, annulations,
+   origine des apports. */
+function enFile(travail) {
+  const suite = chaineVirements.then(travail, travail);
   chaineVirements = suite.catch(() => {});        // un échec ne bloque pas la file
   return suite;
 }
 
-async function _virer({ sens, montant, date, libelle, extra = {}, origine = 'budget', force = false }) {
-  const lien = origine === 'externe'
-    ? uid()                                   // argent venu d'ailleurs : rien ne sort du budget
-    : creerVirement(sens === 'DEPOT' ? 'courant' : 'invest',
-                    sens === 'DEPOT' ? 'invest' : 'courant',
-                    montant, date, libelle, extra);
-  const avant = JSON.parse(JSON.stringify(E));
+function virerVersPortefeuille(params) { return enFile(() => _virer(params)); }
+
+/* Envoie l'état du budget avec une écriture du compte-titres. `avant` est l'état
+   à restaurer si le serveur refuse : il n'a alors rien écrit, ni d'un côté ni de
+   l'autre. */
+async function ecrirePasserelle(chemin, corps, avant) {
   try {
     await attendreEnvois();                   // pas d'enregistrement ordinaire en vol
-    const r = await api('/banque/virement', {
-      method: 'POST',
-      body: JSON.stringify({ etat: E, version: VERSION, id: lien, date,
-                             montant_eur: montant, sens, origine, force }),
-    });
+    const r = await api(chemin, { method: 'POST',
+      body: JSON.stringify({ etat: E, version: VERSION, ...corps }) });
     VERSION = r.version;
     indiquerSauvegarde('ok');
     await chargerInvestissement();
     return r;
   } catch (e) {
-    E = avant;                                // le serveur n'a rien écrit : on revient en arrière
+    E = avant;
     throw e;
   }
+}
+
+/* `remplace` : identifiant du virement que celui-ci corrige. Le serveur retire
+   l'ancien versement dans la même transaction ; sans cela, modifier un virement
+   laissait l'ancien dans le compte-titres et l'argent y comptait deux fois.
+   `avant` : l'état d'avant la modification, si l'appelant a déjà retiré des lignes. */
+async function _virer({ sens, montant, date, libelle, extra = {}, origine = 'budget', force = false,
+                        remplace = null, avant = null }) {
+  const sauvegarde = avant || copieEtat();
+  if (remplace) retirerLignesVirement(remplace);
+  const lien = origine === 'externe'
+    ? uid()                                   // argent venu d'ailleurs : rien ne sort du budget
+    : creerVirement(sens === 'DEPOT' ? 'courant' : 'invest',
+                    sens === 'DEPOT' ? 'invest' : 'courant',
+                    montant, date, libelle, extra);
+  return ecrirePasserelle('/banque/virement',
+    { id: lien, date, montant_eur: montant, sens, origine, force, ...(remplace ? { remplace } : {}) },
+    sauvegarde);
+}
+
+/* Annule un virement des deux côtés : la ligne du budget et le versement du
+   compte-titres disparaissent ensemble. Supprimer la seule ligne du budget
+   laissait l'argent dans le compte-titres, et le patrimoine montait d'autant.
+
+   Une ligne de relevé importé qui avait été reconnue comme ce virement n'est pas
+   supprimée : elle retrouve sa catégorie d'origine. Elle a eu lieu. */
+function retirerLignesVirement(virementId) {
+  E.operations.filter(o => o.virementId === virementId && o.reclasse).forEach(o => {
+    o.categorie = o.reclasse.categorie; delete o.virementId; delete o.reclasse;
+  });
+  E.operations = E.operations.filter(o => o.virementId !== virementId);
+}
+
+function annulerVirement(virementId) {
+  return enFile(async () => {
+    const avant = copieEtat();
+    const lignes = E.operations.filter(o => o.virementId === virementId);
+    const occ = lignes.find(o => o.occurrence && !o.occurrence.endsWith(':recu'))?.occurrence;
+    if (occ) (E.ignorees = E.ignorees || []).push(occ);
+    retirerLignesVirement(virementId);
+    return ecrirePasserelle('/banque/virement/annuler', { id: virementId }, avant);
+  });
+}
+
+/* ── D'où venait l'argent des achats passés sans versement ? ───────────────
+   L'argent est déjà compté : il est dans les titres qu'il a achetés. Répondre à
+   la question ne fait que nommer son origine, et ne doit jamais changer le
+   patrimoine. Le serveur date chaque versement de la veille de l'achat qu'il
+   finance, et refuse d'écrire si ce que l'écran montrait n'est plus à jour : un
+   second clic ne trouve plus rien à expliquer.
+
+   Côté budget, « de mon compte courant » ne retire de l'argent du compte courant
+   que pour les achats faits **depuis le début du suivi**. Avant, le solde de
+   départ saisi ou importé en tient déjà compte : le retirer une seconde fois
+   ferait apparaître une perte qui n'a pas eu lieu. Et si le relevé importé porte
+   déjà la sortie correspondante, c'est elle qui devient le virement. */
+function expliquerApports(origine) {
+  return enFile(async () => {
+    const detail = INV?.a_expliquer_detail || [];
+    if (!detail.length) return { rien: true };
+    const avant = copieEtat();
+    const bilan = { retires: 0, reclasses: 0, anterieurs: 0 };
+    if (origine === 'budget') {
+      for (const t of detail) {
+        const vid = `apport-${t.achat_id}`, jour = decalerJours(t.date, -1);
+        if (E.operations.some(o => o.virementId === vid)) continue;
+        if (jour < E.creeLe) { bilan.anterieurs++; continue; }
+        const importee = E.operations.find(o => o.compte === 'courant' && !o.virementId
+          && CATEGORIES[o.categorie]?.sens !== 'INTERNE' && Math.abs(o.montant + t.montant_eur) < 0.005
+          && o.date <= t.date && o.date >= decalerJours(t.date, -10));
+        if (importee) {
+          importee.reclasse = { categorie: importee.categorie };
+          importee.categorie = 'virement'; importee.virementId = vid;
+          bilan.reclasses++; continue;
+        }
+        E.operations.push({ id: uid(), date: jour, compte: 'courant', montant: -t.montant_eur,
+          libelle: `Versement au compte-titres (achat${t.ticker ? ' ' + t.ticker : ''} du ${dateLongue(t.date)})`,
+          categorie: 'virement', virementId: vid });
+        bilan.retires++;
+      }
+    }
+    const r = await ecrirePasserelle('/banque/apports',
+      { origine, achats: detail.map(t => ({ achat_id: t.achat_id, montant_eur: t.montant_eur })) }, avant);
+    return { ...r, ...bilan };
+  });
 }
 
 /* Le compte courant se rejoue depuis ses opérations ; le compte investissement
@@ -994,7 +1087,7 @@ const affecteObjectifs = compte => (E?.objectifs || [])
   .filter(o => o.compte === compte).reduce((s, o) => s + o.affecte, 0);
 const detteTotale = (jusquA) => E.dettes.reduce((s, d) => s + etatDette(d, jusquA).capital, 0);
 const patrimoineNet = (jusquA) => soldeCompte('courant', jusquA) + soldeCompte('invest', jusquA) - detteTotale(jusquA);
-const estFlux = o => o.categorie !== 'virement';
+const estFlux = o => CATEGORIES[o.categorie]?.sens !== 'INTERNE';
 
 /* Occurrences à venir des opérations programmées (hors dettes soldées). */
 function echeancesAVenir(jours = 30) {
@@ -1925,6 +2018,8 @@ ${argent0(p.epargne)} − ${argent0(p.besoin * p.mois)} = ${argent0(p.libre)}`;
         <div class="aide">part de votre épargne libre que vous souhaitez investir</div></div>
     </div>
     ${verdict}
+    ${doublonsMouvements().size ? `<p class="note alerte" style="margin:14px 0 0">Des versements identiques ont été enregistrés le même jour
+      sur le compte-titres. Vérifiez-les dans <button class="btn-lien" type="button" onclick="compteVu='courant';ouvrirOnglet('comptes');document.getElementById('mouvements-titres')?.scrollIntoView()">Comptes</button>.</p>` : ''}
     ${INV && INV.a_expliquer_eur > 0.005 ? `
       <div class="repere" style="margin-top:16px">
         <div class="ligne"><strong>${argent(INV.a_expliquer_eur)} sont entrés dans votre compte-titres sans passer par votre budget</strong></div>
@@ -1943,14 +2038,26 @@ ${argent0(p.epargne)} − ${argent0(p.besoin * p.mois)} = ${argent0(p.libre)}`;
   };
   // Les deux réponses mènent au même enregistrement ; seule l'origine change,
   // et avec elle le fait que cet argent compte ou non comme de l'épargne investie.
+  // Les boutons se désactivent au premier clic. Le serveur, lui, refuse de toute
+  // façon une seconde réponse : c'est lui qui garantit qu'elle ne compte qu'une fois.
   const repondre = origine => async () => {
-    const montant = INV.a_expliquer_eur;
+    zone.querySelectorAll('#apport-courant, #apport-externe').forEach(b => { b.disabled = true; });
     try {
-      await virerVersPortefeuille({ sens: 'DEPOT', montant, date: AUJ, origine, force: true,
-                                    libelle: origine === 'budget' ? 'Virement vers le compte-titres' : 'Apport extérieur' });
+      const r = await expliquerApports(origine);
       rafraichir();
-      toast(origine === 'budget' ? 'Virement enregistré' : 'Apport extérieur enregistré');
-    } catch (e) { toast('Non enregistré : ' + e.message); }
+      if (r.rien) return;
+      const parts = [];
+      if (r.retires) parts.push(`${r.retires} virement${r.retires > 1 ? 's' : ''} ajouté${r.retires > 1 ? 's' : ''} au compte courant`);
+      if (r.reclasses) parts.push(`${r.reclasses} sortie${r.reclasses > 1 ? 's' : ''} du relevé reconnue${r.reclasses > 1 ? 's' : ''} comme virement`);
+      if (r.anterieurs) parts.push('achats antérieurs au début du suivi : votre solde de départ en tenait déjà compte');
+      toast(origine === 'budget'
+        ? `Origine enregistrée${parts.length ? ' — ' + parts.join(', ') : ''}.`
+        : 'Apport extérieur enregistré. Votre patrimoine ne change pas : cet argent était déjà compté dans vos titres.');
+    } catch (e) {
+      if (['deja_explique', 'explication_perimee'].includes(e.detail?.code)) await chargerInvestissement();
+      rafraichir();
+      toast(e.detail?.code ? e.message : 'Non enregistré : ' + e.message);
+    }
   };
   if ($('#apport-courant')) $('#apport-courant').onclick = repondre('budget');
   if ($('#apport-externe')) $('#apport-externe').onclick = repondre('externe');
@@ -2160,7 +2267,8 @@ function vueComptes() {
       Un virement d'ici y devient un versement, enregistré des deux côtés en même temps.</p>
     <div class="panneau">
       <div class="tete-panneau"><div><h2>Évolution du solde</h2><p class="sous-titre">Solde en fin de journée, sur les 120 derniers jours.</p></div>
-        <div style="text-align:right"><div class="discret">Solde actuel</div><div style="font-size:22px;font-weight:500">${argent(soldeCompte(compteVu))}</div></div></div>
+        <div style="text-align:right"><div class="discret">Solde actuel</div><div style="font-size:22px;font-weight:500">${argent(soldeCompte(compteVu))}</div>
+          ${compteVu === 'courant' ? '<button class="btn-lien" type="button" id="btn-corriger-solde" style="font-size:13px">Corriger le solde</button>' : ''}</div></div>
       <div class="courbe"><canvas id="c-solde"></canvas></div>
     </div>
     <div class="panneau">
@@ -2176,6 +2284,7 @@ function vueComptes() {
           <td class="num">${r.detteId ? '<span class="discret">géré dans Dettes</span>' : `<button class="mini-btn" data-modif-prog="${r.id}">Modifier</button>`}</td></tr>`;
         }).join('')}</tbody></table>` : '<div class="vide"><p>Aucune opération programmée sur ce compte.</p></div>'}</div>
     </div>
+    ${panneauMouvements()}
     <div class="panneau">
       <h2>Opérations</h2>
       <div class="filtres" style="margin-top:10px">
@@ -2192,7 +2301,7 @@ function vueComptes() {
         <tbody>${visibles.slice(0, limiteOps).map((o, i, l) => `${i === 0 || moisDe(l[i - 1].date) !== moisDe(o.date) ? `<tr><td colspan="6" style="background:var(--papier);font-weight:500;text-transform:capitalize;padding:6px 10px">${libelleMois(moisDe(o.date))}</td></tr>` : ''}<tr>
           <td style="white-space:nowrap">${dateCourte(o.date)}</td>
           <td>${echap(o.libelle)} ${o.programmeeId ? '<span class="etiquette auto" title="Opération programmée">auto</span>' : ''}${o.anticipe ? ' <span class="etiquette">anticipé</span>' : ''}</td>
-          <td>${o.categorie === 'virement' || o.detteId ? `<span class="discret">${CATEGORIES[o.categorie].nom}</span>` :
+          <td>${CATEGORIES[o.categorie]?.sens === 'INTERNE' || o.detteId ? `<span class="discret">${CATEGORIES[o.categorie].nom}</span>` :
               `<select class="cat-inline" data-recat="${o.id}" aria-label="Catégorie">${(o.montant > 0 ? CATS_ENTREE : CATS_SORTIE.filter(c => c !== 'credit')).map(c => `<option value="${c}" ${c === o.categorie ? 'selected' : ''}>${CATEGORIES[c].nom}</option>`).join('')}</select>`}</td>
           <td class="num ${o.montant > 0 ? 'gain' : ''}">${argent(o.montant, true)}</td>
           <td class="num discret">${argent(soldeApres[o.id])}</td>
@@ -2214,6 +2323,8 @@ function vueComptes() {
   vue.querySelectorAll('[data-recat]').forEach(s => s.onchange = () => { E.operations.find(o => o.id === s.dataset.recat).categorie = s.value; sauver(); toast('Catégorie modifiée'); });
   vue.querySelectorAll('[data-modif-prog]').forEach(b => b.onclick = () => tiroirProgrammee(b.dataset.modifProg));
   $('#btn-prog').onclick = () => tiroirProgrammee();
+  if ($('#btn-corriger-solde')) $('#btn-corriger-solde').onclick = () => tiroirCorrection();
+  brancherMouvements(vue);
 
   // Courbe du solde
   const debut = [decalerJours(AUJ, -120), E.creeLe].sort().pop(), jours = [], soldes = [];
@@ -2228,6 +2339,113 @@ function vueComptes() {
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => argent(c.parsed.y) } } },
       scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: axeEuros() } },
   });
+}
+
+/* ── Mouvements d'espèces avec le compte-titres ────────────────────────────
+   Tout ce qui est entré dans le compte-titres ou en est sorti en espèces, relu
+   d'un coup d'œil, et annulable quand c'est le budget qui l'a écrit. C'est le
+   moyen de réparer une erreur sans toucher à la base : un versement en trop
+   s'annule ici, des deux côtés à la fois.
+
+   Deux versements identiques le même jour sont signalés, sans plus : on peut
+   très bien virer deux fois 100 € le même jour. L'application montre, elle ne
+   supprime rien d'elle-même. */
+function doublonsMouvements() {
+  const groupes = {};
+  (INV?.mouvements || []).forEach(m => {
+    const cle = `${m.date}|${m.type}|${m.montant_eur}|${m.origine}`;
+    (groupes[cle] = groupes[cle] || []).push(m.operation_id);
+  });
+  return new Set(Object.values(groupes).filter(g => g.length > 1).flat());
+}
+
+function panneauMouvements() {
+  const mv = [...(INV?.mouvements || [])].sort((a, b) => b.date.localeCompare(a.date) || b.operation_id - a.operation_id);
+  if (!mv.length) return '';
+  const doublons = doublonsMouvements();
+  const origine = m => !m.virement_id ? 'Saisi dans le compte-titres'
+    : m.origine === 'externe' ? 'Hors budget (héritage, autre compte)'
+    : m.type === 'RETRAIT' ? 'Vers le compte courant' : 'Depuis le compte courant';
+  return `<div class="panneau" id="mouvements-titres">
+      <div class="tete-panneau"><div><h2>Espèces échangées avec le compte-titres</h2>
+        <p class="sous-titre">Versements et retraits enregistrés côté compte-titres. Annuler retire l'opération des deux côtés à la fois.</p></div></div>
+      ${doublons.size ? `<p class="note alerte" style="margin:0 0 12px">${doublons.size} versements identiques ont été enregistrés le même jour.
+        Si vous n'avez fait qu'un seul virement, annulez les autres : chacun compte dans votre patrimoine.
+        S'ils répondaient à la question « d'où venait cet argent ? », annulez-les tous puis répondez-y de nouveau.</p>` : ''}
+      <div class="defile"><table>
+        <thead><tr><th>Date</th><th>Opération</th><th>Origine</th><th class="num">Montant</th><th></th></tr></thead>
+        <tbody>${mv.map(m => `<tr>
+          <td style="white-space:nowrap">${dateLongue(m.date)}</td>
+          <td>${m.type === 'DEPOT' ? 'Versement' : 'Retrait'}${m.virement_id?.startsWith('apport-') ? ' <span class="etiquette" title="Versement déclaré pour un achat passé sans virement enregistré">achat passé</span>' : ''}${doublons.has(m.operation_id) ? ' <span class="etiquette" style="background:var(--perte-clair);color:var(--perte)">doublon probable</span>' : ''}</td>
+          <td class="discret">${origine(m)}</td>
+          <td class="num ${m.type === 'DEPOT' ? 'gain' : ''}">${argent(m.type === 'DEPOT' ? m.montant_eur : -m.montant_eur, true)}</td>
+          <td class="num">${m.virement_id ? `<button class="mini-btn" data-annuler-vir="${echap(m.virement_id)}" data-montant="${m.montant_eur}" data-apport="${m.virement_id.startsWith('apport-') ? 1 : ''}">Annuler</button>` : '<span class="discret">se corrige dans le compte-titres</span>'}</td>
+        </tr>`).join('')}</tbody></table></div>
+    </div>`;
+}
+
+function brancherMouvements(racine) {
+  racine.querySelectorAll('[data-annuler-vir]').forEach(b => b.onclick = async () => {
+    const vid = b.dataset.annulerVir, montant = argent(+b.dataset.montant);
+    const lignes = E.operations.filter(o => o.virementId === vid);
+    const question = b.dataset.apport
+      ? `Annuler l'origine déclarée pour cet achat (${montant}) ?\n\nL'achat redeviendra « à expliquer ». `
+        + (lignes.length ? 'La sortie correspondante du compte courant sera retirée.' : 'Votre patrimoine ne change pas.')
+      : `Annuler ce mouvement de ${montant} ?\n\nIl sera retiré du compte-titres`
+        + (lignes.length ? ', et la ligne correspondante du compte courant avec lui.' : '. Aucune ligne du compte courant ne lui correspond.');
+    if (!confirm(question)) return;
+    racine.querySelectorAll('[data-annuler-vir]').forEach(x => { x.disabled = true; });
+    try {
+      await annulerVirement(vid);
+      toast('Mouvement annulé, des deux côtés');
+    } catch (e) { toast('Non annulé : ' + e.message); }
+    rafraichir();
+  });
+}
+
+/* Corriger le solde du compte courant. Quand le solde suivi ici s'écarte de celui
+   de la banque — une opération oubliée, une erreur de saisie — l'utilisateur
+   donne le solde réel et l'écart s'inscrit comme une ligne visible, datée
+   d'aujourd'hui. Pas de solde de départ réécrit en silence : la correction se
+   voit, se relit, se supprime. Elle ne compte ni comme revenu ni comme dépense. */
+function tiroirCorrection(op = null) {
+  const suivi = arrondi(soldeCompte('courant') - (op ? op.montant : 0));
+  ouvrirTiroir(`${enteteTiroir(op ? 'Correction de solde' : 'Corriger le solde du compte courant')}
+    <div id="t-erreur" class="erreur cache"></div>
+    <p class="discret" style="margin:0 0 14px">Indiquez le solde que votre banque affiche aujourd'hui. L'écart avec le solde suivi ici
+      s'inscrit comme une correction datée du ${dateLongue(op ? op.date : AUJ)} : ni revenu ni dépense, elle n'entre dans aucune statistique.</p>
+    <form id="c-form">
+      <div class="deux-col">
+        <div class="champ"><label>Solde suivi${op ? ', hors correction' : ''}</label><div style="padding:8px 0;font-weight:500">${argent(suivi)}</div></div>
+        <div class="champ"><label for="c-reel">Solde réel</label><input id="c-reel" inputmode="decimal" required value="${op ? arrondi(suivi + op.montant) : ''}"></div>
+      </div>
+      <p class="note" id="c-ecart" style="margin:0 0 14px">${op ? `Correction actuelle : ${argent(op.montant, true)}` : 'Saisissez le solde réel pour voir l\'écart.'}</p>
+      <div class="actions-tiroir"><button class="btn" type="submit">Enregistrer la correction</button>
+        ${op ? '<button class="btn btn-danger" type="button" id="c-suppr">Supprimer la correction</button>' : ''}</div>
+    </form>`);
+  const ecart = () => arrondi(lireNombre($('#c-reel').value) - suivi);
+  $('#c-reel').oninput = () => {
+    const e = ecart();
+    $('#c-ecart').textContent = Math.abs(e) < 0.005 ? 'Aucun écart : le solde suivi est juste.' : `Écart à corriger : ${argent(e, true)}`;
+  };
+  $('#c-form').onsubmit = ev => {
+    ev.preventDefault();
+    if ($('#c-reel').value.trim() === '') return erreurTiroir('Indiquez le solde réel.');
+    const e = ecart();
+    if (op) {
+      if (Math.abs(e) < 0.005) E.operations = E.operations.filter(o => o.id !== op.id);
+      else op.montant = e;
+    } else {
+      if (Math.abs(e) < 0.005) { fermerTiroir(); return toast('Aucun écart : rien à corriger'); }
+      E.operations.push({ id: uid(), date: AUJ, compte: 'courant', montant: e, libelle: 'Correction du solde',
+                          categorie: 'correction', correction: true });
+    }
+    sauver(); fermerTiroir(); rafraichir(); toast('Solde corrigé');
+  };
+  if ($('#c-suppr')) $('#c-suppr').onclick = () => {
+    E.operations = E.operations.filter(o => o.id !== op.id);
+    sauver(); fermerTiroir(); rafraichir(); toast('Correction supprimée');
+  };
 }
 
 /* ═════════════ Onglet 3 : Budget ═════════════ */
@@ -3300,6 +3518,7 @@ const optionsComptes = sel => Object.entries(COMPTES).map(([k, c]) => `<option v
 /* Opération ponctuelle : dépense, revenu ou virement. */
 function tiroirOperation({ id, type, compte } = {}) {
   const op = id ? E.operations.find(o => o.id === id) : null;
+  if (op?.correction) return tiroirCorrection(op);
   let t = op ? (op.categorie === 'virement' ? 'VIREMENT' : op.montant > 0 ? 'REVENU' : 'DEPENSE') : (type || 'DEPENSE');
   let de = compte || 'courant';
   if (op?.virementId) de = E.operations.find(o => o.virementId === op.virementId && o.montant < 0).compte;
@@ -3337,16 +3556,18 @@ function tiroirOperation({ id, type, compte } = {}) {
         if (op) {
           const envoi = E.operations.find(o => o.virementId === op.virementId && o.montant < 0);
           if (envoi?.occurrence) garde = { occurrence: envoi.occurrence, programmeeId: envoi.programmeeId };
-          E.operations = E.operations.filter(o => o.virementId !== op.virementId);
         }
         if (versLePortefeuille(a, b)) {
           // Vers le compte-titres : les deux écritures partent ensemble, et la
-          // réponse du serveur peut demander une confirmation.
+          // réponse du serveur peut demander une confirmation. Une modification
+          // remplace l'ancien versement dans la même transaction.
           virementPortefeuille({ sens: a === 'courant' ? 'DEPOT' : 'RETRAIT', montant,
                                  date: garde.occurrence ? op.date : date,
-                                 libelle: libelle || null, extra: garde });
+                                 libelle: libelle || null, extra: garde,
+                                 remplace: op?.virementId || null });
           return;
         }
+        if (op) E.operations = E.operations.filter(o => o.virementId !== op.virementId);
         creerVirement(a, b, montant, garde.occurrence ? op.date : date, libelle || null, garde);
       } else if (op) {
         if (!op.detteId) { op.montant = t === 'REVENU' ? montant : -montant; op.libelle = libelle || op.libelle; op.date = op.programmeeId ? op.date : date; }
@@ -3358,8 +3579,17 @@ function tiroirOperation({ id, type, compte } = {}) {
       sauver(); fermerTiroir(); rafraichir();
       toast(op ? 'Opération modifiée' : t === 'VIREMENT' ? 'Virement effectué' : t === 'REVENU' ? 'Revenu ajouté' : 'Dépense ajoutée');
     };
-    if ($('#t-suppr')) $('#t-suppr').onclick = () => {
+    if ($('#t-suppr')) $('#t-suppr').onclick = async () => {
       if (op.programmeeId && !confirm('Cette échéance programmée ne sera pas recréée ce mois-ci. Supprimer ?')) return;
+      if (op.virementId) {
+        // Un virement vit des deux côtés : on l'annule des deux côtés à la fois.
+        $('#t-suppr').disabled = true;
+        try {
+          await annulerVirement(op.virementId);
+          fermerTiroir(); rafraichir(); toast('Virement annulé, des deux côtés');
+        } catch (e) { $('#t-suppr').disabled = false; erreurTiroir(e.message); }
+        return;
+      }
       // L'occurrence supprimée est mémorisée pour ne pas être re-postée au prochain chargement
       const occ = op.virementId ? E.operations.find(o => o.virementId === op.virementId && o.montant < 0)?.occurrence : op.occurrence;
       if (occ) (E.ignorees = E.ignorees || []).push(occ);

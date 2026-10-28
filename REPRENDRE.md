@@ -63,6 +63,8 @@ Chacun a été découvert en production ou en test, pas par raisonnement.
 | **Chart.js vient d'un CDN** | Hors ligne, `donut()` affiche « Aucune donnée » — le même message que pour des données réellement absentes. Trompeur dans un exécutable de bureau. Non corrigé : c'est leur code. |
 | **Le serveur d'essai n'est pas FastAPI** | Aucune session n'a jamais pu lancer `uvicorn` : pas de réseau pour `pip install`. Tout le frontend est testé contre un faux serveur Node. Ce qui est vérifié ici ne prouve rien sur le vrai serveur. |
 | **PyInstaller ne suit que les `import`** | Les fichiers de données — les pages web — doivent être déclarés dans le `.spec`, sinon l'exécutable démarre et sert une page blanche. |
+| **Un versement daté d'aujourd'hui ne couvre pas un achat passé** | Le rejeu du compte-titres trie par date puis par ordre de saisie. Un versement enregistré aujourd'hui pour « expliquer » un achat de 2025 passe *après* lui : l'apport implicite reste, et le versement s'ajoute aux espèces. C'était le bouton « d'où venait cet argent ? » : +4 085 € de patrimoine à chaque clic, et la question restait posée. Ces versements sont maintenant datés de la veille de l'achat, côté serveur. |
+| **Supprimer un virement côté budget seulement** | La ligne du compte courant disparaissait, le versement restait dans le compte-titres : le patrimoine montait d'autant. Même chose en *modifiant* un virement. Tout passe maintenant par `/banque/virement/annuler` ou `remplace`. |
 | **Deux écritures concurrentes** | Tout ce qui envoie l'état du budget porte un numéro de version. Deux envois simultanés et le second est refusé (409). Les virements s'enchaînent pour cette raison. |
 
 ---
@@ -84,6 +86,21 @@ documente en détail ; l'essentiel :
 - L'argent entré dans le portefeuille **sans passer par le budget** est une
   question posée à l'utilisateur, pas une anomalie : « de mon compte courant »
   (compte dans le taux d'épargne investie) ou « d'ailleurs » (n'y compte pas).
+- **Nommer l'origine d'un achat passé ne change jamais le patrimoine.**
+  L'argent est déjà compté dans les titres. `declarer_apports()` recalcule
+  sous verrou les achats à découvert, refuse d'écrire si l'écran n'était plus
+  à jour (un second clic ne trouve plus rien), et vérifie avant de valider que
+  plus rien n'est à découvert. « De mon compte courant » ne débite le courant
+  que pour un achat postérieur au début du suivi (`E.creeLe`) : avant, le
+  solde de départ en tient déjà compte. Si le relevé importé porte déjà la
+  sortie, c'est elle qui devient le virement (`reclasse` garde sa catégorie
+  pour une éventuelle annulation).
+- **Tout se répare depuis l'écran Comptes** : la liste « Espèces échangées
+  avec le compte-titres » annule n'importe quel versement écrit par le budget,
+  des deux côtés, et signale les doublons du même jour. « Corriger le solde »
+  inscrit l'écart avec le solde réel comme une ligne visible, catégorie
+  `correction` — ni revenu ni dépense (`estFlux` exclut tout ce qui est
+  `INTERNE`).
 - La **part de l'épargne investie** = virements partis du courant ÷ épargne
   libre, sur les mois civils complets. Jamais la valeur du portefeuille : elle
   monte avec le marché et afficherait un taux supérieur à 100 % sans qu'un euro
@@ -115,8 +132,15 @@ dernière fusion n'a demandé qu'un seul fichier résolu à la main.
 python outils/verifier_fusion.py     # 46 contrôles statiques
 python outils/dependances.py         # requirements.txt contre les imports réels
 python outils/verifier_bat.py construire.bat
+python outils/essai/essai_passerelle.py .   # 31 contrôles, vrai navigateur, vraie passerelle
 cd persofolio/backend && python -m py_compile main.py routes_*.py core/*.py agents/*.py
+python -m unittest tests.test_passerelle   # depuis persofolio/backend
 ```
+
+`outils/essai/` remplace le faux serveur Node : `serveur_essai.py` sert
+`banque.html` et appelle **les vraies fonctions** de `core/passerelle.py` et
+`core/banque_db.py`, sans FastAPI. Seule la couche FastAPI (pydantic,
+authentification) reste non testée ici.
 
 Et le contrôle qui vaut tous les autres : **le patrimoine de l'exemple doit
 afficher 1 150,86 €**. Il n'a pas bougé d'un centime à travers la fusion, le
@@ -146,7 +170,12 @@ Python qui lance la commande. Avec un environnement virtuel, c'est
 
 - **Le vrai serveur n'a jamais tourné.** Au premier `uvicorn`, vérifier que
   `/docs` liste à la fois `/compte/*`, `/banque/etat`,
-  `/banque/investissement` et `/banque/virement`.
+  `/banque/investissement`, `/banque/virement`, `/banque/virement/annuler` et
+  `/banque/apports`.
+- **Les bases déjà abîmées par l'ancien bouton** se réparent à la main, dans
+  Comptes : annuler *tous* les versements qu'il a écrits (datés du jour du
+  clic, signalés « doublon probable » s'il y en a plusieurs), puis répondre de
+  nouveau à la question.
 - **L'exécutable Windows n'a jamais été construit.** `construire.bat` est écrit
   et contrôlé statiquement, jamais exécuté.
 - **Les versements et retraits d'espèces** ont été retirés de la saisie du

@@ -10,6 +10,8 @@ Même authentification que le compte-titres : en-tête « Authorization: Bearer 
   POST   /banque/releves  lit des relevés PDF et renvoie une proposition d'import
   GET    /banque/investissement  espèces et prix de revient du compte-titres
   POST   /banque/virement      budget et compte-titres écrits en une transaction
+  POST   /banque/virement/annuler  retire un virement des deux côtés à la fois
+  POST   /banque/apports       nomme l'origine des achats passés sans versement
 
 La lecture des relevés ne modifie rien : elle renvoie ce qu'elle a compris, le
 navigateur le fait relire à l'utilisateur, et seul l'enregistrement de l'état
@@ -105,6 +107,9 @@ class VirementIn(BaseModel):
     #: Enregistrer malgré un avertissement. L'application décrit une situation,
     #: elle ne la corrige pas à la place de l'utilisateur.
     force: bool = False
+    #: Identifiant du virement que celui-ci corrige : son versement est retiré
+    #: dans la même transaction, sinon l'argent serait compté deux fois.
+    remplace: Optional[str] = Field(default=None, min_length=6, max_length=64)
 
     @field_validator("montant_eur")
     @classmethod
@@ -155,7 +160,7 @@ def virer(corps: VirementIn, user: str = Depends(utilisateur_courant)):
     try:
         r = passerelle.virer(user, corps.etat, corps.version, corps.id,
                              corps.date, corps.montant_eur, sens=corps.sens,
-                             origine=corps.origine)
+                             origine=corps.origine, remplace=corps.remplace)
     except passerelle.ConflitVersion as e:
         raise HTTPException(status_code=409, detail={
             "message": "Vos données ont été modifiées depuis un autre onglet ou appareil.",
@@ -168,6 +173,66 @@ def virer(corps: VirementIn, user: str = Depends(utilisateur_courant)):
         r["avertissement"] = avertissement
     return r
 
+
+class AnnulationIn(BaseModel):
+    """L'état du budget sans la ligne du virement, et l'identifiant à retirer."""
+    etat: Dict[str, Any]
+    version: int = Field(ge=0)
+    id: str = Field(min_length=6, max_length=64)
+
+
+@router.post("/banque/virement/annuler")
+def annuler_virement(corps: AnnulationIn, user: str = Depends(utilisateur_courant)):
+    corps.etat["utilisateur"] = user
+    try:
+        return passerelle.annuler_virement(user, corps.etat, corps.version, corps.id)
+    except passerelle.ConflitVersion as e:
+        raise HTTPException(status_code=409, detail={
+            "message": "Vos données ont été modifiées depuis un autre onglet ou appareil.",
+            "version": e.version_actuelle})
+    except passerelle.PasserelleIndisponible as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+class AchatADecouvert(BaseModel):
+    achat_id: int
+    montant_eur: float = Field(gt=0)
+
+
+class ApportsIn(BaseModel):
+    """Réponse à « d'où venait cet argent ? ».
+
+    `achats` est ce que l'écran montrait : le serveur le compare à ce qu'il
+    recalcule sous verrou, et n'écrit rien si les deux diffèrent. C'est ce qui
+    rend le bouton inoffensif au deuxième clic.
+    """
+    etat: Dict[str, Any]
+    version: int = Field(ge=0)
+    origine: str = Field(pattern="^(budget|externe)$")
+    achats: List[AchatADecouvert] = Field(min_length=1, max_length=500)
+
+
+@router.post("/banque/apports")
+def declarer_apports(corps: ApportsIn, user: str = Depends(utilisateur_courant)):
+    corps.etat["utilisateur"] = user
+    try:
+        return passerelle.declarer_apports(
+            user, corps.etat, corps.version, corps.origine,
+            [a.model_dump() for a in corps.achats])
+    except passerelle.ExplicationPerimee as e:
+        raise HTTPException(status_code=409, detail={
+            "code": "deja_explique" if not e.restant else "explication_perimee",
+            "message": ("Cet argent a déjà été expliqué." if not e.restant else
+                        "Le montant à expliquer a changé entre-temps. L'écran a été mis à jour."),
+            "restant": e.restant})
+    except passerelle.ConflitVersion as e:
+        raise HTTPException(status_code=409, detail={
+            "message": "Vos données ont été modifiées depuis un autre onglet ou appareil.",
+            "version": e.version_actuelle})
+    except passerelle.PasserelleIndisponible as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # ─────────────────────── Lecture de relevés bancaires ───────────────────────
 
