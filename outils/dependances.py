@@ -34,7 +34,7 @@ BACKEND = RACINE / "persofolio" / "backend"
 IGNORES = {"archive_optimiseur", "__pycache__", "tests", ".venv-build"}
 
 # Modules locaux du projet : ce ne sont pas des dépendances externes.
-LOCAUX = {"core", "agents", "main", "routes_portefeuille", "routes_banque", "lanceur"}
+LOCAUX = {"core", "agents", "main", "routes_portefeuille", "routes_banque", "lanceur", "essai_bureau"}
 
 # Nom sur PyPI quand il diffère du nom importé.
 PAQUET = {
@@ -44,6 +44,7 @@ PAQUET = {
     "rapidocr_onnxruntime": "rapidocr-onnxruntime",
     "fitz": "pymupdf",
     "dateutil": "python-dateutil",
+    "webview": "pywebview",
 }
 
 # Déclarés sans être importés directement, et c'est normal : ce sont des
@@ -51,7 +52,12 @@ PAQUET = {
 INDIRECTS = {
     "python-multipart": "FastAPI s'en sert pour recevoir les fichiers déposés",
     "uvicorn": "serveur, lancé par lanceur.py ou en ligne de commande",
+    "pyinstaller": "outil de construction (requirements-bureau.txt)",
 }
+
+#: Les deux fichiers sont lus ensemble : requirements-bureau.txt complète
+#: requirements.txt pour l'application de bureau (fenêtre native, construction).
+FICHIERS = ("requirements.txt", "requirements-bureau.txt")
 
 
 def imports_du_code() -> dict[str, set[str]]:
@@ -86,9 +92,11 @@ def imports_du_code() -> dict[str, set[str]]:
 def declares() -> tuple[set[str], set[str]]:
     """Paquets actifs, et paquets mis en commentaire."""
     actifs, commentes = set(), set()
-    for ligne in (BACKEND / "requirements.txt").read_text(encoding="utf-8").splitlines():
+    lignes = [l for f in FICHIERS if (BACKEND / f).is_file()
+              for l in (BACKEND / f).read_text(encoding="utf-8").splitlines()]
+    for ligne in lignes:
         nu = ligne.strip()
-        if not nu:
+        if not nu or nu.startswith("-r"):
             continue
         cible = commentes if nu.startswith("#") else actifs
         nu = nu.lstrip("#").strip()

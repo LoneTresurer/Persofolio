@@ -1,8 +1,12 @@
 @echo off
 rem ===========================================================================
-rem  construire.bat - fabrique PersoFolio.exe
+rem  construire.bat - fabrique PersoFolio pour Windows, sur cette machine
 rem
 rem  A lancer sur une machine Windows, par un double-clic.
+rem
+rem  Sert aux essais locaux. La version a distribuer (installateur Windows et
+rem  application Mac) est fabriquee par GitHub Actions : onglet "Actions" du
+rem  depot, "Construire PersoFolio", "Run workflow".
 rem
 rem  Le script installe tout ce dont il a besoin dans un dossier isole
 rem  (.venv-build) sans rien changer au Python de la machine.
@@ -19,7 +23,7 @@ setlocal
 cd /d "%~dp0"
 
 echo.
-echo   PersoFolio - construction de l'executable Windows
+echo   PersoFolio - construction de l'application Windows
 echo   =================================================
 echo.
 
@@ -152,7 +156,7 @@ echo   Installation des bibliotheques. C'est la partie longue.
 echo.
 "%PYV%" -m pip install --upgrade pip --quiet --disable-pip-version-check
 
-"%PYV%" -m pip install -r "persofolio\backend\requirements.txt" --disable-pip-version-check
+"%PYV%" -m pip install -r "persofolio\backend\requirements-bureau.txt" --disable-pip-version-check
 if errorlevel 1 (
     echo.
     echo   [ECHEC] Une bibliotheque n'a pas pu etre installee.
@@ -163,13 +167,6 @@ if errorlevel 1 (
     echo.
     echo   Sinon, une coupure reseau suffit a le provoquer : relancez ce
     echo   fichier, la reprise est rapide, rien n'est retelecharge en vain.
-    exit /b 1
-)
-
-"%PYV%" -m pip install pyinstaller --disable-pip-version-check
-if errorlevel 1 (
-    echo.
-    echo   [ECHEC] PyInstaller n'a pas pu etre installe.
     exit /b 1
 )
 
@@ -188,29 +185,27 @@ if not "%CODE%"=="0" (
     exit /b %CODE%
 )
 
-if not exist "dist\PersoFolio.exe" (
+if not exist "dist\PersoFolio\PersoFolio.exe" (
     echo.
     echo   [ECHEC] PyInstaller s'est termine sans erreur, mais
-    echo   dist\PersoFolio.exe n'existe pas. C'est anormal : signalez-le.
+    echo   dist\PersoFolio\PersoFolio.exe n'existe pas. C'est anormal : signalez-le.
     exit /b 1
 )
 
 rem --- 6. Resultat ------------------------------------------------------------
-set "TAILLE=?"
-for %%F in ("dist\PersoFolio.exe") do set /a TAILLE=%%~zF/1048576
-copy /y "LISEZ-MOI.txt" "dist\LISEZ-MOI.txt" >nul 2>&1
-
 echo.
 echo   =========================================================
-echo     Termine.   dist\PersoFolio.exe   (%TAILLE% Mo)
+echo     Termine.   dist\PersoFolio\PersoFolio.exe
 echo   =========================================================
 echo.
-echo   Essayez-le sur cette machine avant de le distribuer :
-echo     1. Double-cliquez dist\PersoFolio.exe
+echo   C'est un dossier, pas un fichier unique : PersoFolio.exe a besoin
+echo   de tout ce qui se trouve a cote de lui dans dist\PersoFolio.
+echo.
+echo   Essayez-le sur cette machine :
+echo     1. Double-cliquez dist\PersoFolio\PersoFolio.exe
 echo     2. Importez un releve bancaire PDF
-echo     3. Creez un compte, quittez, rouvrez : le compte doit etre la
+echo     3. Fermez la fenetre, rouvrez : vous devez etre encore connecte
 echo.
-echo   A envoyer avec LISEZ-MOI.txt (copie dans dist) : Windows affichera
-echo   un avertissement chez vos destinataires, ce fichier leur explique
-echo   quoi faire.
+echo   Pour distribuer l'application, utilisez plutot l'installateur
+echo   fabrique par GitHub Actions.
 exit /b 0

@@ -1,0 +1,127 @@
+# Construction de PersoFolio pour Windows et macOS.
+#
+# Lancement : onglet « Actions » du dépôt → « Construire PersoFolio » →
+# « Run workflow ». Chaque construction :
+#   1. passe les contrôles rapides (fusion, dépendances, tests, essai navigateur) ;
+#   2. construit l'application sur une vraie machine Windows et un vrai Mac ;
+#   3. la lance deux fois en mode d'essai, mesure ses temps de démarrage et
+#      photographie sa fenêtre ;
+#   4. met le résultat à disposition dans « Artifacts », en bas de la page.
+#
+# Le résumé (temps, contrôles, taille) s'affiche en haut de la page du lancement.
+# Les fichiers produits ici servent aux essais : ils demandent d'être connecté à
+# GitHub pour être téléchargés. La publication pour le grand public viendra avec
+# les « Releases ».
+
+name: Construire PersoFolio
+
+on:
+  workflow_dispatch:
+    inputs:
+      intel:
+        description: "Construire aussi pour les Mac à processeur Intel"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: construire-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  controles:
+    name: Contrôles
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: persofolio/backend/requirements*.txt
+      - name: Dépendances
+        run: |
+          python -m pip install -r persofolio/backend/requirements.txt
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Contrôles de fusion
+        run: python outils/verifier_fusion.py
+      - name: Dépendances déclarées
+        run: python outils/dependances.py
+      - name: Compilation
+        working-directory: persofolio/backend
+        run: python -m py_compile main.py lanceur.py essai_bureau.py routes_*.py core/*.py agents/*.py
+      - name: Tests de la passerelle
+        working-directory: persofolio/backend
+        run: python -m unittest tests.test_passerelle -v
+      - name: Essai dans le navigateur (hors ligne)
+        run: python outils/essai/essai_passerelle.py .
+
+  construire:
+    name: ${{ matrix.nom }}
+    needs: controles
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.intel && '[{"os":"windows-latest","nom":"Windows","arch":""},{"os":"macos-14","nom":"macOS (Apple)","arch":"arm64"},{"os":"macos-15-intel","nom":"macOS (Intel)","arch":"x86_64"}]' || '[{"os":"windows-latest","nom":"Windows","arch":""},{"os":"macos-14","nom":"macOS (Apple)","arch":"arm64"}]') }}
+    env:
+      PERSOFOLIO_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: persofolio/backend/requirements*.txt
+      - name: Dépendances
+        run: python -m pip install -r persofolio/backend/requirements-bureau.txt
+      - name: Version
+        shell: bash
+        run: echo "VERSION=$(tr -d '[:space:]' < persofolio/VERSION)" >> "$GITHUB_ENV"
+
+      - name: Construction
+        working-directory: persofolio/backend
+        run: python -m PyInstaller --noconfirm --clean --distpath ../../dist --workpath ../../build persofolio.spec
+
+      - name: Chemins (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "EXE=dist/PersoFolio/PersoFolio.exe" >> "$GITHUB_ENV"
+          echo "CONSTRUIT=dist/PersoFolio" >> "$GITHUB_ENV"
+      - name: Chemins (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "EXE=dist/PersoFolio.app/Contents/MacOS/PersoFolio" >> "$GITHUB_ENV"
+          echo "CONSTRUIT=dist/PersoFolio.app" >> "$GITHUB_ENV"
+          file dist/PersoFolio.app/Contents/MacOS/PersoFolio
+          codesign --verify --deep --verbose=2 dist/PersoFolio.app || true
+
+      - name: Essai de l'application construite
+        shell: bash
+        run: python outils/essai/lancer_essai_bureau.py "$EXE" essai "$CONSTRUIT"
+
+      - name: Archive (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/PersoFolio -DestinationPath "PersoFolio-$env:VERSION-windows.zip"
+      - name: Archive (macOS)
+        # ditto, pas zip : il garde les liens symboliques et la signature du .app.
+        if: always() && runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/PersoFolio.app "PersoFolio-$VERSION-macos-${{ matrix.arch }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PersoFolio-${{ env.VERSION }}-${{ runner.os }}-${{ matrix.arch || 'x64' }}
+          path: |
+            PersoFolio-*.zip
+            essai/
+          if-no-files-found: warn
+          retention-days: 14

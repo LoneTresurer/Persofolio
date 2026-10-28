@@ -1,0 +1,10 @@
+# Ce qu'il faut en plus pour fabriquer l'application de bureau (Windows, macOS).
+#
+# Lancer le serveur depuis les sources n'en a pas besoin : requirements.txt
+# suffit. Ce fichier sert à la construction (GitHub Actions, construire.bat).
+# Pour le vérifier : python outils/dependances.py
+
+-r requirements.txt
+
+pywebview>=5.3,<6              # fenêtre native : WebView2 (Windows), WKWebView (macOS)
+pyinstaller>=6.10,<7           # assemble l'exécutable et le .app

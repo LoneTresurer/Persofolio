@@ -9,12 +9,15 @@ Il y a deux situations, et elles ne demandent pas les mêmes chemins.
 rien ne change par rapport à avant. La base reste dans `backend/data/`, les
 pages dans `frontend/`, tout est à sa place dans le dépôt.
 
-**Depuis l'exécutable Windows** : PyInstaller déballe l'application dans un
-dossier temporaire qu'il efface à la fermeture. Y écrire la base reviendrait à
-perdre tous les comptes à chaque sortie — et si l'utilisateur a installé le
-programme dans `C:\\Program Files`, Windows refuserait même l'écriture. Les
-données vont donc dans `%LOCALAPPDATA%\\PersoFolio`, qui appartient à
-l'utilisateur, survit aux mises à jour et se sauvegarde avec son profil.
+**Depuis l'application de bureau** : le dossier du programme n'est pas fait pour
+recevoir des données — il est remplacé à chaque mise à jour, et le système peut
+en refuser l'écriture. Les données vont donc dans le dossier que chaque système
+réserve aux applications de l'utilisateur, qui survit aux mises à jour et se
+sauvegarde avec son profil :
+
+- Windows : `%LOCALAPPDATA%\\PersoFolio`
+- macOS : `~/Library/Application Support/PersoFolio`
+- Linux : `$XDG_DATA_HOME/PersoFolio`, à défaut `~/.local/share/PersoFolio`
 
 `PERSOFOLIO_DONNEES` force le dossier de données, quelle que soit la situation :
 utile pour les tests, et pour faire tourner deux jeux de comptes côte à côte.
@@ -40,6 +43,8 @@ def dossier_donnees() -> str:
     force = os.environ.get("PERSOFOLIO_DONNEES")
     if force:
         chemin = os.path.abspath(force)
+    elif GELE and sys.platform == "darwin":
+        chemin = os.path.join(os.path.expanduser("~"), "Library", "Application Support", APPLICATION)
     elif GELE:
         base = (os.environ.get("LOCALAPPDATA")                       # Windows
                 or os.environ.get("XDG_DATA_HOME")                   # Linux

@@ -111,9 +111,11 @@ en mémoire est toujours valable.
    <a class="mini-btn" href="index.html" style="text-decoration:none">Accueil</a>
    <a class="mini-btn" href="banque.html" style="text-decoration:none">Budget et comptes</a>
    ```
-3. L'adresse de l'API suit celle de la page :
+3. L'adresse de l'API suit celle de la page. L'équipe l'a depuis reprise dans sa
+   propre version, plus générale — n'importe quel port convient, ce qui compte pour
+   l'application de bureau, qui prend le premier port libre :
    ```js
-   const API = /:8000$/.test(location.host) ? location.origin : 'http://localhost:8000';
+   const API = location.protocol.startsWith('http') ? location.origin : 'http://localhost:8000';
    ```
 4. Sans jeton, on renvoie vers la connexion unique — dans `deconnecter()` et à la
    toute fin du script :
