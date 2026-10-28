@@ -131,4 +131,28 @@ if os.environ.get("GITHUB_STEP_SUMMARY"):
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
         f.write(resume + "\n")
 
+# ── Annotations GitHub ──────────────────────────────────────────────────────
+# Les journaux et les fichiers d'un lancement ne sont lisibles qu'avec un accès
+# complet à GitHub ; les annotations, elles, se lisent par l'API ordinaire. Le
+# résultat y est donc recopié, en clair : c'est ce qui permet de diagnostiquer
+# un échec sans ouvrir la page du lancement.
+def annotation(niveau: str, titre: str, texte: str) -> None:
+    texte = texte.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+    print(f"::{niveau} title={titre}::{texte}")
+
+
+if os.environ.get("GITHUB_ACTIONS"):
+    temps = " ; ".join(f"étape {e} : fenêtre {s(r, 'fenetre_s')}, serveur {s(r, 'serveur_s')}, "
+                       f"page {s(r, 'page_s')}" for e, r in (("1", r1), ("2", r2)))
+    annotation("notice", f"{nom} - temps", temps)
+    for e, r in (("1", r1), ("2", r2)):
+        if not r.get("ok"):
+            annotation("error", f"{nom} - étape {e}",
+                       "\n".join(r.get("erreurs") or ["échec sans détail"])
+                       + f"\ncode de sortie : {r.get('code_sortie')}")
+    if not (r1.get("ok") and r2.get("ok")) and os.path.exists(journal):
+        with open(journal, encoding="utf-8", errors="replace") as f:
+            fin = f.read()[-3500:]
+        annotation("error", f"{nom} - fin du journal", fin)
+
 sys.exit(0 if r1.get("ok") and r2.get("ok") else 1)
