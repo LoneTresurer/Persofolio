@@ -350,9 +350,8 @@ python -m uvicorn main:app --reload
    lancement avec Internet, vérifier la courbe des soldes, les deux camemberts à
    côté du Sankey, et qu'ils se redessinent bien aux couleurs du thème quand on
    bascule en sombre.
-3. **L'installation d'OCR.** `rapidocr-onnxruntime` télécharge ses modèles au
-   premier usage. Un relevé PDF ordinaire n'en a pas besoin ; seul un relevé
-   scanné y fait appel.
+3. **Les relevés scannés** sont refusés, des deux côtés, avec un message qui
+   l'explique. C'est voulu depuis le 27 octobre : voir le §6 ter.
 4. **Les données de marché** (`yfinance`) demandent Internet.
 
 ---

@@ -60,30 +60,20 @@ if not exist "persofolio\backend\persofolio.spec" (
 )
 
 rem --- 1. Python --------------------------------------------------------------
-rem La version la plus recente n'est PAS la bonne : rapidocr-onnxruntime, qui
-rem porte la lecture des releves scannes, n'est publie que jusqu'a Python 3.12
-rem inclus ("Requires-Python >=3.6,<3.13"). Sur 3.13 et au-dela, pip ne trouve
-rem rien et la construction s'arrete.
+rem Python 3.10 ou plus recent. La limite a 3.12 qui figurait ici venait de
+rem rapidocr-onnxruntime, retire le 27 octobre : c'etait le seul paquet a ne pas
+rem etre publie au-dela. Tout ce qui reste a des roues pour les versions
+rem recentes. Si l'OCR revient un jour, la limite revient avec lui.
 rem
-rem On cherche donc une version utilisable, de la plus recente a la plus
-rem ancienne, au lieu de prendre celle qui se presente. Une machine peut tres
-rem bien avoir 3.15 en premier dans le PATH et 3.12 installe a cote : c'est le
-rem cas courant, et c'est 3.12 qu'il faut.
+rem On essaie quand meme les versions nommees d'abord : sur une machine qui en a
+rem plusieurs, elles sont plus surement completes que ce que "python" designe.
 
 set "PY="
 set "VERSION="
 
-py -3.12 --version >nul 2>&1
-if not errorlevel 1 set "PY=py -3.12"
-if defined PY goto :python_trouve
-
-py -3.11 --version >nul 2>&1
-if not errorlevel 1 set "PY=py -3.11"
-if defined PY goto :python_trouve
-
-py -3.10 --version >nul 2>&1
-if not errorlevel 1 set "PY=py -3.10"
-if defined PY goto :python_trouve
+py -3 --version >nul 2>&1
+if not errorlevel 1 set "PY=py -3"
+if defined PY goto :python_verifie
 
 rem Aucune version nommee : le Python par defaut fera l'affaire s'il convient.
 python --version >nul 2>&1
@@ -95,7 +85,7 @@ if not errorlevel 1 set "PY=py"
 :python_verifie
 if not defined PY goto :pas_de_python
 rem Compatible ? Python repond mieux que findstr sur un numero de version.
-%PY% -c "import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] <= (3,12) else 1)" >nul 2>&1
+%PY% -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3,10) else 1)" >nul 2>&1
 if errorlevel 1 goto :python_incompatible
 
 :python_trouve
@@ -106,8 +96,7 @@ goto :python_ok
 :pas_de_python
 echo   [ECHEC] Python est introuvable sur cette machine.
 echo.
-echo   Installez Python 3.12 depuis :
-echo     https://www.python.org/downloads/release/python-3128/
+echo   Installez Python depuis https://www.python.org/downloads/
 echo   Prenez "Windows installer (64-bit)" et cochez "Add Python to PATH".
 echo   Fermez cette fenetre, puis relancez ce fichier.
 exit /b 1
@@ -116,15 +105,13 @@ exit /b 1
 for /f "tokens=2" %%V in ('%PY% --version 2^>^&1') do set "VERSION=%%V"
 echo   [ECHEC] Aucune version de Python utilisable n'a ete trouvee.
 echo.
-echo   La seule disponible ici est Python %VERSION%, et elle ne convient pas :
-echo   la lecture des releves scannes repose sur rapidocr-onnxruntime, qui
-echo   n'est publie que jusqu'a Python 3.12 inclus. Sur une version plus
-echo   recente, pip ne trouve simplement rien a installer.
+echo   La seule disponible ici est Python %VERSION%, trop ancienne : il faut
+echo   au moins Python 3.10.
 echo.
-echo   Installez Python 3.12 A COTE de celle-ci, sans la desinstaller :
-echo     https://www.python.org/downloads/release/python-3128/
-echo   Prenez "Windows installer (64-bit)". Les deux versions cohabitent
-echo   sans probleme, et ce script choisira la bonne tout seul.
+echo   Installez une version recente A COTE de celle-ci, sans la desinstaller :
+echo     https://www.python.org/downloads/
+echo   Prenez "Windows installer (64-bit)". Les versions cohabitent sans
+echo   probleme, et ce script choisira tout seul.
 echo.
 echo   Versions actuellement installees :
 py -0p 2>nul
@@ -139,7 +126,7 @@ set "PYV=%~dp0.venv-build\Scripts\python.exe"
 rem Un environnement laisse par une tentative precedente peut reposer sur une
 rem version de Python incompatible. On le verifie plutot que de le reutiliser.
 if not exist "%PYV%" goto :creer_env
-"%PYV%" -c "import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] <= (3,12) else 1)" >nul 2>&1
+"%PYV%" -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3,10) else 1)" >nul 2>&1
 if not errorlevel 1 goto :env_pret
 echo   L'environnement de construction existant repose sur une version de
 echo   Python incompatible. Il est supprime et refait.
@@ -179,23 +166,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-"%PYV%" -m pip install pyinstaller onnxruntime --disable-pip-version-check
+"%PYV%" -m pip install pyinstaller --disable-pip-version-check
 if errorlevel 1 (
     echo.
-    echo   [ECHEC] PyInstaller ou onnxruntime n'a pas pu etre installe.
-    echo   Si le message ci-dessus parle de version non trouvee, votre Python
-    echo   est trop recent : installez Python 3.11 ou 3.12.
-    exit /b 1
-)
-
-rem --- 4. Controle avant construction -----------------------------------------
-echo.
-echo   Verification de la reconnaissance optique...
-"%PYV%" -c "import rapidocr_onnxruntime, onnxruntime; print('   OCR disponible, onnxruntime ' + onnxruntime.__version__)"
-if errorlevel 1 (
-    echo.
-    echo   [ECHEC] La reconnaissance optique n'est pas disponible ; l'executable
-    echo   ne saurait pas lire un releve scanne. Construction interrompue.
+    echo   [ECHEC] PyInstaller n'a pas pu etre installe.
     exit /b 1
 )
 
@@ -233,7 +207,7 @@ echo   =========================================================
 echo.
 echo   Essayez-le sur cette machine avant de le distribuer :
 echo     1. Double-cliquez dist\PersoFolio.exe
-echo     2. Importez un releve SCANNE, pour verifier la lecture optique
+echo     2. Importez un releve bancaire PDF
 echo     3. Creez un compte, quittez, rouvrez : le compte doit etre la
 echo.
 echo   A envoyer avec LISEZ-MOI.txt (copie dans dist) : Windows affichera

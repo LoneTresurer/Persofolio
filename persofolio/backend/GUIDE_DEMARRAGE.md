@@ -48,18 +48,9 @@ disparaîtraient à chaque fermeture.
 
 ## Ce dont tu as besoin (à installer une seule fois)
 
-### 1. Python 3.10, 3.11 ou 3.12 — **pas plus récent**
-- Télécharger sur : https://www.python.org/downloads/release/python-3128/
+### 1. Python 3.10 ou plus récent
+- Télécharger sur : https://www.python.org/downloads/
 - Pendant l'installation : cocher la case « Add Python to PATH » ✓
-
-> **Pourquoi pas la dernière version ?** `rapidocr-onnxruntime`, qui lit les
-> relevés scannés, n'est publié que jusqu'à Python 3.12 inclus. Sur 3.13 ou
-> plus récent, pip ne trouve rien à installer et s'arrête.
->
-> Si vous avez déjà une version plus récente, **ne la désinstallez pas** :
-> installez 3.12 à côté, les deux cohabitent. `construire.bat` choisit la
-> bonne tout seul, et `py -3.12 -m uvicorn main:app --reload` lance le serveur
-> avec celle-là.
 
 ### 2. Les bibliothèques Python
 Ouvrir PowerShell dans le dossier `backend` et taper :
@@ -67,10 +58,10 @@ Ouvrir PowerShell dans le dossier `backend` et taper :
 pip install -r requirements.txt
 ```
 
-L'installation prend quelques minutes : elle comprend la lecture des PDF et la
-reconnaissance optique (`pypdf`, `pypdfium2`, `rapidocr-onnxruntime`), qui permet
-d'importer un relevé **scanné**. Un relevé PDF ordinaire n'en a pas besoin.
-RapidOCR télécharge ses modèles au premier relevé scanné lu, pas à l'installation.
+L'installation prend quelques minutes. Les relevés PDF sont lus par `pdfplumber`,
+qui lit la couche de texte que tout relevé téléchargé depuis une banque contient.
+Un relevé **scanné ou photographié** n'en a pas : il est refusé avec un message
+qui le dit.
 
 ---
 
@@ -150,7 +141,7 @@ backend/
 | « Session expirée » | Se reconnecter depuis la page d'accueil |
 | Les graphiques restent vides | Chart.js vient d'Internet : vérifier la connexion, ou recharger la page |
 | Les cours des titres ne s'affichent pas | `yfinance` interroge Yahoo Finance : Internet requis |
-| Un relevé scanné n'est pas lu | Premier usage : RapidOCR télécharge ses modèles, laisser le temps au premier import |
+| Un relevé scanné n'est pas lu | C'est attendu : téléchargez le relevé depuis le site de votre banque plutôt que d'en scanner la version papier |
 
 ---
 

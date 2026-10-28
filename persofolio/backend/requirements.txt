@@ -1,4 +1,8 @@
-# Python 3.10, 3.11 ou 3.12.
+# Python 3.10 ou plus récent, 3.15 compris.
+#
+# La limite à 3.12 qui figurait ici venait de rapidocr-onnxruntime, retiré le
+# 27 octobre : c'était le seul paquet à ne pas être publié au-delà. Tout ce qui
+# reste a des roues pour les versions récentes. La limite reviendrait avec lui.
 #
 # Cette liste est tenue au plus près de ce que le code importe réellement.
 # Pour la vérifier : python outils/dependances.py

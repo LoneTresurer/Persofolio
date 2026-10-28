@@ -11,13 +11,13 @@ l'usage, pas à la compilation.
 **Les pages web.** PyInstaller n'embarque que du code Python. `frontend/` est
 copié explicitement, sans quoi l'exécutable démarre et sert une page blanche.
 
-**La reconnaissance optique.** C'est le point fragile. `rapidocr_onnxruntime`
-range ses modèles (`.onnx`) et son `config.yaml` à côté de son code, et
-`onnxruntime` arrive avec ses propres DLL. PyInstaller ne suit que les `import` :
-il ne voit ni les modèles, ni les DLL, et produit un exécutable qui se construit
-sans erreur, démarre sans erreur, et ne tombe que le jour où quelqu'un dépose un
-relevé scanné. `collect_all` les ramasse ; le contrôle en fin de fichier vérifie
-qu'ils sont bien là plutôt que de le découvrir chez l'utilisateur.
+**La reconnaissance optique a été retirée** le 27 octobre : plus aucun module ne
+l'importe. Elle demandait un soin particulier ici — PyInstaller ne suit que les
+`import`, et laissait dehors les modèles `.onnx` et les DLL d'onnxruntime, ce qui
+donnait un exécutable qui se construisait et ne tombait qu'au premier relevé
+scanné. Si elle revient, c'est `collect_all("rapidocr_onnxruntime")` et
+`collect_all("onnxruntime")` qu'il faut remettre, avec un contrôle que les
+modèles sont bien embarqués.
 
 **Ce qu'on laisse dehors.** matplotlib, les tests et les outils de notebook
 entrent dans l'exécutable par la porte de derrière, via les dépendances de
@@ -27,7 +27,7 @@ pandas, et pèsent sans rien servir ici.
 import os
 import sys
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_submodules
 
 RACINE = os.path.abspath(os.path.dirname(SPEC))          # noqa: F821  (SPEC : fourni par PyInstaller)
 PROJET = os.path.dirname(RACINE)                          # persofolio/
@@ -36,18 +36,6 @@ FRONTEND = os.path.join(PROJET, "frontend")
 binaires = []
 donnees = [(FRONTEND, "frontend")]                        # servi par main.py via core.emplacements
 caches = []
-
-# ── Reconnaissance optique : modèles et DLL ─────────────────────────────────
-ocr_complet = True
-for paquet in ("rapidocr_onnxruntime", "onnxruntime"):
-    try:
-        d, b, c = collect_all(paquet)
-        donnees += d
-        binaires += b
-        caches += c
-    except Exception as e:                                # noqa: BLE001
-        ocr_complet = False
-        print(f"[persofolio.spec] ATTENTION — {paquet} introuvable : {e}")
 
 # ── Modules que PyInstaller ne devine pas ───────────────────────────────────
 caches += [
@@ -93,13 +81,11 @@ exe = EXE(                                                # noqa: F821
     version=None,
 )
 
-# ── Contrôle : l'OCR est-il réellement embarqué ? ───────────────────────────
-# Le seul moyen de ne pas livrer un exécutable qui tombera chez l'utilisateur.
-modeles = [d for d in a.datas if d[0].endswith(".onnx")]
-dll_ort = [b for b in a.binaries if "onnxruntime" in b[0].lower()]
-print(f"[persofolio.spec] modèles OCR embarqués : {len(modeles)}")
-print(f"[persofolio.spec] bibliothèques onnxruntime embarquées : {len(dll_ort)}")
-if not ocr_complet or not modeles:
-    print("[persofolio.spec] ÉCHEC — la reconnaissance optique ne serait pas fonctionnelle.")
-    print("[persofolio.spec] Vérifiez : pip install rapidocr-onnxruntime onnxruntime")
+# ── Contrôle : les pages sont-elles bien embarquées ? ───────────────────────
+# Sans elles l'exécutable démarre et sert une page blanche — l'erreur la plus
+# facile à ne pas voir avant de l'avoir distribuée.
+pages = [d for d in a.datas if d[0].replace("\\", "/").startswith("frontend/")]
+print(f"[persofolio.spec] fichiers d'interface embarqués : {len(pages)}")
+if not any(d[0].endswith("index.html") for d in pages):
+    print("[persofolio.spec] ÉCHEC — frontend/index.html absent du paquet.")
     sys.exit(1)
