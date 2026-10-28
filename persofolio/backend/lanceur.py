@@ -348,6 +348,9 @@ def ouvrir_fenetre_native(port: int, essai: str | None) -> int:
             fenetre.load_url(url)
 
     def fermeture():
+        if etat.get("ferme"):
+            return
+        etat["ferme"] = True
         log.info("fenêtre fermée")
         srv = etat.get("serveur")
         if srv is not None:

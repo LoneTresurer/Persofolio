@@ -128,9 +128,19 @@ class Essai:
             self._controle("assistant de configuration proposé", a_assistant)
             if a_assistant:
                 self._js("document.querySelector('#ass-exemple').click()")
-        rempli = self._attendre("document.querySelector('#r-net') && "
-                                "/\\d/.test(document.querySelector('#r-net').textContent)", 40)
-        texte = self._js("document.querySelector('#r-net') ? document.querySelector('#r-net').textContent : ''") or ""
+        # Le profil d'exemple se charge en deux temps : le budget d'abord, puis le
+        # report de l'épargne déjà placée vers le compte-titres. On attend une
+        # valeur stable — deux secondes sans changement — avant de la lire.
+        rempli, texte, depuis = False, "", time.time()
+        fin = time.time() + 45
+        while time.time() < fin:
+            lu = self._js("document.querySelector('#r-net') ? document.querySelector('#r-net').textContent : ''") or ""
+            if lu != texte:
+                texte, depuis = lu, time.time()
+            elif any(c.isdigit() for c in lu) and time.time() - depuis >= 2:
+                rempli = True
+                break
+            time.sleep(0.25)
         chiffres = "".join(c for c in texte if c.isdigit())
         self._controle("patrimoine de l'exemple = 1 150,86 €", rempli and chiffres == PATRIMOINE_ATTENDU, texte.strip())
         time.sleep(1.0)                                     # laisser les graphiques se dessiner
