@@ -63,7 +63,9 @@ try:
         pg.on("dialog", lambda d: d.accept())
         pg.on("pageerror", lambda e: ko.append("pageerror: " + str(e)) or print("  JS ERROR", e))
         # Chart.js du CDN : remplacé par un bouchon, le réseau n'est pas garanti ici
-        pg.route("**/chart.umd.min.js", lambda r: r.fulfill(path=f"{ICI}/chart_stub.js", content_type="application/javascript"))
+        # Hors ligne : tout ce qui ne vient pas du serveur local est coupé. Les
+        # graphiques doivent se dessiner quand même, avec les fichiers de vendor/.
+        pg.route("**/*", lambda r: r.continue_() if r.request.url.startswith("http://127.0.0.1") else r.abort())
         pg.goto("http://127.0.0.1:8765/banque.html")
         pg.evaluate("localStorage.setItem('persofolio_jeton','t');localStorage.setItem('persofolio_user','pierre')")
         def charger():
@@ -159,6 +161,17 @@ try:
         pg.click(f"[data-modif='{c[0]['id']}']"); pg.wait_for_timeout(200)
         pg.click("#c-suppr"); pg.wait_for_timeout(800)
         verifier("correction supprimée", abs(euros(pg.inner_text("#r-courant")) - 2000) < 0.01, pg.inner_text("#r-courant"))
+
+        print("8. Hors ligne : les bibliothèques embarquées fonctionnent")
+        pg.click("nav.onglets button[data-onglet=synthese]"); pg.wait_for_timeout(500)
+        verifier("Chart.js 4.4.1 chargé depuis vendor/", pg.evaluate("window.Chart && Chart.version") == "4.4.1")
+        verifier("des graphiques sont dessinés", pg.evaluate("Object.keys(Chart.instances).length") > 0)
+        n_pays = pg.evaluate("""async () => {
+            await new Promise((ok, ko) => { const s = document.createElement('script');
+              s.src = 'vendor/chartjs-chart-geo.umd.min.js'; s.onload = ok; s.onerror = ko; document.head.appendChild(s); });
+            const topo = await (await fetch('vendor/countries-110m.json')).json();
+            return ChartGeo.topojson.feature(topo, topo.objects.countries).features.length; }""")
+        verifier("module de carte et fond de carte lisibles", n_pays == 177, n_pays)
         b.close()
 finally:
     srv.terminate()

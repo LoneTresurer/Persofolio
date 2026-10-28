@@ -60,7 +60,7 @@ Chacun a été découvert en production ou en test, pas par raisonnement.
 |---|---|
 | **`.bat` en fins de ligne Unix** | cmd.exe échoue sur les blocs `( )` et les boucles `for`. La fenêtre se ferme avant d'exécuter une ligne, sans rien afficher. `outils/verifier_bat.py` l'attrape. |
 | **Accents dans un `.bat`** | Même effet. Le fichier doit rester en ASCII pur. |
-| **Chart.js vient d'un CDN** | Hors ligne, `donut()` affiche « Aucune donnée » — le même message que pour des données réellement absentes. Trompeur dans un exécutable de bureau. Non corrigé : c'est leur code. |
+| **Chart.js venait d'un CDN** | Hors ligne, `donut()` affichait « Aucune donnée » — le même message que pour un portefeuille vide. **Corrigé le 28 octobre** : Chart.js, le module de carte et le fond de carte sont dans `frontend/vendor/`. La retouche dans `portefeuille.html` est documentée en MERGE.md §4 ; `verifier_fusion.py` échoue si une livraison remet un lien CDN. Seules les polices Google viennent encore d'internet (cosmétique). |
 | **Le serveur d'essai n'est pas FastAPI** | Aucune session n'a jamais pu lancer `uvicorn` : pas de réseau pour `pip install`. Tout le frontend est testé contre un faux serveur Node. Ce qui est vérifié ici ne prouve rien sur le vrai serveur. |
 | **PyInstaller ne suit que les `import`** | Les fichiers de données — les pages web — doivent être déclarés dans le `.spec`, sinon l'exécutable démarre et sert une page blanche. |
 | **Un versement daté d'aujourd'hui ne couvre pas un achat passé** | Le rejeu du compte-titres trie par date puis par ordre de saisie. Un versement enregistré aujourd'hui pour « expliquer » un achat de 2025 passe *après* lui : l'apport implicite reste, et le versement s'ajoute aux espèces. C'était le bouton « d'où venait cet argent ? » : +4 085 € de patrimoine à chaque clic, et la question restait posée. Ces versements sont maintenant datés de la veille de l'achat, côté serveur. |
@@ -129,10 +129,10 @@ dernière fusion n'a demandé qu'un seul fichier résolu à la main.
 ## 6. Vérifier avant de livrer
 
 ```bash
-python outils/verifier_fusion.py     # 46 contrôles statiques
+python outils/verifier_fusion.py     # 52 contrôles statiques
 python outils/dependances.py         # requirements.txt contre les imports réels
 python outils/verifier_bat.py construire.bat
-python outils/essai/essai_passerelle.py .   # 31 contrôles, vrai navigateur, vraie passerelle
+python outils/essai/essai_passerelle.py .   # 34 contrôles, vrai navigateur hors ligne, vraie passerelle
 cd persofolio/backend && python -m py_compile main.py routes_*.py core/*.py agents/*.py
 python -m unittest tests.test_passerelle   # depuis persofolio/backend
 ```

@@ -137,6 +137,29 @@ avertir("requirements : dépendances de l'optimiseur retirées",
         not re.search(r"^(scipy|scikit-learn|openpyxl)", req, re.M),
         "l'optimiseur est archivé ; ces paquets ne servent plus (les commenter)")
 
+# ── Aucune ressource chargée depuis l'extérieur ─────────────────────────────
+# Une application de bureau ne doit pas dépendre d'un CDN pour s'afficher : hors
+# ligne, Chart.js manquait, les graphiques restaient vides et les camemberts
+# disaient « Aucune donnée » — comme un portefeuille vide. Les bibliothèques
+# vivent dans frontend/vendor/. Une livraison de l'équipe qui remet les liens CDN
+# est attrapée ici. Seules les polices Google restent tolérées (cosmétique :
+# hors ligne, la police système prend le relais).
+EXTERNE = re.compile(r"""(?:<script[^>]*\ssrc|fetch\(|import\s*\(|<link[^>]*href)\s*=?\s*["'`](https?:)?//""", re.I)
+TOLERES = ("fonts.googleapis.com", "fonts.gstatic.com")
+for page, texte in (("index.html", index), ("banque.html", banque), ("portefeuille.html", pf)):
+    fautifs = []
+    for n, ligne in enumerate(texte.splitlines(), 1):
+        for m in EXTERNE.finditer(ligne):
+            reste = ligne[m.end():m.end() + 80]
+            if not any(reste.startswith(t) for t in TOLERES):
+                fautifs.append(f"ligne {n} : {ligne.strip()[:90]}")
+    verifier(f"{page} : rien de chargé depuis un CDN", not fautifs,
+             "remettre les fichiers locaux de frontend/vendor/ (MERGE.md §4) — "
+             + " | ".join(fautifs[:3]))
+for f in ("chart.umd.min.js", "chartjs-chart-geo.umd.min.js", "countries-110m.json"):
+    verifier(f"vendor/{f} présent", (FRONT / "vendor" / f).is_file(),
+             "fichier embarqué perdu pendant la fusion : le récupérer sur perso-finance")
+
 # ── Scripts Windows ─────────────────────────────────────────────────────────
 # Un .bat enregistré en fins de ligne Unix, ou contenant des accents, n'est pas
 # lu correctement par cmd.exe : la fenêtre se referme avant d'exécuter quoi que

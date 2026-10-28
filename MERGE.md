@@ -100,7 +100,7 @@ def moi(user: str = Depends(utilisateur_courant)):
 Sans elle, `index.html` ne peut pas vérifier au chargement qu'une session encore
 en mémoire est toujours valable.
 
-### `frontend/portefeuille.html` — quatre retouches
+### `frontend/portefeuille.html` — cinq retouches
 
 1. L'écran de connexion de la page est masqué (la connexion est sur `index.html`) :
    ```html
@@ -121,6 +121,20 @@ en mémoire est toujours valable.
    location.replace('index.html');       // dans deconnecter(), à la place de l'affichage de #ecran-connexion
    if (jeton) demarrer(); else location.replace('index.html');
    ```
+5. **Plus de CDN** (28 octobre) : Chart.js, le module de carte et le fond de
+   carte sont embarqués dans `frontend/vendor/`. Hors ligne, les CDN laissaient
+   les graphiques vides et les camemberts affichaient « Aucune donnée ». Trois
+   lignes, marquées `PersoFolio :` :
+   ```html
+   <script src="vendor/chart.umd.min.js"></script>
+   <script src="vendor/chartjs-chart-geo.umd.min.js"></script>
+   ```
+   ```js
+   const topo = await (await fetch('vendor/countries-110m.json')).json();
+   ```
+   **À demander à l'équipe** : garder ces trois lignes dans leurs livraisons.
+   Sinon `verifier_fusion.py` le signale après chaque fusion (« rien de chargé
+   depuis un CDN »), et il suffit de les remettre.
 
 ---
 

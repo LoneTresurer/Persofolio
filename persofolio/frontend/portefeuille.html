@@ -6,8 +6,9 @@
 <title>PersoFolio · Mon compte</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.1/build/index.umd.min.js"></script>
+<!-- PersoFolio : bibliothèques embarquées (vendor/), plus de CDN — voir MERGE.md §4 -->
+<script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/chartjs-chart-geo.umd.min.js"></script>
 <style>
   /* Toutes les couleurs passent par ces variables : changer de thème ne consiste
      alors qu'à les redéfinir, sans toucher à une seule règle de mise en page. */
@@ -1143,7 +1144,7 @@
     try {
       if (!FOND_CARTE) {
         Chart.register(ChartGeo.ChoroplethController, ChartGeo.ProjectionScale, ChartGeo.ColorScale, ChartGeo.GeoFeature);
-        const topo = await (await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json')).json();
+        const topo = await (await fetch('vendor/countries-110m.json')).json();   // PersoFolio : fond de carte embarqué, voir MERGE.md §4
         FOND_CARTE = ChartGeo.topojson.feature(topo, topo.objects.countries).features
           .filter(f => !['Antarctica', 'Fr. S. Antarctic Lands'].includes(f.properties.name));
       }
