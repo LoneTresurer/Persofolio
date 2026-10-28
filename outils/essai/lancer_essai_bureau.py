@@ -23,6 +23,14 @@ import sys
 import tempfile
 import time
 
+# La console de Windows écrit par défaut en cp1252 : le premier « É » ou « ─ »
+# ferait tomber le script avant qu'il ait rien dit.
+for flux in (sys.stdout, sys.stderr):
+    try:
+        flux.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 EXE, SORTIE = sys.argv[1], sys.argv[2]
 CONSTRUIT = sys.argv[3] if len(sys.argv) > 3 else None
 os.makedirs(SORTIE, exist_ok=True)

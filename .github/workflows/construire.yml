@@ -26,6 +26,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PYTHONUTF8: "1"            # Windows : sans cela, Python écrit en cp1252 et bute sur les accents
+
 concurrency:
   group: construire-${{ github.ref }}
   cancel-in-progress: true
