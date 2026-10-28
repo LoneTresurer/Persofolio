@@ -67,7 +67,10 @@ Chacun a été découvert en production ou en test, pas par raisonnement.
 | **`.bat` en fins de ligne Unix** | cmd.exe échoue sur les blocs `( )` et les boucles `for`. La fenêtre se ferme avant d'exécuter une ligne, sans rien afficher. `outils/verifier_bat.py` l'attrape. |
 | **Accents dans un `.bat`** | Même effet. Le fichier doit rester en ASCII pur. |
 | **Chart.js venait d'un CDN** | Hors ligne, `donut()` affichait « Aucune donnée » — le même message que pour un portefeuille vide. **Corrigé le 28 octobre** : Chart.js, le module de carte et le fond de carte sont dans `frontend/vendor/`. La retouche dans `portefeuille.html` est documentée en MERGE.md §4 ; `verifier_fusion.py` échoue si une livraison remet un lien CDN. Seules les polices Google viennent encore d'internet (cosmétique). |
-| **Le serveur d'essai n'est pas FastAPI** | Aucune session n'a jamais pu lancer `uvicorn` : pas de réseau pour `pip install`. Tout le frontend est testé contre un faux serveur Node. Ce qui est vérifié ici ne prouve rien sur le vrai serveur. |
+| **Pas de FastAPI dans une session Claude** | Pas d'accès à PyPI ni aux CDN depuis la session. Localement, `outils/essai/serveur_essai.py` fait tourner la vraie passerelle sans FastAPI. **Le vrai serveur tourne dans GitHub Actions** (§9) : c'est là qu'on le vérifie. |
+| **Les journaux GitHub Actions ne sont pas lisibles depuis la session** | Ni les journaux ni les fichiers déposés (stockage Azure bloqué). Les **annotations** le sont : `lancer_essai_bureau.py` y recopie temps, contrôles en échec et fin du journal. `gh api repos/LoneTresurer/persofolio/check-runs/<job>/annotations`. |
+| **cryptography compilé sur place (Mac Intel)** | Compilé contre l'OpenSSL du système, il heurtait celui que PyInstaller embarque depuis Python : `Symbol not found: _SSL_get0_group_name`, serveur mort. `PIP_ONLY_BINARY=cryptography` dans le workflow. |
+| **Le port fait partie de l'origine** | Session et préférences vivent dans le localStorage de la fenêtre, rangé par origine, port compris. Passer de 8000 à 8001 d'un lancement à l'autre = déconnexion. Le lanceur reprend 8000 même en fin de fermeture (SO_REUSEADDR hors Windows). |
 | **PyInstaller ne suit que les `import`** | Les fichiers de données — les pages web — doivent être déclarés dans le `.spec`, sinon l'exécutable démarre et sert une page blanche. |
 | **Un versement daté d'aujourd'hui ne couvre pas un achat passé** | Le rejeu du compte-titres trie par date puis par ordre de saisie. Un versement enregistré aujourd'hui pour « expliquer » un achat de 2025 passe *après* lui : l'apport implicite reste, et le versement s'ajoute aux espèces. C'était le bouton « d'où venait cet argent ? » : +4 085 € de patrimoine à chaque clic, et la question restait posée. Ces versements sont maintenant datés de la veille de l'achat, côté serveur. |
 | **Supprimer un virement côté budget seulement** | La ligne du compte courant disparaissait, le versement restait dans le compte-titres : le patrimoine montait d'autant. Même chose en *modifiant* un virement. Tout passe maintenant par `/banque/virement/annuler` ou `remplace`. |
@@ -174,16 +177,20 @@ Python qui lance la commande. Avec un environnement virtuel, c'est
 
 ## 8. Ce qui reste ouvert
 
-- **Le vrai serveur n'a jamais tourné.** Au premier `uvicorn`, vérifier que
-  `/docs` liste à la fois `/compte/*`, `/banque/etat`,
-  `/banque/investissement`, `/banque/virement`, `/banque/virement/annuler` et
-  `/banque/apports`.
+- **Le vrai serveur tourne**, dans l'application construite (GitHub Actions,
+  Windows et Mac Intel) : session locale, profil d'exemple à 1 150,86 €. Les
+  routes `/banque/virement`, `/banque/virement/annuler` et `/banque/apports`
+  n'y sont pas encore exercées par l'essai de bureau — seulement par
+  `essai_passerelle.py`, sans FastAPI.
 - **Les bases déjà abîmées par l'ancien bouton** se réparent à la main, dans
   Comptes : annuler *tous* les versements qu'il a écrits (datés du jour du
   clic, signalés « doublon probable » s'il y en a plusieurs), puis répondre de
   nouveau à la question.
-- **L'exécutable Windows n'a jamais été construit.** `construire.bat` est écrit
-  et contrôlé statiquement, jamais exécuté.
+- **Mac Apple Silicon** : jamais construit à ce jour, faute de machine libre
+  chez GitHub (« capacity constraints »). La version Intel passe tous les
+  contrôles et tourne aussi sur Apple Silicon via Rosetta.
+- **Installateur Windows, .dmg, publication (Releases), guides d'installation** :
+  étapes (b) et (c), pas encore faites. Icône : en attente du logo.
 - **Les versements et retraits d'espèces** ont été retirés de la saisie du
   compte-titres par l'équipe (« un suivi d'investissements, pas un compte
   bancaire »). Le moteur les accepte toujours, ce qui laisse passer les
@@ -191,3 +198,30 @@ Python qui lance la commande. Avec un environnement virtuel, c'est
 - **`core/passerelle.py` écrit dans `operations`**, table qui appartient au
   compte-titres. C'est le seul endroit. `_verifier_schema()` échoue bruyamment
   si leur structure change.
+
+---
+
+## 9. L'application de bureau
+
+`persofolio/backend/lanceur.py` ouvre une **fenêtre native** (pywebview :
+WebView2 sous Windows, WKWebView sous macOS) sur un écran de chargement, démarre
+le serveur, puis affiche l'application. Fermer la fenêtre arrête tout. Repli sur
+le navigateur si WebView2 manque.
+
+- **Construction** : GitHub Actions, `.github/workflows/construire.yml`, bouton
+  « Run workflow » (une session Claude peut aussi le lancer :
+  `gh workflow run construire.yml --ref perso-finance -R LoneTresurer/persofolio`,
+  `-f intel=true` pour le Mac Intel). Windows : dossier `PersoFolio/` ;
+  macOS : `PersoFolio.app` (arm64 par défaut, `PERSOFOLIO_ARCH=x86_64`).
+- **Essai de l'application construite** : `PERSOFOLIO_ESSAI=<rapport.json>` fait
+  tourner `essai_bureau.py` *dans* l'application — session locale, profil
+  d'exemple, 1 150,86 €, Chart.js, puis au second lancement la session doit
+  avoir survécu. Temps mesurés (28 octobre, machines GitHub) : fenêtre ~1 s,
+  serveur prêt 2,5 à 6,5 s selon la machine et le lancement.
+- **Dépendances** : `requirements-bureau.txt` (pywebview, PyInstaller) s'ajoute
+  à `requirements.txt` ; le serveur seul n'en a pas besoin.
+- **Version** : un seul fichier, `persofolio/VERSION`.
+- **Données** : `%LOCALAPPDATA%\PersoFolio` (Windows),
+  `~/Library/Application Support/PersoFolio` (macOS). Le stockage de la
+  fenêtre (localStorage) est dans le sous-dossier `fenetre/`.
+- **Éditeur** affiché : « IAE Caen - Master G2C 2026 ».
