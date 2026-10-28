@@ -108,10 +108,13 @@ VERSION = lire_version()
 def port_libre(port: int) -> bool:
     """Essaie de réserver le port pour de bon.
 
-    Volontairement sans SO_REUSEADDR : sous Windows, cette option autorise à se
-    lier à un port qu'un autre programme écoute déjà, et la vérification
-    conclurait « libre » sur un port occupé. On veut ici l'inverse, et
-    `SO_EXCLUSIVEADDRUSE` le dit explicitement là où il existe.
+    Le port compte plus qu'il n'y paraît : la session et les préférences des pages
+    vivent dans le stockage de la fenêtre, rangé par origine — port compris.
+    Changer de port d'un lancement à l'autre, c'est se retrouver déconnecté.
+
+    Sous Windows, pas de SO_REUSEADDR : là-bas, cette option autorise à se lier
+    à un port qu'un autre programme écoute déjà. `SO_EXCLUSIVEADDRUSE` dit
+    explicitement l'inverse.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         exclusif = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)   # Windows seulement
@@ -120,6 +123,14 @@ def port_libre(port: int) -> bool:
                 s.setsockopt(socket.SOL_SOCKET, exclusif, 1)
             except OSError:
                 pass
+        else:
+            # macOS et Linux : SO_REUSEADDR y a l'effet inverse de Windows. Il
+            # n'autorise pas à prendre un port qu'un programme écoute, seulement un
+            # port qui finit de se fermer (TIME_WAIT) — exactement ce que fait
+            # uvicorn. Sans lui, un lancement juste après une fermeture trouvait 8000
+            # « occupé » et prenait 8001 : nouvelle origine pour la fenêtre, donc
+            # session et préférences (localStorage) perdues.
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind(("127.0.0.1", port))
             return True
