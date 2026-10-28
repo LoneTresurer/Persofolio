@@ -82,7 +82,19 @@ jobs:
           cache: pip
           cache-dependency-path: persofolio/backend/requirements*.txt
       - name: Dépendances
+        # cryptography (lu par pdfplumber) ne doit jamais être compilé sur place :
+        # compilé contre l'OpenSSL du système, il entre en conflit avec celui que
+        # PyInstaller embarque depuis Python, et le serveur ne démarre pas.
+        env:
+          PIP_ONLY_BINARY: cryptography
         run: python -m pip install -r persofolio/backend/requirements-bureau.txt
+      - name: Diagnostic (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          SO=$(python -c "import cryptography.hazmat.bindings._rust as m; print(m.__file__)")
+          INFO="cryptography $(python -c 'import cryptography; print(cryptography.__version__)') ; Python $(python -c 'import ssl; print(ssl.OPENSSL_VERSION)') ; liens : $(otool -L "$SO" | tail -n +2 | tr -s ' \t' ' ' | tr '\n' ';')"
+          echo "::notice title=macOS ${{ matrix.arch }} - cryptography::$INFO"
       - name: Version
         shell: bash
         run: echo "VERSION=$(tr -d '[:space:]' < persofolio/VERSION)" >> "$GITHUB_ENV"
