@@ -7,6 +7,12 @@ l'ignorent.
 
 **À lire en entier avant de toucher au code.**
 
+Dépôt public : <https://github.com/LoneTresurer/persofolio>. Branche par défaut
+`perso-finance` ; `portefeuille` et `base` servent à la méthode de fusion (§5).
+Les commits portent l'adresse « noreply » de GitHub, pas une adresse personnelle.
+Une session Claude peut pousser des branches, mais **pas d'étiquettes (tags)** :
+le proxy les refuse. Elles se créent depuis l'interface GitHub.
+
 ---
 
 ## 1. Ce qu'est l'application
