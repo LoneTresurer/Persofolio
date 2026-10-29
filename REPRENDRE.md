@@ -186,9 +186,11 @@ Python qui lance la commande. Avec un environnement virtuel, c'est
   Comptes : annuler *tous* les versements qu'il a écrits (datés du jour du
   clic, signalés « doublon probable » s'il y en a plusieurs), puis répondre de
   nouveau à la question.
-- **Mac Apple Silicon** : jamais construit à ce jour, faute de machine libre
-  chez GitHub (« capacity constraints »). La version Intel passe tous les
-  contrôles et tourne aussi sur Apple Silicon via Rosetta.
+- **Mac Apple Silicon** : construit et validé le 29 octobre (fenêtre 0,9 s,
+  serveur 4,8 s au premier lancement, 2,6 s au second). Le 28, GitHub n'avait
+  aucune machine libre de ce type (5 tâches abandonnées, « capacity
+  constraints ») : en cas de nouvel abandon, relancer plus tard, ce n'est pas
+  un défaut du projet. La version Intel passe aussi tous les contrôles.
 - **Installateur Windows, .dmg, publication (Releases), guides d'installation** :
   étapes (b) et (c), pas encore faites. Icône : en attente du logo.
 - **Les versements et retraits d'espèces** ont été retirés de la saisie du
