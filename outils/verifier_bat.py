@@ -68,7 +68,9 @@ check('aucune variable lue dans le bloc qui la definit', not fautes, '; '.join(f
 
 # Chaque sortie d'erreur doit etre atteignable et le script doit toujours faire une pause
 check('le script se termine toujours par une pause', 'pause' in texte.lower())
-check('exit /b present apres la pause finale', re.search(r'pause\s*>nul\s*\r\n\s*exit /b', texte, re.I) is not None)
+# « pause >nul » (construire.bat, qui affiche son propre message) ou « pause » seul
+# (lancer.bat, qui laisse Windows dire « Appuyez sur une touche ») : les deux conviennent.
+check('exit /b present apres la pause finale', re.search(r'pause(\s*>nul)?\s*\r\n\s*exit /b', texte, re.I) is not None)
 
 # Chemins avec espaces : les appels a python doivent etre entre guillemets
 nus = [i for i, l in enumerate(lignes, 1)

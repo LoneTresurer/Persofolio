@@ -161,5 +161,34 @@ class Remplacement(Base):
         self.assertEqual(self.inv()["cash_eur"], 300.0)
 
 
+class LienBudget(Base):
+    """Un mouvement écrit par le budget ne se corrige pas depuis le compte-titres."""
+
+    def test_versement_du_budget_refuse(self):
+        passerelle.virer(U, ETAT, 0, "vir-aaaaaa", "2026-10-01", 300.0)
+        ops = self.pdb.operations(U, self.pf)
+        msg = passerelle.lien_budget(ops, ops[0]["id"])
+        self.assertIsNotNone(msg)
+        self.assertIn("Budget et comptes", msg)
+
+    def test_apport_declare_refuse(self):
+        self.pdb.ajouter_operation(U, self.pf, achat("2025-03-10", "CW8", 10, 408.5))
+        self.declarer()
+        depot = [o for o in self.pdb.operations(U, self.pf) if o["type"] == "DEPOT"][0]
+        self.assertIsNotNone(passerelle.lien_budget(self.pdb.operations(U, self.pf), depot["id"]))
+
+    def test_versement_saisi_dans_le_compte_titres_libre(self):
+        self.pdb.ajouter_operation(U, self.pf, {"date": "2026-10-01", "type": "DEPOT", "montant_eur": 50.0,
+                                                "devise": "EUR", "taux_eur": 1.0})
+        ops = self.pdb.operations(U, self.pf)
+        self.assertIsNone(passerelle.lien_budget(ops, ops[0]["id"]))
+
+    def test_achat_et_operation_absente(self):
+        aid = self.pdb.ajouter_operation(U, self.pf, achat("2025-03-10", "CW8", 1, 10))
+        ops = self.pdb.operations(U, self.pf)
+        self.assertIsNone(passerelle.lien_budget(ops, aid))
+        self.assertIsNone(passerelle.lien_budget(ops, 999999))
+
+
 if __name__ == "__main__":
     unittest.main()

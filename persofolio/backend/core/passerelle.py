@@ -141,6 +141,31 @@ def reference(virement_id: str) -> str:
     return f"{PREFIXE}{virement_id}"
 
 
+def lien_budget(operations: List[dict], op_id: int) -> Optional[str]:
+    """Message de refus si l'opération est un mouvement d'espèces écrit par le budget.
+
+    Depuis le 10 novembre, le compte-titres affiche de nouveau versements et
+    retraits, avec « Modifier » et « Annuler ». Ceux que le budget a écrits —
+    virements, origine déclarée d'un achat — ont une ligne en face dans le compte
+    courant. Les supprimer d'un seul côté, c'est le défaut du 28 octobre vu de
+    l'autre bord : l'argent quitte le compte-titres et reste sorti du compte
+    courant, le patrimoine baisse d'autant. Ils se corrigent donc depuis le
+    budget, qui retire les deux lignes ensemble (`annuler_virement`).
+
+    Rend None pour tout le reste, y compris un versement saisi dans le
+    compte-titres lui-même : celui-là se corrige librement.
+    """
+    op = next((o for o in operations if o.get("id") == op_id), None)
+    if not op or op.get("type") not in ("DEPOT", "RETRAIT"):
+        return None
+    if not (op.get("commentaire") or "").startswith(PREFIXE):
+        return None
+    quoi = "Ce versement" if op["type"] == "DEPOT" else "Ce retrait"
+    return (f"{quoi} vient de Budget et comptes. Pour le corriger ou l'annuler, passez "
+            "par Budget et comptes → Comptes → « Espèces échangées avec le "
+            "compte-titres » : il y sera retiré des deux côtés à la fois.")
+
+
 def _ecrire_etat(c: sqlite3.Connection, username: str, etat: dict, existe: bool,
                  actuelle: int, maintenant: str) -> int:
     """Écrit l'état du budget dans la transaction en cours ; renvoie la nouvelle version."""

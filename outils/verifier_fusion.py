@@ -160,6 +160,15 @@ for f in ("chart.umd.min.js", "chartjs-chart-geo.umd.min.js", "countries-110m.js
     verifier(f"vendor/{f} présent", (FRONT / "vendor" / f).is_file(),
              "fichier embarqué perdu pendant la fusion : le récupérer sur perso-finance")
 
+# ── Mouvements écrits par le budget : protégés côté compte-titres ───────────
+# Depuis le 10 novembre, le compte-titres permet de nouveau de modifier et
+# d'annuler versements et retraits. Ceux que le budget a écrits ne doivent se
+# corriger que depuis le budget, qui retire les deux lignes ensemble.
+routes_pf = (BACK / "routes_portefeuille.py").read_text(encoding="utf-8")
+verifier("versements du budget protégés (modifier et annuler)",
+         routes_pf.count("passerelle.lien_budget(") >= 2,
+         "remettre la retouche 6 de MERGE.md §4 dans routes_portefeuille.py")
+
 # ── Scripts Windows ─────────────────────────────────────────────────────────
 # Un .bat enregistré en fins de ligne Unix, ou contenant des accents, n'est pas
 # lu correctement par cmd.exe : la fenêtre se referme avant d'exécuter quoi que

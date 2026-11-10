@@ -138,6 +138,24 @@ en mémoire est toujours valable.
    Sinon `verifier_fusion.py` le signale après chaque fusion (« rien de chargé
    depuis un CDN »), et il suffit de les remettre.
 
+### `backend/routes_portefeuille.py` — une retouche
+
+6. **Versements écrits par le budget protégés** (10 novembre). La livraison du
+   10 novembre rend de nouveau modifiables et annulables, dans l'onglet
+   Mouvements, les versements et retraits. Ceux que le budget a écrits ont une
+   ligne en face dans le compte courant : les supprimer d'un seul côté ferait
+   baisser le patrimoine d'autant. Trois lignes, marquées `PersoFolio :` —
+   l'import, puis le même refus en tête de `modifier_operation` et de
+   `supprimer_operation` :
+   ```python
+   from core import passerelle   # PersoFolio : ...
+   if (refus := passerelle.lien_budget(existantes, op_id)):        # PersoFolio : ...
+       raise HTTPException(409, detail=refus)
+   ```
+   Le message renvoie l'utilisateur vers Budget et comptes → Comptes, qui
+   annule des deux côtés. Les versements saisis dans le compte-titres même
+   restent libres. `verifier_fusion.py` le contrôle.
+
 ---
 
 ## 4 bis. Ce que la fusion du 19 octobre a réellement demandé
@@ -349,6 +367,39 @@ lu ferait échouer. Les trois paquets concernés sont donc commentés dans
 déclaré, pour que l'écart se voie tout seul la prochaine fois.
 
 ---
+
+## 6 quater. La troisième livraison, du 10 novembre — partie de GitHub
+
+**La méthode du §6 ter ne s'applique plus telle quelle.** Elle suppose que
+l'équipe travaille sur sa propre copie, si bien que leur branche ne montre que
+leurs changements. Depuis que le dépôt est public, l'équipe part de la version
+publiée : sa livraison contient déjà nos retouches, `vendor/`, l'application de
+bureau. Fusionner par la branche `portefeuille` a échoué : elle porte encore
+l'ancien nom de dossier (`ecofolio_perso/`), et la détection des renommages de
+git a rapproché leurs fichiers de `archive_optimiseur/`, chemins absurdes à la
+clé. Fusion abandonnée, rien d'écrit.
+
+Ce qui a marché, et qui vaut pour toute livraison partie de GitHub :
+
+1. Comparer l'archive reçue au dépôt, fichier par fichier (empreintes). Si tout
+   ce qui n'a pas changé est **identique à l'octet**, la livraison est bien
+   partie de la version publiée.
+2. Ne reprendre que les fichiers modifiés, sur une branche d'intégration
+   (`integration-<date>`), sans supprimer ceux que l'archive ne contient pas —
+   elle peut omettre la documentation.
+3. Contrôles ici, puis construction GitHub sur la branche d'intégration ; la
+   branche `perso-finance` n'avance qu'une fois tout au vert.
+
+La branche `portefeuille` reste à la livraison du 23 octobre. Si l'équipe
+revient un jour à une copie à elle, il faudra d'abord la recaler.
+
+**Le patrimoine de l'exemple dépend de la date.** Le profil d'exemple est
+construit par rapport à aujourd'hui : chaque mois écoulé fait passer des
+échéances programmées. 1 150,86 € n'est juste qu'en octobre 2026 (200,85 € le
+1er novembre, −898,08 € le 10). Pour comparer deux versions, il faut fixer la
+date du navigateur (Playwright : `page.clock.install`) et vérifier qu'elles
+donnent le même chiffre — c'est ainsi que la livraison du 10 novembre a été
+contrôlée, à quatre dates.
 
 ## 7. À vérifier au premier démarrage réel
 

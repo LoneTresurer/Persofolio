@@ -44,6 +44,7 @@ from pydantic import BaseModel, Field, field_validator
 from agents import market_data as md
 from agents.news_agent import NewsAgent
 from core import portfolio_calc as calc
+from core import passerelle   # PersoFolio : versements écrits par le budget, voir MERGE.md §4 (retouche 6)
 from core.import_csv import ImportInvalide, lire_positions
 from core.import_pdf import lire_releve_pdf
 from core.portfolio_db import PortfolioDB
@@ -336,6 +337,8 @@ async def modifier_operation(op_id: int, op: OperationIn, user: str = Depends(ut
     existantes = pdb.operations(user, pf)
     if not any(o["id"] == op_id for o in existantes):
         raise HTTPException(404, detail="Opération introuvable.")
+    if (refus := passerelle.lien_budget(existantes, op_id)):        # PersoFolio : MERGE.md §4 (retouche 6)
+        raise HTTPException(409, detail=refus)
     nouvelle = await _preparer_operation(op, user)
     autres = [o for o in existantes if o["id"] != op_id]
     try:
@@ -352,6 +355,8 @@ def supprimer_operation(op_id: int, user: str = Depends(utilisateur_courant), pf
     existantes = pdb.operations(user, pf)
     if not any(o["id"] == op_id for o in existantes):
         raise HTTPException(404, detail="Opération introuvable.")
+    if (refus := passerelle.lien_budget(existantes, op_id)):        # PersoFolio : MERGE.md §4 (retouche 6)
+        raise HTTPException(409, detail=refus)
     try:
         calc.valider_suppression(existantes, op_id)
     except calc.OperationInvalide as e:
