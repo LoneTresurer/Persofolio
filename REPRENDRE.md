@@ -119,6 +119,12 @@ documente en détail ; l'essentiel :
 
 ## 5. Intégrer une nouvelle livraison de l'équipe
 
+**Depuis le 10 novembre, l'équipe part de la version publiée sur GitHub** : la
+méthode par la branche `portefeuille` ci-dessous ne s'applique plus telle
+quelle. Voir MERGE.md §6 quater — comparer l'archive au dépôt, ne reprendre que
+les fichiers modifiés sur une branche `integration-<date>`, tout vérifier (y
+compris la construction GitHub) avant d'avancer `perso-finance`.
+
 La méthode est dans `MERGE.md`, §2 et §6 ter. En deux lignes :
 
 ```bash
@@ -138,12 +144,13 @@ dernière fusion n'a demandé qu'un seul fichier résolu à la main.
 ## 6. Vérifier avant de livrer
 
 ```bash
-python outils/verifier_fusion.py     # 52 contrôles statiques
+python outils/verifier_fusion.py     # 53 contrôles statiques
 python outils/dependances.py         # requirements.txt contre les imports réels
 python outils/verifier_bat.py construire.bat
 python outils/essai/essai_passerelle.py .   # 34 contrôles, vrai navigateur hors ligne, vraie passerelle
+python outils/essai/essai_exemple.py .      # patrimoine de l'exemple à date fixe
 cd persofolio/backend && python -m py_compile main.py routes_*.py core/*.py agents/*.py
-python -m unittest tests.test_passerelle   # depuis persofolio/backend
+python -m unittest tests.test_passerelle tests.test_calc_frais   # depuis persofolio/backend
 ```
 
 `outils/essai/` remplace le faux serveur Node : `serveur_essai.py` sert
@@ -151,10 +158,12 @@ python -m unittest tests.test_passerelle   # depuis persofolio/backend
 `core/banque_db.py`, sans FastAPI. Seule la couche FastAPI (pydantic,
 authentification) reste non testée ici.
 
-Et le contrôle qui vaut tous les autres : **le patrimoine de l'exemple doit
-afficher 1 150,86 €**. Il n'a pas bougé d'un centime à travers la fusion, le
-renommage et la jonction des deux modules. S'il change sans raison explicite,
-quelque chose s'est perdu en route.
+Et le contrôle qui vaut tous les autres : **le patrimoine du profil d'exemple,
+à date fixe** — `python outils/essai/essai_exemple.py .` fige l'horloge du
+navigateur et attend 1 150,86 € au 28 octobre 2026 (200,85 € au 1er novembre,
+−898,08 € au 10). Le profil est construit par rapport à aujourd'hui : sans date
+fixe, son patrimoine change chaque mois et ne prouve rien. Si un de ces
+chiffres bouge sans raison explicite, quelque chose s'est perdu en route.
 
 ---
 

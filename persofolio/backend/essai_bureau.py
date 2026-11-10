@@ -7,11 +7,15 @@ quand `PERSOFOLIO_ESSAI` désigne un fichier de rapport.
 Ce qu'il vérifie, dans la vraie fenêtre et contre le vrai serveur FastAPI :
 
 - **Étape 1** (installation neuve) : la session locale s'ouvre, la page Budget
-  se charge avec Chart.js embarqué, et le profil d'exemple affiche le patrimoine
-  de référence, 1 150,86 €.
+  se charge avec Chart.js embarqué, et le profil d'exemple affiche un patrimoine.
 - **Étape 2** (second lancement, mêmes données) : la session a survécu à la
   fermeture — c'est ce qui prouve que le stockage de la fenêtre est persistant —
-  et le patrimoine est toujours là.
+  et le patrimoine affiché est **le même qu'à l'étape 1**, au centime.
+
+Le chiffre lui-même n'est pas comparé à une valeur fixe : le profil d'exemple est
+construit par rapport à la date du jour, et son patrimoine change chaque mois.
+La justesse du calcul est vérifiée à date fixe par outils/essai/essai_exemple.py
+(28 octobre 2026 → 1 150,86 €).
 
 Il mesure aussi les temps de démarrage : fenêtre affichée, serveur prêt, page
 prête. Le rapport est un JSON ; outils/essai/lancer_essai_bureau.py le met en
@@ -32,7 +36,6 @@ import urllib.request
 
 log = logging.getLogger("persofolio.essai")
 
-PATRIMOINE_ATTENDU = "115086"        # 1 150,86 €, chiffres seuls (les espaces varient)
 DELAI_MAX = 150                       # secondes, au-delà l'essai est déclaré en échec
 
 
@@ -102,10 +105,11 @@ class Essai:
                        self._charger(f"{base}/app/index.html", "document.body !== null"))
         if self.etape == "2":
             precedent = os.environ.get("PERSOFOLIO_ESSAI_PRECEDENT")
-            ancien = None
+            ancien, self.patrimoine_precedent = None, None
             if precedent and os.path.exists(precedent):
                 with open(precedent, encoding="utf-8") as f:
-                    ancien = json.load(f).get("jeton")
+                    r1 = json.load(f)
+                ancien, self.patrimoine_precedent = r1.get("jeton"), r1.get("patrimoine")
             conserve = self._js("localStorage.getItem('persofolio_jeton')")
             self._controle("session conservée après fermeture", bool(ancien) and conserve == ancien,
                            "le stockage de la fenêtre n'est pas persistant" if conserve != ancien else None)
@@ -141,8 +145,13 @@ class Essai:
                 rempli = True
                 break
             time.sleep(0.25)
-        chiffres = "".join(c for c in texte if c.isdigit())
-        self._controle("patrimoine de l'exemple = 1 150,86 €", rempli and chiffres == PATRIMOINE_ATTENDU, texte.strip())
+        texte = " ".join(texte.split())
+        self.rapport["patrimoine"] = texte
+        self._controle("patrimoine affiché", rempli, texte or "rien")
+        if self.etape == "2":
+            self._controle("même patrimoine qu'au premier lancement",
+                           rempli and texte == self.patrimoine_precedent,
+                           f"{self.patrimoine_precedent!r} puis {texte!r}")
         time.sleep(1.0)                                     # laisser les graphiques se dessiner
         n = self._js("window.Chart ? Object.keys(Chart.instances).length : 0") or 0
         self._controle("graphiques dessinés", n > 0, n)
