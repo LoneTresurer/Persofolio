@@ -111,6 +111,15 @@
   /* ── En-tête ───────────────────────────────────────────── */
   header { border-bottom: 1px solid var(--filet); background: var(--carte); }
   .barre { max-width: 1240px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+  .fleche-retour { background: none; border: 1px solid var(--filet); color: var(--encre);
+    border-radius: 8px; width: 30px; height: 30px; font-size: 17px; line-height: 1;
+    cursor: pointer; padding: 0; margin-right: 10px; flex: 0 0 auto; }
+  .fleche-retour:hover { background: var(--papier); }
+  /* Sur l'assistant, la carte est centrée : sans cela la flèche se retrouverait au
+     milieu de l'écran. On l'épingle au coin supérieur gauche de la page, là où on la
+     cherche. */
+  #btn-retour-assistant { position: fixed; top: 16px; left: 16px; z-index: 20;
+    background: var(--carte); }
   .marque { font-weight: 600; letter-spacing: .01em; }
   .marque span { color: var(--foret); }
   .module { color: var(--encre-2); font-size: 14px; padding-left: 12px; border-left: 1px solid var(--filet); }
@@ -400,6 +409,8 @@
 <!-- ═════════════ Assistant de configuration ═════════════ -->
 <section id="assistant" class="cache">
   <div class="assistant">
+    <button class="fleche-retour" id="btn-retour-assistant" type="button"
+            title="Revenir à la page précédente" aria-label="Revenir à la page précédente">←</button>
     <div class="marque">Perso<span>Folio</span> <span class="discret" style="font-weight:400">· Budget et comptes</span></div>
     <ol class="etapes" id="etapes"></ol>
     <div id="etape"></div>
@@ -422,6 +433,8 @@
 <section id="app" class="cache">
   <header>
     <div class="barre">
+      <button class="fleche-retour" id="btn-retour" type="button"
+              title="Revenir à la page précédente" aria-label="Revenir à la page précédente">←</button>
       <div class="marque">Perso<span>Folio</span></div>
       <div class="module">Budget et comptes</div>
       <div class="espace"></div>
@@ -552,6 +565,23 @@ function appliquerTheme(nom, redessiner = false) {
 }
 appliquerTheme((() => { try { return localStorage.getItem('persofolio_theme'); } catch { return null; } })()
   || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'sombre' : 'clair'));
+/* Retour à la page précédente. history.length vaut 1 quand l'onglet n'a pas
+   d'historique — page ouverte directement, ou premier écran d'un nouvel onglet :
+   on renvoie alors vers l'accueil plutôt que de laisser un bouton sans effet. */
+document.addEventListener('DOMContentLoaded', () => {
+  const revenir = () => {
+    if (history.length > 1) history.back();
+    else location.href = 'index.html';
+  };
+  // Une flèche dans l'en-tête du module, une autre sur l'assistant de configuration :
+  // l'en-tête vit dans #app, masqué tant que le module n'est pas configuré, et c'est
+  // précisément pendant l'assistant qu'on peut vouloir ressortir.
+  for (const id of ['#btn-retour', '#btn-retour-assistant']) {
+    const b = $(id);
+    if (b) b.onclick = revenir;
+  }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   const bouton = $('#btn-theme');
   if (!bouton) return;

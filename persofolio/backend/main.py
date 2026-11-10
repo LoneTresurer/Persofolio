@@ -60,4 +60,27 @@ def root():
 from core.emplacements import dossier_pages
 
 FRONTEND_DIR = dossier_pages()
+
+
+@app.middleware("http")
+async def revalider_les_pages(requete, suite):
+    """
+    Oblige le navigateur à revérifier les pages avant de les réutiliser.
+
+    Sans cela, Chrome garde `portefeuille.html` en cache et continue d'afficher
+    l'ancienne version apres une mise a jour — y compris quand le fichier sur le
+    disque a bien change. Le symptome est deroutant : le serveur sert le bon
+    fichier, et l'ecran montre l'ancien.
+
+    « no-cache » ne veut pas dire « ne garde rien » : le navigateur garde sa copie
+    mais demande au serveur si elle est toujours valable. StaticFiles repond par un
+    ETag, donc un 304 de quelques octets quand rien n'a change. Le cout est nul et
+    l'ecran ne peut plus retarder sur le disque.
+    """
+    reponse = await suite(requete)
+    if requete.url.path.startswith("/app"):
+        reponse.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return reponse
+
+
 app.mount("/app", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

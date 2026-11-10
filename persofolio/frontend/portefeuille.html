@@ -260,6 +260,14 @@
   .indicateurs .aide { font-size: 12.5px; color: var(--encre-2); line-height: 1.4; }
   /* Le taux sans risque se règle dans la tuile du ratio de Sharpe, pas dans un écran à part. */
   /* ── Jauge de régularité ─────────────────────────────── */
+  .grille-frais { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .carte-frais { border: 1px solid var(--filet); border-radius: var(--rayon); padding: 12px 14px;
+    background: var(--papier); display: flex; flex-direction: column; gap: 3px; }
+  .carte-frais.total { border-color: var(--foret); }
+  .carte-frais .intitule { font-size: 12.5px; color: var(--encre-2); text-transform: uppercase;
+    letter-spacing: .04em; }
+  .carte-frais strong { font-size: 22px; font-weight: 500; }
+  .carte-frais .sous { font-size: 12.5px; color: var(--encre-2); }
   .cible-mensuelle { border: 1px solid var(--filet); border-radius: var(--rayon);
     padding: 12px 14px; margin: 4px 0 18px; background: var(--papier); }
   .cible-mensuelle > label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; }
@@ -308,6 +316,8 @@
   .indicateurs > div.cliquable:hover { background: var(--papier); }
   .indicateurs .vers-fiche { display: inline-block; margin-top: 6px; font-size: 12px;
     color: var(--foret); text-decoration: underline; text-underline-offset: 2px; }
+  h2 .vers-fiche { background: none; border: 0; padding: 0; cursor: pointer; font: inherit;
+    font-size: 12px; color: var(--foret); text-decoration: underline; text-underline-offset: 2px; }
 
   .reglage-taux { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12.5px; color: var(--encre-2); }
   .reglage-taux input { width: 72px; padding: 4px 6px; font-size: 13px; text-align: right;
@@ -398,12 +408,14 @@
         <div class="montant" id="k-valo">—</div>
         <div class="pnl" id="k-pnl">—</div>
       </div>
-      <!-- Trois mesures, et rien d'autre : ce que les titres détenus ont gagné, ce que
-           les titres vendus ont rapporté, et la somme des deux. Chacune est rapportée au
-           prix de revient des lignes concernées, donc chacune se vérifie à la main. -->
+      <!-- Quatre mesures. Les deux premières portent sur les titres et se rapportent
+           au prix de revient des lignes concernées. Le solde espèces dit ce qui dort
+           sur le compte. Le gain total, lui, porte sur le COMPTE ENTIER : il rapporte
+           ce que vaut l'ensemble à ce que vous y avez versé, trésorerie comprise. -->
       <div class="chiffres">
         <div><span>Plus-value latente</span><strong id="k-pv-latente">—</strong><span class="sous" id="k-pv-latente-detail"></span></div>
         <div><span>Plus-value réalisée</span><strong id="k-pv-realisee">—</strong><span class="sous" id="k-pv-realisee-detail"></span></div>
+        <div><span>Solde espèces</span><strong id="k-especes">—</strong><span class="sous" id="k-especes-detail"></span></div>
         <div><span>Gain total depuis l'ouverture</span><strong id="k-gain">—</strong><span class="sous" id="k-gain-detail"></span></div>
       </div>
       <div id="alerte-financement" class="bandeau-alerte cache"></div>
@@ -426,13 +438,13 @@
         <div class="tete-panneau">
           <div>
             <h2>Positions ouvertes</h2>
-            <p class="sous-titre"><strong>Brute</strong> : (cours − PAM) × quantité, dans la devise de cotation, hors frais.
+            <p class="sous-titre"><strong>Brute</strong> : (cours − prix moyen hors frais) × quantité, dans la devise de cotation.
               <strong>Nette</strong> : ce qui reste réellement, frais de courtage et effet de change déduits.
               L'écart entre les deux colonnes, ce sont vos frais.</p>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <button class="mini-btn" id="btn-import" title="Importer un relevé d'opérations ou un export de positions depuis votre courtier">Importer un relevé</button>
-            <input type="file" id="fichier-import" accept=".csv,.txt,.pdf,text/csv,application/pdf" class="cache">
+            <button class="mini-btn" id="btn-import" title="Importer un ou plusieurs relevés d'opérations, ou un export de positions. Sélection multiple possible.">Importer des relevés</button>
+            <input type="file" id="fichier-import" accept=".csv,.txt,.pdf,text/csv,application/pdf" multiple class="cache">
           </div>
         </div>
         <div class="defile" id="table-positions"></div>
@@ -447,9 +459,23 @@
 
     <!-- Ordres -->
     <div data-vue="ordres" class="cache">
+      <div class="panneau" id="bloc-frais">
+        <h2>Frais payés depuis l'ouverture</h2>
+        <p class="sous-titre">Courtage et taxes prélevés par votre intermédiaire, séparés selon le sens de l'ordre.</p>
+        <div class="grille-frais" id="detail-frais"></div>
+      </div>
       <div class="panneau">
-        <h2>Ordres saisis</h2>
-        <p class="sous-titre">Du plus récent au plus ancien. Une saisie peut être modifiée ou annulée tant que l'historique reste cohérent.</p>
+        <div class="tete-panneau">
+          <div>
+            <h2>Ordres saisis</h2>
+            <p class="sous-titre">Du plus récent au plus ancien. Une saisie peut être modifiée ou annulée tant que l'historique reste cohérent.</p>
+          </div>
+          <!-- Second accès à l'import, là où l'on constate qu'il manque des ordres.
+               Il ouvre le même sélecteur que celui des Positions. -->
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="mini-btn" id="btn-import-ordres" title="Importer un ou plusieurs relevés d'opérations, ou un export de positions. Sélection multiple possible.">Importer des relevés</button>
+          </div>
+        </div>
         <div class="defile" id="table-ordres"></div>
       </div>
     </div>
@@ -567,6 +593,10 @@
 
 <dialog id="dlg-import">
   <h2>Importer des positions</h2>
+  <!-- Fichier déjà passé par ici : on prévient, on ne bloque pas. Les lignes déjà
+       présentes sont décochées d'office ; le bouton permet de tout recocher, par
+       exemple pour rétablir une ligne supprimée par erreur. -->
+  <div id="import-deja" class="bandeau-alerte cache"></div>
   <p class="aide-champ" id="import-resume"></p>
   <div id="import-detail"></div>
   <div id="import-erreur" class="erreur cache"></div>
@@ -593,6 +623,8 @@
     <button data-type="ACHAT" aria-pressed="true">Achat</button>
     <button data-type="VENTE">Vente</button>
     <button data-type="DIVIDENDE">Dividende</button>
+    <button data-type="DEPOT">Versement</button>
+    <button data-type="RETRAIT">Retrait</button>
   </div>
   <div id="ordre-erreur" class="erreur cache"></div>
   <form id="form-ordre">
@@ -605,8 +637,9 @@
       <div class="champ"><label for="o-qte">Quantité</label><input id="o-qte" type="number" min="0" step="any"></div>
       <div class="champ"><label for="o-prix">Prix unitaire <span id="o-devise-lbl"></span></label><input id="o-prix" type="number" min="0" step="any"></div>
     </div>
-    <div class="champ" data-pour="DIVIDENDE">
+    <div class="champ" data-pour="DIVIDENDE DEPOT RETRAIT">
       <label for="o-montant">Montant (€)</label><input id="o-montant" type="number" min="0" step="0.01">
+      <p class="discret" id="o-aide-montant" style="margin:6px 0 0"></p>
     </div>
     <div class="deux-col">
       <div class="champ"><label for="o-date">Date d'exécution</label><input id="o-date" type="date"></div>
@@ -623,8 +656,8 @@
      L'exécutable Windows prend le premier port libre, qui n'est pas toujours 8000.
      Page ouverte en double-clic (file://) : on tente le port habituel. */
   const API = location.protocol.startsWith('http') ? location.origin : 'http://localhost:8000';
-  const LIBELLES = { ACHAT: "Valider l'achat", VENTE: 'Valider la vente', DEPOT: 'Enregistrer le dépôt', RETRAIT: 'Enregistrer le retrait', DIVIDENDE: 'Enregistrer le dividende' };
-  const NOMS_TYPE = { ACHAT: 'Achat', VENTE: 'Vente', DEPOT: 'Dépôt', RETRAIT: 'Retrait', DIVIDENDE: 'Dividende', SPLIT: "Division d'actions" };
+  const LIBELLES = { ACHAT: "Valider l'achat", VENTE: 'Valider la vente', DEPOT: 'Enregistrer le versement', RETRAIT: 'Enregistrer le retrait', DIVIDENDE: 'Enregistrer le dividende' };
+  const NOMS_TYPE = { ACHAT: 'Achat', VENTE: 'Vente', DEPOT: 'Versement', RETRAIT: 'Retrait', DIVIDENDE: 'Dividende', SPLIT: "Division d'actions" };
   const PALETTE = ['#1E6A48', '#4F9A74', '#9CC5A9', '#2B5680', '#7FA7CB', '#C08A3E', '#8E6BA8', '#B23A2E', '#6B7A70', '#D5C9A1'];
   const $ = s => document.querySelector(s);
   // Couleur courante du thème, lue sur la feuille de style : les graphiques suivent
@@ -952,13 +985,30 @@
       "Gain ou perte encaissé sur les lignes entièrement vendues, frais d'achat et de "
       + "vente déduits. Ce montant ne bouge plus : il est acquis.");
 
+    // Le solde espèces : ce qui a été versé et pas encore investi. Il ne gagne rien,
+    // et c'est précisément ce que dit le pourcentage du gain total juste à côté.
+    const dormant = (t.cash_eur || 0) > 0.005 && (t.valorisation_eur || 0) > 0.005
+      ? `${pct((t.cash_eur / t.valorisation_eur) * 100, false)} du compte` : 'rien en attente';
+    $('#k-especes').textContent = argent(t.cash_eur || 0);
+    $('#k-especes-detail').textContent = dormant;
+    $('#k-especes').parentElement.title =
+      "Argent versé sur le compte-titres et pas encore investi. Il entre dans la valeur "
+      + "du compte et dans le gain total, mais ne rapporte rien : une trésorerie qui dort "
+      + "pèse sur le pourcentage.";
+
+    // Gain du COMPTE ENTIER : ce que vaut l'ensemble, titres plus espèces, moins ce
+    // que vous y avez versé. Le montant en euros est le même qu'en ne regardant que
+    // les titres — c'est le dénominateur qui change, et il change beaucoup : rapporté
+    // aux versements et non aux seuls achats, il tient compte de l'argent en attente.
     const detailGain = [];
-    if (t.investi_eur) detailGain.push(`sur ${argent(t.investi_eur)} d'achats cumulés`);
+    if (t.capital_investi_eur) detailGain.push(`sur ${argent(t.capital_investi_eur)} versés`);
+    if (t.investi_eur) detailGain.push(`${argent(t.investi_eur)} d'achats cumulés`);
     if (t.dividendes_eur) detailGain.push(`${argent(t.dividendes_eur)} de dividendes encaissés`);
     if (t.frais_eur) detailGain.push(`${argent(t.frais_eur)} de frais payés`);
-    chiffre('gain', t.pv_totale_eur, t.pv_totale_pct, detailGain.join(' · '),
-      "Latente plus réalisée, rapportée au prix de revient de tout ce que vous avez acheté "
-      + "depuis l'ouverture. Dividendes encaissés et frais payés sont déjà dedans.");
+    chiffre('gain', t.plus_value_eur, t.plus_value_pct, detailGain.join(' · '),
+      "Ce que vaut le compte entier, titres et espèces, moins ce que vous y avez versé. "
+      + "Dividendes encaissés et frais payés sont déjà dedans. Rapporté aux versements : "
+      + "la trésorerie en attente d'investissement fait donc baisser le pourcentage.");
 
     // Le solde espèces ne peut plus être négatif : un achat non couvert est financé par
     // un versement déduit. Reste à le dire, parce que ce versement n'a pas été saisi par
@@ -977,7 +1027,7 @@
     });
     if (!p.length) {
       $('#table-positions').innerHTML = `<div class="vide"><p>Aucune position suivie pour l'instant.</p>
-        <p class="discret">Saisissez vos lignes avec leur quantité, leur prix d'achat moyen et leur date d'entrée.</p>
+        <p class="discret">Saisissez vos lignes avec leur quantité, leur prix de revient unitaire et leur date d'entrée.</p>
         <button class="btn" onclick="ouvrirTiroir('ACHAT')">Saisir une position</button></div>`;
     } else {
       // Les lignes sont rangées par famille — action, OPC, obligation — avec le
@@ -1003,7 +1053,7 @@
         </tr>` + lignes.map(l => `<tr class="ligne-titre" onclick="basculerDetail(event, '${l.ticker}')">
         <td class="titre-ligne"><strong>${echap(l.nom)}<span class="chevron">▾</span></strong><small>${echap(l.ticker)} · depuis le ${dateFr(l.date_entree)}</small></td>
         <td class="num">${nombre(l.quantite, l.quantite % 1 ? 4 : 0)}</td>
-        <td class="num">${argent(l.pru, l.devise)}</td>
+        <td class="num">${argent(l.pru_frais_inclus ?? l.pru, l.devise)}</td>
         <td class="num">${argent(l.cours, l.devise)}${l.cours_indisponible ? '<span class="sous">cours indisponible</span>' : ''}</td>
         <td class="num ${classe(l.var_jour_pct)}">${pct(l.var_jour_pct)}</td>
         <td class="num">${argent(l.valeur_devise, l.devise)}${l.devise !== 'EUR' ? `<span class="sous">${argent(l.valeur_eur)}</span>` : ''}</td>
@@ -1015,17 +1065,17 @@
 
       $('#table-positions').innerHTML = `<table><thead><tr>
         <th>Titre</th><th class="num">Quantité</th>
-        <th class="num" title="Prix d'achat moyen : ce que vous a coûté une unité du titre, frais exclus.">PAM</th>
+        <th class="num" title="Tout ce qu'a coûté une unité du titre, frais d'acquisition compris. PRU × quantité = le prix de revient de la ligne.">PRU</th>
         <th class="num">Cours</th><th class="num">Jour</th>
         <th class="num">Valeur</th>
-        <th class="num" title="(cours − PAM) × quantité, dans la devise de cotation. Le mouvement du titre seul, hors frais et hors change.">+/- value brute (devise)</th>
+        <th class="num" title="(cours − prix moyen hors frais) × quantité, dans la devise de cotation. Le mouvement du titre seul, hors frais et hors change.">+/- value brute (devise)</th>
         <th class="num" title="Valeur − prix de revient, frais de courtage et TVA inclus, effet de change appliqué. Ce qui reste réellement.">+/- value nette (€)</th>
         <th class="num">Poids</th>
       </tr></thead><tbody>${corps}</tbody></table>`;
     }
     const s = SYN.positions_soldees;
     $('#bloc-soldees').classList.toggle('cache', !s.length);
-    $('#table-soldees').innerHTML = s.length ? `<table><thead><tr><th>Titre</th><th class="num" title="(prix de vente − PAM) × quantité, dans la devise de cotation. Hors frais.">+/- value brute (devise)</th><th class="num" title="Produit de la vente diminué du prix de revient, frais d'achat ET de vente inclus, effet de change appliqué.">+/- value nette (€)</th><th class="num">Dividendes</th></tr></thead>
+    $('#table-soldees').innerHTML = s.length ? `<table><thead><tr><th>Titre</th><th class="num" title="(prix de vente − prix moyen hors frais) × quantité, dans la devise de cotation.">+/- value brute (devise)</th><th class="num" title="Produit de la vente diminué du prix de revient, frais d'achat ET de vente inclus, effet de change appliqué.">+/- value nette (€)</th><th class="num">Dividendes</th></tr></thead>
       <tbody>${s.map(l => `<tr><td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)}</small></td>
         <td class="num ${classe(l.pv_realisee_devise)}">${argent(l.pv_realisee_devise, l.devise, true)}</td>
         <td class="num ${classe(l.pv_realisee_eur)}">${argent(l.pv_realisee_eur, 'EUR', true)}</td>
@@ -1050,7 +1100,48 @@
       ${o.type === 'SPLIT' ? '' : `<button class="mini-btn" onclick="modifier(${o.id})">Modifier</button>`}
       <button class="mini-btn danger" onclick="annuler(${o.id})">Annuler</button></div>`;
 
+  // Frais payés depuis l'ouverture, demandés en encadrement : le total ne dit pas
+  // grand-chose seul, c'est leur poids sur le capital investi qui parle. Un euro de
+  // courtage sur un ordre de 200 € pèse 0,5 % de performance qu'il faudra rattraper.
+  function afficherFrais() {
+    const zone = $('#detail-frais');
+    if (!zone) return;
+    const t = (SYN && SYN.totaux) || {};
+    const total = t.frais_eur || 0, achat = t.frais_achat_eur || 0, vente = t.frais_vente_eur || 0;
+    const na = t.nb_ordres_achat || 0, nv = t.nb_ordres_vente || 0;
+    const moyen = n => n > 0 ? ` · ${argent(n === na ? achat / na : vente / nv)} par ordre` : '';
+    if (!total) {
+      zone.innerHTML = `<p class="discret">Aucun frais enregistré pour l'instant.</p>`;
+      return;
+    }
+    zone.innerHTML = `
+      <div class="carte-frais total">
+        <span class="intitule">Total</span>
+        <strong>${argent(total)}</strong>
+        <span class="sous">${t.frais_pct_investi != null
+          ? `${pct(t.frais_pct_investi, false)} du capital investi` : '—'}</span>
+      </div>
+      <div class="carte-frais">
+        <span class="intitule">Ordres d'achat</span>
+        <strong>${argent(achat)}</strong>
+        <span class="sous">${na} ordre${na > 1 ? 's' : ''}${moyen(na)}</span>
+      </div>
+      <div class="carte-frais">
+        <span class="intitule">Ordres de vente</span>
+        <strong>${argent(vente)}</strong>
+        <span class="sous">${nv ? `${nv} ordre${nv > 1 ? 's' : ''}${moyen(nv)}`
+                               : 'aucune vente'}</span>
+      </div>
+      <p class="discret" style="grid-column:1/-1;margin:4px 0 0">
+        Ces frais sont déjà déduits de votre plus-value : ils entrent dans le prix de
+        revient à l'achat et viennent en déduction du produit à la vente.
+        <button class="btn-lien" data-vers-fiche="frais">Comment ils sont comptés</button></p>`;
+    zone.querySelectorAll('[data-vers-fiche]').forEach(b =>
+      b.onclick = () => allerFiche(b.dataset.versFiche));
+  }
+
   function afficherOrdres() {
+    afficherFrais();
     const zone = $('#table-ordres'), ordres = OPS.ordres;
     if (!ordres.length) {
       zone.innerHTML = `<div class="vide"><p>Aucun ordre saisi.</p><button class="btn" onclick="ouvrirTiroir('ACHAT')">Saisir une position</button></div>`;
@@ -1259,24 +1350,67 @@
     const axeX = { ticks: { maxTicksLimit: 8, color: teinte('--encre-2') }, grid: { display: false } };
     const eur = v => argent(v).replace(/,00/, '');
 
-    // Deux courbes et rien d'autre : ce que valent les lignes, et ce qu'elles ont coûté.
-    // Les espèces n'entrent dans ni l'une ni l'autre — l'application suit des
-    // investissements. L'écart vertical entre les deux est la plus-value latente.
+    // Ce que valent les lignes, ce qu'elles ont coûté, et — dès qu'il y a de la
+    // trésorerie — ce que vaut le compte entier. L'écart vertical entre les deux
+    // premières courbes est la plus-value latente ; l'écart entre la valeur du compte
+    // et la valeur des titres est l'argent versé qui n'a pas encore été investi.
+    //
+    // La courbe du compte n'apparaît que si des espèces existent quelque part sur la
+    // période : sans elles, elle se superposerait exactement à celle des titres et
+    // n'ajouterait qu'une ligne dans la légende.
+    const avecEspeces = pts.some(p => (p.cash_eur || 0) > 0.005);
+
+    // Marqueurs d'opérations, posés sur la courbe des titres à la date de l'ordre.
+    // Le tableau est plein de trous : une valeur aux dates d'opération, null partout
+    // ailleurs, ce qui donne des points isolés sans ligne qui les relie.
+    const MARQ = {};
+    (PERF.marqueurs || []).forEach(m => { MARQ[m.indice_point] = m; });
+    const COULEUR_SENS = { ACHAT: '#1E6A48', VENTE: '#B23A2E', MIXTE: '#C08A3E' };
+    const pointsOps = pts.map((p, i) => MARQ[i] ? p.titres_eur : null);
+    const couleurs = pts.map((p, i) => MARQ[i] ? COULEUR_SENS[MARQ[i].sens] : 'transparent');
+
+    const jeuxValo = [
+      { label: 'Valeur des titres', data: pts.map(p => p.titres_eur), borderColor: '#1E6A48', backgroundColor: 'rgba(30,106,72,.08)', fill: true, pointRadius: 0, borderWidth: 2, tension: .15 },
+      { label: 'Montant investi', data: pts.map(p => p.cout_titres_eur), borderColor: '#6B7A70', borderDash: [5, 4], fill: false, pointRadius: 0, borderWidth: 1.6, tension: .15 },
+    ];
+    if (avecEspeces) jeuxValo.unshift(
+      { label: 'Valeur du compte', data: pts.map(p => p.valorisation_eur), borderColor: '#2B5680', backgroundColor: 'rgba(43,86,128,.06)', fill: true, pointRadius: 0, borderWidth: 1.8, tension: .15 });
+    if (Object.keys(MARQ).length) jeuxValo.push(
+      // La couleur de chaque point dépend du sens ; celle du jeu entier ne sert qu'à
+      // la pastille de la légende, qui prendrait sinon la première valeur du tableau
+      // — « transparent » — et resterait invisible.
+      { label: 'Achats et ventes', data: pointsOps, showLine: false, pointRadius: 5,
+        pointHoverRadius: 7, pointBackgroundColor: couleurs, pointBorderColor: '#fff',
+        pointBorderWidth: 1.5, backgroundColor: '#6B7A70', borderColor: '#6B7A70',
+        order: -1 });
+
     creerGraphique('c-valo', {
       type: 'line',
-      data: { labels, datasets: [
-        { label: 'Valeur des titres', data: pts.map(p => p.titres_eur), borderColor: '#1E6A48', backgroundColor: 'rgba(30,106,72,.08)', fill: true, pointRadius: 0, borderWidth: 2, tension: .15 },
-        { label: 'Montant investi', data: pts.map(p => p.cout_titres_eur), borderColor: '#6B7A70', borderDash: [5, 4], fill: false, pointRadius: 0, borderWidth: 1.6, tension: .15 },
-      ] },
+      data: { labels, datasets: jeuxValo },
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
         plugins: { legend: { display: true, position: 'bottom',
             labels: { boxWidth: 12, usePointStyle: true, color: teinte('--encre-2') } },
           tooltip: { callbacks: {
-            label: c => ` ${c.dataset.label} : ${argent(c.raw)}`,
+            // Le jeu des marqueurs n'a pas de valeur propre à annoncer : son contenu
+            // est détaillé plus bas, opération par opération.
+            label: c => c.dataset.label === 'Achats et ventes' ? null
+                      : ` ${c.dataset.label} : ${argent(c.raw)}`,
             afterBody: items => {
-              const p = pts[items[0].dataIndex], ecart = (p.titres_eur || 0) - (p.cout_titres_eur || 0);
-              return ` Plus-value latente : ${argent(ecart, 'EUR', true)}`
-                   + (p.cout_titres_eur > 0.005 ? ` (${pct(p.pv_titres_pct)})` : '');
+              const i = items[0].dataIndex, p = pts[i];
+              const lignes = [];
+              const ecart = (p.titres_eur || 0) - (p.cout_titres_eur || 0);
+              lignes.push(` Plus-value latente : ${argent(ecart, 'EUR', true)}`
+                        + (p.cout_titres_eur > 0.005 ? ` (${pct(p.pv_titres_pct)})` : ''));
+              if (avecEspeces) lignes.push(` Espèces : ${argent(p.cash_eur || 0)}`);
+              const m = MARQ[i];
+              if (m) {
+                lignes.push('');
+                m.operations.forEach(o => lignes.push(
+                  ` ${o.type === 'ACHAT' ? '▲ Achat' : '▼ Vente'} ${o.ticker}`
+                  + ` — ${nombre(o.quantite)} à ${argent(o.prix, o.devise)}`
+                  + (o.frais_eur ? ` · ${argent(o.frais_eur)} de frais` : '')));
+              }
+              return lignes;
             } } } },
         scales: { x: axeX, y: { ticks: { callback: eur, color: teinte('--encre-2') }, grid: { color: teinte('--filet') } } } },
     });
@@ -1350,9 +1484,16 @@
       // Plus d'explication sous chaque chiffre : elles vivent dans l'onglet Informations,
       // écrites une seule fois. Chaque case renvoie vers sa fiche.
       const cases = [
-        ['Rendement annualisé', pct(r.rendement_1an_pct), 'rendement', ''],
+        // Le même chiffre que la ligne « 1 an » de l'onglet Performance, repris tel quel.
+        // L'astérisque n'apparaît que si le compte a moins d'un an, auquel cas la
+        // performance a dû être ramenée à l'année et reste une extrapolation.
+        ['Rendement sur un an',
+         pct(r.rendement_1an_pct) + (r.rendement_annualise ? ' *' : ''), 'rendement',
+         r.rendement_annualise
+           ? `ramené à l'année sur ${r.rendement_jours} jours de recul`
+           : ''],
         ['Volatilité annualisée', pct(r.volatilite_pct, false), 'volatilite', ''],
-        ['VaR 95 % à 1 jour', argent(r.var95_1j_eur), 'var', ''],
+        ['VaR historique 95 % à 1 jour', argent(r.var95_1j_eur), 'var', ''],
         ['Perte moyenne au-delà (CVaR)', pct(-r.cvar95_1j_pct), 'cvar', ''],
         ['Perte maximale (max drawdown)', pct(r.max_drawdown_pct), 'drawdown', ''],
         ['Bêta', nombre(r.beta), 'beta',
@@ -1367,28 +1508,32 @@
          + ` title="Rendement d'une dette d'État à court terme, ou le taux de votre livret.">`
          + `<span>%</span></label>`],
       ];
-      zone.innerHTML = `<p class="discret" style="margin:0 0 12px">${echap(m.base || '')} Période retenue : ${r.n_jours} jours (${r.periode}).</p>
+      zone.innerHTML = `<p class="discret" style="margin:0 0 12px">${echap(m.base || '')} Période retenue : ${r.n_jours} séances (${r.periode}).</p>
         <div class="indicateurs">${cases.map(([n, v, k, a]) =>
           `<div class="cliquable" data-fiche="${k}" title="Voir la définition de ${echap(n)}">`
           + `<div class="nom">${n}</div><div class="valeur">${v}</div>`
           + `<div class="aide">${a}<span class="vers-fiche">Qu'est-ce que c'est ?</span></div></div>`).join('')}</div>
 
-        <div class="panneau"><h2>Contribution de chaque ligne au risque</h2>
-          <div class="defile"><table><thead><tr><th>Titre</th><th class="num">Poids</th><th class="num">Volatilité</th>
-            <th class="num" title="Sensibilité de la ligne à l'indice de référence (${echap(r.indice_reference)}). N'intervient PAS dans la part du risque.">Bêta / indice</th>
-            <th class="num" title="Sensibilité de la ligne à votre propre portefeuille. C'est celui-ci qui commande la part du risque.">Bêta / portefeuille</th>
+        <div class="panneau"><h2>Contribution de chaque ligne au risque
+          <button class="vers-fiche" id="fiche-part-risque" style="font-weight:400;margin-left:10px">Qu'est-ce que c'est ?</button></h2>
+          <div class="defile"><table><thead><tr><th>Titre</th>
+            <th class="num" title="Part moyenne de la ligne dans le portefeuille sur les douze derniers mois">Poids moyen</th>
+            <th class="num">Volatilité</th>
+            <th class="num" title="Sensibilité de la ligne à l'indice de référence (${echap(r.indice_reference)})">Bêta / indice</th>
             <th class="num">Part du risque</th></tr></thead>
-          <tbody>${r.par_ligne.map(l => `<tr><td class="titre-ligne"><strong>${echap(l.nom)}</strong><small>${echap(l.ticker)}</small></td>
-            <td class="num">${pct(l.poids_pct, false)}</td><td class="num">${pct(l.volatilite_pct, false)}</td>
+          <tbody>${r.par_ligne.map(l => `<tr><td class="titre-ligne"><strong>${echap(l.nom)}</strong>${
+              l.ticker ? `<small>${echap(l.ticker)}${l.soldee ? ' · ligne soldée' : ''}</small>` : ''}</td>
+            <td class="num">${l.poids_pct == null ? '—' : pct(l.poids_pct, false)}</td>
+            <td class="num">${l.volatilite_pct == null ? '—' : pct(l.volatilite_pct, false)}</td>
             <td class="num discret">${nombre(l.beta)}</td>
-            <td class="num">${nombre(l.beta_portefeuille)}</td>
-            <td class="num" title="${pct(l.poids_pct, false)} × ${nombre(l.beta_portefeuille)} = ${pct(l.contribution_risque_pct, false)}"><strong>${pct(l.contribution_risque_pct, false)}</strong>
-              <span class="sous">${pct(l.poids_pct, false)} × ${nombre(l.beta_portefeuille)}</span></td></tr>`).join('')}</tbody></table></div></div>
+            <td class="num"><strong>${pct(l.contribution_risque_pct, false)}</strong></td></tr>`).join('')}</tbody></table></div></div>
 
         <div class="panneau" id="bloc-regularite"></div>
 `;
       document.querySelectorAll('.indicateurs > div.cliquable').forEach(d =>
         d.onclick = e => { if (e.target.tagName !== 'INPUT') allerFiche(d.dataset.fiche); });
+      const lienPart = $('#fiche-part-risque');
+      if (lienPart) lienPart.onclick = () => allerFiche('contribution');
       regularite();
       // Le taux sans risque se règle ici, sous le ratio qu'il commande. On n'enregistre
       // qu'une valeur plausible, et seulement quand elle a réellement changé.
@@ -1461,6 +1606,7 @@
   ];
 
   let CIBLE_MENSUELLE = 0;
+  let ESPECES_DISPO = null;   // ligne « Espèces à investir » du module bancaire
 
   async function enregistrerCible(valeur) {
     try {
@@ -1481,11 +1627,18 @@
     // trois ETF le 9 septembre, ce n'est pas investir trois fois.
     let achats = [];
     try {
-      const [{ ordres }, params] = await Promise.all([
+      // Les espèces à investir viennent du module Budget et comptes, ligne
+      // « Espèces à investir » : c'est le même chiffre, à la même source, pour que
+      // la cible se règle en regard de ce qui est réellement disponible. L'appel
+      // peut échouer — compte sans volet bancaire — et la phrase disparaît alors
+      // sans empêcher le score de s'afficher.
+      const [{ ordres }, params, invest] = await Promise.all([
         api('/compte/operations'),
         api('/compte/parametres').catch(() => ({})),
+        api('/banque/investissement').catch(() => null),
       ]);
       CIBLE_MENSUELLE = Number(params?.cible_mensuelle_eur) || 0;
+      ESPECES_DISPO = invest && typeof invest.cash_eur === 'number' ? invest.cash_eur : null;
       const parDate = new Map();
       (ordres || []).filter(o => o.type === 'ACHAT').forEach(o => {
         const montant = Math.abs(o.montant_position_eur || 0);
@@ -1555,7 +1708,12 @@
         </div>
         <span class="aide-champ" id="aide-cible">${CIBLE_MENSUELLE > 0
           ? `Soit ${argent(cibleAnnuelle)} sur vos ${nbMois} mois d'historique. Modifiable à tout moment.`
-          : "Tant qu'elle est vide, seul votre rythme est noté, pas vos montants."}</span>
+          : "Tant qu'elle est vide, seul votre rythme est noté, pas vos montants."}${
+          ESPECES_DISPO !== null
+            ? ` Votre montant d'épargne disponible est de ${argent(ESPECES_DISPO)}${
+                CIBLE_MENSUELLE > 0 && ESPECES_DISPO > 0
+                  ? `, soit ${Math.floor(ESPECES_DISPO / CIBLE_MENSUELLE)} mois de versements à ce rythme` : ''}.`
+            : ''}</span>
       </div>`;
 
     // « 2 mois sur 12 » se lisait comme une fenêtre réduite à deux mois, alors que c'est
@@ -1648,26 +1806,32 @@
      d'explication sous eux : ils renvoient vers leur fiche. Une seule source de
      vérité, donc pas de risque qu'une définition dérive d'un écran à l'autre. */
   const FICHES = [
-    { id: 'rendement', titre: 'Rendement annualisé',
-      definition: `Ce qu'ont rapporté vos titres sur un an glissant, à composition actuelle
-        du portefeuille. Les rendements quotidiens sont composés les uns après les autres,
-        puis le total est ramené à une année. C'est le numérateur du ratio de Sharpe.`,
-      formule: '(1 + performance cumulée) ^ (1 ÷ nombre d\'années) − 1',
+    { id: 'rendement', titre: 'Rendement sur un an',
+      definition: `La performance que vous avez réellement réalisée sur les douze derniers
+        mois, versements neutralisés. C'est le même chiffre que la ligne « 1 an » de
+        l'onglet Performance : une seule définition, un seul nombre, deux endroits où
+        il s'affiche. Il sert de numérateur au ratio de Sharpe.`,
+      formule: 'valeur de fin ÷ valeur de début − 1',
       lecture: [
-        ['Négatif', 'vos titres ont perdu de la valeur sur la période.'],
+        ['Négatif', 'le portefeuille a perdu de la valeur sur les douze derniers mois.'],
         ['0 à 5 %', "en dessous de ce que rapporte généralement un placement sans risque."],
         ['5 à 15 %', "l'ordre de grandeur d'un marché actions sur une bonne année."],
         ['Plus de 15 %', 'année très favorable, ou portefeuille concentré sur un secteur porteur.'],
       ],
-      exemple: `Sur 378 séances, soit 1,5 an, vos rendements quotidiens composés donnent
-        +18,0 % au total.
-        Rendement annualisé = (1,18) ^ (1 ÷ 1,5) − 1 = +11,66 %.`,
-      note: `Même formule que dans l'onglet Performance, appliquée ici au portefeuille tel
-        qu'il est composé aujourd'hui. Les deux chiffres peuvent donc différer.` },
+      exemple: `L'indice de performance de votre compte valait 128,40 il y a un an et vaut
+        148,96 aujourd'hui. Rendement sur un an = 148,96 ÷ 128,40 − 1 = +16,01 %.
+        La fenêtre durant déjà un an, il n'y a rien à annualiser.`,
+      note: `Si votre compte a moins d'un an, le chiffre est ramené à l'année par
+        (valeur de fin ÷ valeur de début) ^ (1 ÷ nombre d'années) − 1, et un astérisque
+        signale qu'il s'agit alors d'une extrapolation.` },
 
     { id: 'volatilite', titre: 'Volatilité annualisée',
-      definition: `La volatilité mesure à quel point la valeur du portefeuille varie, à la
-        hausse comme à la baisse. Plus elle est élevée, plus le parcours est agité.`,
+      definition: `Écart-type des rendements quotidiens réalisés par vos titres sur les
+        douze derniers mois, ramené à l'année. Elle mesure l'amplitude des variations
+        de valeur, à la hausse comme à la baisse. Elle est calculée sur la même série
+        que la performance : les deux termes du ratio de Sharpe décrivent donc le même
+        portefeuille, sur la même période.`,
+      formule: "σp = écart-type des rendements quotidiens × √252",
       lecture: [
         ['Moins de 10 %', 'volatilité faible, le portefeuille évolue de façon régulière.'],
         ['10 % à 20 %', "volatilité modérée, comparable à un portefeuille d'actions diversifié."],
@@ -1675,7 +1839,14 @@
       ],
       exemple: `Deux portefeuilles rapportent tous les deux 8 % en moyenne par an. Le premier
         fait chaque année entre +6 % et +10 %. Le second fait parfois −10 %, parfois +26 %.
-        La moyenne est la même, mais le second est bien plus éprouvant à détenir.` },
+        La moyenne est la même, mais le second est bien plus éprouvant à détenir.`,
+      note: `Le √252 ramène des variations quotidiennes à l'échelle annuelle, 252 étant le
+        nombre de séances dans une année boursière. La variance d'un portefeuille se
+        décompose en σ²p = Σ wi² σi² + ΣΣ(j≠i) wi wj Cov(i,j) : les termes croisés
+        expliquent pourquoi la volatilité du portefeuille est inférieure à la moyenne
+        de celles de ses lignes. Mesurée directement sur les rendements réalisés, elle
+        intègre ces corrélations avec les poids effectivement détenus chaque jour,
+        achats et ventes de l'année compris.` },
 
     { id: 'sharpe', titre: 'Ratio de Sharpe',
       definition: `Le ratio de Sharpe indique combien de rendement le portefeuille rapporte
@@ -1690,12 +1861,17 @@
       exemple: `Taux sans risque 2 %. Le portefeuille A rapporte 10 % avec 10 % de
         volatilité : (10 − 2) ÷ 10 = 0,8. Le B rapporte 14 % avec 24 % : (14 − 2) ÷ 24 = 0,5.
         B rapporte plus, mais A gagne davantage pour chaque unité de risque.`,
-      note: `Le rendement employé au numérateur est le rendement annualisé affiché juste
-        à côté.` },
+      note: `Les trois termes du calcul — performance sur un an, taux sans risque,
+        volatilité annualisée — sont affichés sur cette page : le ratio se vérifie à
+        la main. Le taux sans risque se règle sous le ratio ; il doit correspondre à
+        la rémunération d'une dette d'État de court terme dans la devise du
+        portefeuille.` },
 
     { id: 'drawdown', titre: 'Perte maximale (max drawdown)',
-      definition: `La plus forte baisse subie entre un point haut et le point bas qui a suivi,
-        sur la période étudiée. Elle répond à : « quelle est la pire perte que j'aurais pu vivre ? »`,
+      definition: `La plus forte baisse réellement subie par vos titres entre un point
+        haut et le point bas qui a suivi, sur les douze derniers mois, mouvements
+        neutralisés. Elle répond à : « quelle a été la pire perte que j'ai vécue ? »`,
+      formule: 'perte maximale = min ( valeur ÷ plus haut atteint jusque-là ) − 1',
       lecture: [
         ['0 % à −10 %', 'baisse limitée, portefeuille plutôt défensif.'],
         ['−10 % à −20 %', 'baisse modérée, normale pour un portefeuille avec des actions.'],
@@ -1707,8 +1883,12 @@
         revenir à 13 000 €, il faudra ensuite gagner environ +43 %, et non +30 %.` },
 
     { id: 'beta', titre: 'Bêta',
-      definition: `Le bêta mesure la sensibilité du portefeuille aux mouvements du marché.
-        Un bêta de 1 signifie que le portefeuille bouge comme son indice de référence.`,
+      definition: `Sensibilité du portefeuille aux mouvements du marché : covariance entre
+        ses rendements et ceux de l'indice de référence, divisée par la variance de
+        l'indice. Un bêta de 1 signifie que le portefeuille reproduit en moyenne les
+        mouvements de son indice. Calculé sur les rendements quotidiens des douze
+        derniers mois, comme les autres indicateurs de cet onglet.`,
+      formule: 'β = Cov(Rp, Rm) / Var(Rm)',
       lecture: [
         ['Inférieur à 0', "le portefeuille évolue à l'inverse du marché."],
         ['0 à 0,8', 'portefeuille défensif : il amortit les mouvements du marché.'],
@@ -1716,12 +1896,20 @@
         ['Supérieur à 1,2', 'portefeuille offensif : il amplifie les hausses comme les baisses.'],
       ],
       exemple: `Si le marché baisse de 10 % et que votre portefeuille a un bêta de 1,3, il
-        baissera d'environ 13 %. Si le marché monte de 10 %, il montera d'environ 13 %.` },
+        baissera d'environ 13 %. Si le marché monte de 10 %, il montera d'environ 13 %.`,
+      note: `Rp désigne les rendements quotidiens du portefeuille, Rm ceux de l'indice.
+        La corrélation est affichée sous le bêta : elle indique la part des mouvements
+        du portefeuille que l'indice explique réellement. Un bêta élevé assorti d'une
+        corrélation faible se lit avec prudence, l'indice n'étant alors pas la bonne
+        référence pour ce portefeuille.` },
 
-    { id: 'var', titre: 'VaR 95 % à 1 jour',
-      definition: `La Value at Risk indique la perte journalière qui n'a été dépassée qu'un
-        jour sur vingt sur la période étudiée. Elle est calculée à partir des variations
-        réellement observées — méthode historique — et appliquée à la valeur de vos titres.`,
+    { id: 'var', titre: 'VaR historique 95 % à 1 jour',
+      definition: `Value at Risk : la perte d'une journée qui n'est dépassée qu'un jour sur
+        vingt. Méthode historique : les rendements quotidiens des douze derniers mois
+        sont classés du plus mauvais au meilleur, et la VaR est lue au cinquième
+        centile. Aucune loi de probabilité n'est supposée — les mauvaises journées
+        sont prises telles qu'elles se sont produites.`,
+      formule: 'VaR = − quantile 5 % des rendements quotidiens,  appliqué à la valeur du portefeuille',
       lecture: [
         ['Moins de 1 %', 'pertes journalières habituellement très limitées.'],
         ['1 % à 2 %', "niveau normal pour un portefeuille d'actions."],
@@ -1731,7 +1919,12 @@
       exemple: `Vos titres valent 20 000 € et la VaR est de 400 €, soit 2 %. Dix-neuf jours
         sur vingt, vous perdez moins de 400 € dans la journée, ou vous gagnez. Mais environ
         un jour par mois de Bourse, la perte dépasse 400 €. La VaR ne dit pas de combien :
-        c'est le rôle de la CVaR.` },
+        c'est le rôle de la CVaR.`,
+      note: `Sur 261 séances, le cinquième centile correspond à la treizième plus
+        mauvaise journée de l'année. La VaR porte sur un jour et ne s'additionne pas :
+        elle ne dit rien du risque d'une semaine ni d'un mois. Elle ne dit pas non
+        plus de combien la perte dépasse le seuil quand il cède — c'est l'objet de la
+        CVaR, affichée juste à côté.` },
 
     { id: 'cvar', titre: 'Perte moyenne au-delà (CVaR)',
       definition: `La CVaR mesure la perte moyenne lors des 5 % de pires journées, c'est-à-dire
@@ -1744,6 +1937,47 @@
       ],
       exemple: `VaR de 2 % et CVaR de 3 % sur 20 000 € de titres : lors des pires journées,
         environ douze par an, la perte moyenne a été de 600 €, alors que le seuil était de 400 €.` },
+
+    { id: 'contribution', titre: 'Part du risque',
+      definition: `La part de la variance du portefeuille qu'a portée chaque ligne sur les
+        douze derniers mois. Chaque jour, le rendement du portefeuille est la somme de
+        ce qu'y a apporté chacune de ses lignes : son gain ou sa perte du jour, rapporté
+        à la valeur du portefeuille la veille. La part du risque mesure à quel point ces
+        apports quotidiens ont accompagné les mouvements d'ensemble.`,
+      formule: 'part de la ligne i = Cov(cᵢ, Rp) ÷ Var(Rp)',
+      lecture: [
+        ['Part > poids', 'la ligne a amplifié les mouvements du portefeuille : elle porte plus de risque que sa taille.'],
+        ['Part ≈ poids', 'la ligne a bougé au rythme du reste du portefeuille.'],
+        ['Part < poids', 'la ligne a amorti les mouvements : elle diversifie le portefeuille.'],
+      ],
+      exemple: `Une ligne pèse en moyenne 30 % du portefeuille mais porte 42 % de son risque :
+        c'est sur elle que se concentrent les mauvaises comme les bonnes journées. La
+        réduire diminuerait le risque plus que proportionnellement.`,
+      note: `cᵢ est l'apport quotidien de la ligne, Rp le rendement quotidien du
+        portefeuille. Comme Rp est exactement la somme des cᵢ, les parts s'additionnent
+        à 100 %. Une ligne vendue en cours d'année figure dans le tableau pour la
+        période où elle était détenue. Les frais de courtage apparaissent en dernière
+        ligne lorsqu'ils pèsent de façon visible.` },
+
+    { id: 'frais', titre: 'Frais de courtage',
+      definition: `Ce que votre intermédiaire prélève à chaque ordre : courtage, TVA et
+        taxes éventuelles. L'application ne les estime pas — elle reprend le montant
+        exact figurant sur votre avis d'opération, ou celui que vous saisissez à la main.`,
+      formule: 'PRU = (quantité × prix + frais) ÷ quantité',
+      lecture: [
+        ['À l\'achat', "les frais s'ajoutent au coût de revient : ils augmentent ce que la ligne doit rapporter pour être à l'équilibre."],
+        ['À la vente', 'les frais se retranchent du produit encaissé, donc de la plus-value réalisée.'],
+        ['Sur le PRU', "ils entrent : le prix de revient unitaire est tout ce qu'a coûté une unité, commission comprise."],
+        ['Sur la performance', 'ils sont déjà déduits partout — en-tête, courbes, ratios. Rien ne les compte deux fois.'],
+      ],
+      exemple: `Achat de 15 parts à 67,74 €, 2,90 € de frais.
+        Montant des titres = 15 × 67,74 = 1 016,10 €. Prix de revient = 1 016,10 + 2,90 = 1 019,00 €.
+        PRU = 1 019,00 ÷ 15 = 67,93 €, soit 19 centimes de plus que le prix payé par part.
+        Revendues à 70,00 € avec 2,90 € de frais : produit = 15 × 70,00 − 2,90 = 1 047,10 €.
+        Plus-value réalisée = 1 047,10 − 1 019,00 = +28,10 €, les deux commissions déduites.`,
+      note: `Le total payé depuis l'ouverture, séparé entre achats et ventes, figure en
+        haut de l'onglet Ordres. Rapporté au capital investi, il indique le pourcentage
+        de performance que le courtage a absorbé d'avance.` },
 
     { id: 'regularite', titre: 'Régularité de vos investissements',
       definition: `Un score de 0 à 100 qui répond à deux questions : avez-vous investi
@@ -1775,6 +2009,8 @@
       definition: `Le TWR — time-weighted return, rendement pondéré dans le temps — mesure ce
         qu'a rapporté un euro resté investi du début à la fin. Il neutralise vos versements
         et vos retraits, qui ne sont pas des performances.`,
+      formule: "cumulée = valeur de fin ÷ valeur de début − 1"
+             + "      annualisée = (valeur de fin ÷ valeur de début) ^ (1 ÷ n) − 1,  n en années",
       lecture: [
         ['Pourquoi le TWR', "c'est la seule mesure comparable à un indice, puisqu'un indice ne reçoit jamais de versement."],
         ['Ce qu\'il répond', '« mes choix de placement étaient-ils bons ? »'],
@@ -1786,8 +2022,13 @@
         1 000 € du départ, devenus 2 100 €. Mais rapporté aux 9 000 € réellement versés, le
         gain de 1 500 € ne représente que +16,7 %. Les deux chiffres sont justes : ils ne
         répondent pas à la même question.`,
-      note: `La performance n'est annualisée qu'à partir de trois mois ; un astérisque
-        signale moins d'un an de recul.` },
+      note: `« Valeur » désigne ici l'indice de performance du compte, dont le niveau de
+        départ vaut 100 — l'équivalent de la valeur liquidative d'un fonds — et non la
+        valorisation en euros, qui contient vos versements. Le nombre d'années se compte
+        en jours calendaires divisés par 365,25, et peut valoir moins de un.
+        La performance n'est annualisée qu'à partir de trois mois ; un astérisque
+        signale moins d'un an de recul. Sur une fenêtre qui dure déjà un an,
+        l'annualisée et la cumulée sont le même nombre.` },
   ];
 
   function afficherInfos() {
@@ -1903,6 +2144,15 @@
     document.querySelectorAll('#types-ordre button').forEach(b => b.setAttribute('aria-pressed', b.dataset.type === t));
     document.querySelectorAll('#form-ordre [data-pour]').forEach(el => el.classList.toggle('cache', !el.dataset.pour.split(' ').includes(t)));
     $('#o-fiche').classList.toggle('cache', !ficheOrdre || !['ACHAT', 'VENTE'].includes(t));
+    // Un versement et un retrait ne touchent que les espèces : ils ne créent ni
+    // n'éteignent aucune position, et n'entrent donc pas dans la performance des
+    // titres. Autant le dire au moment de la saisie.
+    const aide = $('#o-aide-montant');
+    if (aide) aide.textContent =
+      t === 'DEPOT' ? "Argent viré sur le compte-titres. Il rejoint vos espèces disponibles."
+      : t === 'RETRAIT' ? "Argent retiré du compte-titres vers votre banque."
+      : t === 'DIVIDENDE' ? "Dividende encaissé. Il rejoint vos espèces disponibles."
+      : '';
     $('#o-valider').textContent = editionId ? 'Enregistrer la correction' : LIBELLES[t];
     majRecap();
   }
@@ -1959,7 +2209,7 @@
       await api(editionId ? '/compte/operations/' + editionId : '/compte/operations',
                 { method: editionId ? 'PUT' : 'POST', body: JSON.stringify(corps) });
       fermerTiroir();
-      toast(editionId ? 'Saisie corrigée.' : { ACHAT: 'Achat enregistré.', VENTE: 'Vente enregistrée.', DEPOT: 'Dépôt enregistré.', RETRAIT: 'Retrait enregistré.', DIVIDENDE: 'Dividende enregistré.' }[typeOrdre]);
+      toast(editionId ? 'Saisie corrigée.' : { ACHAT: 'Achat enregistré.', VENTE: 'Vente enregistrée.', DEPOT: 'Versement enregistré.', RETRAIT: 'Retrait enregistré.', DIVIDENDE: 'Dividende enregistré.' }[typeOrdre]);
       rafraichir();
     } catch (ex) { err.textContent = ex.message; err.classList.remove('cache'); }
     finally { btn.disabled = false; }
@@ -2004,28 +2254,75 @@
   let LIGNES_IMPORT = [];
 
   let TYPE_IMPORT = 'positions';
-  let FICHIER_IMPORT = null;                   // conservé pour pouvoir relire après classement
+  let FICHIERS_IMPORT = [];                    // conservés pour pouvoir relire après classement
+  let APERCU_IMPORT = [];                      // réponses du serveur, pour retrouver les empreintes
   $('#btn-import').onclick = () => $('#fichier-import').click();
+  $('#btn-import-ordres').onclick = () => $('#fichier-import').click();
   $('#fichier-import').onchange = async e => {
-    const fichier = e.target.files[0];
-    if (!fichier) return;
-    e.target.value = '';                       // permet de réimporter le même fichier
-    FICHIER_IMPORT = fichier;
+    const fichiers = [...e.target.files];
+    if (!fichiers.length) return;
+    e.target.value = '';                       // permet de réimporter les mêmes fichiers
+    FICHIERS_IMPORT = fichiers;
     try {
       await relireFichierImport();
       $('#dlg-import').showModal();
     } catch (ex) { alert("Lecture impossible : " + ex.message); }
   };
 
+  /* Lecture de tous les fichiers sélectionnés, puis fusion en un seul tableau de
+     relecture. Chaque fichier est lu séparément par le serveur — un avis d'opéré ne se
+     concatène pas à un autre — et c'est ici que les résultats sont recousus.
+
+     Deux précautions. D'abord le mélange des genres : un relevé d'opérations et un
+     export de positions ne se datent pas de la même façon, les importer ensemble
+     produirait un historique faux. On refuse, en nommant les fichiers en cause.
+     Ensuite les doublons entre fichiers : le serveur compare chaque ligne à ce qui est
+     déjà en base, mais ignore tout des autres fichiers du même lot. Deux exemplaires
+     du même avis passeraient donc deux fois. */
   async function relireFichierImport() {
-    const corps = new FormData();
-    corps.append('fichier', FICHIER_IMPORT);
-    const res = await api('/compte/import/apercu', { method: 'POST', body: corps });
-    TYPE_IMPORT = res.type || 'positions';
+    const resultats = [];
+    for (const f of FICHIERS_IMPORT) {
+      const corps = new FormData();
+      corps.append('fichier', f);
+      try {
+        resultats.push({ fichier: f.name, res: await api('/compte/import/apercu', { method: 'POST', body: corps }) });
+      } catch (ex) {
+        resultats.push({ fichier: f.name, erreur: ex.message });
+      }
+    }
+    const lus = resultats.filter(r => r.res);
+    if (!lus.length) {
+      throw new Error(resultats.map(r => `${r.fichier} : ${r.erreur}`).join('\n'));
+    }
+
+    const types = [...new Set(lus.map(r => r.res.type || 'positions'))];
+    if (types.length > 1) {
+      const parType = types.map(t => `${t} (${lus.filter(r => (r.res.type || 'positions') === t)
+        .map(r => r.fichier).join(', ')})`).join(' — ');
+      throw new Error("Ces fichiers ne sont pas de même nature : " + parType
+        + ". Importez-les séparément, leurs dates ne se traitent pas de la même façon.");
+    }
+    TYPE_IMPORT = types[0];
+
     // Une ligne déjà présente à l'identique dans le portefeuille est décochée d'office :
     // réimporter un relevé qui recouvre le précédent ne doit pas créer de doublons.
-    LIGNES_IMPORT = res.lignes.map(l => ({ ...l, inclure: l.importable && !l.doublon }));
-    afficherApercuImport(res);
+    const vues = new Set();
+    LIGNES_IMPORT = [];
+    for (const { fichier, res } of lus) {
+      for (const l of res.lignes) {
+        const cle = [l.isin || l.ticker || l.nom, l.date, l.sens,
+                     l.quantite, l.pru, l.montant_eur].join('|');
+        const doublonInterne = vues.has(cle);
+        vues.add(cle);
+        LIGNES_IMPORT.push({
+          ...l, _fichier: fichier, _doublon_interne: doublonInterne,
+          doublon: l.doublon || doublonInterne,
+          inclure: l.importable && !l.doublon && !doublonInterne,
+        });
+      }
+    }
+    APERCU_IMPORT = lus;
+    afficherApercuImport(lus, resultats.filter(r => r.erreur));
   }
 
   const LIBELLES_TYPE_FICHIER = {
@@ -2039,27 +2336,73 @@
                 + "mouvement : si vous aviez renforcé la position, corrigez-la par la date de votre premier achat."],
   };
 
-  function afficherApercuImport(res) {
+  function afficherApercuImport(lus, echecs) {
     const n = LIGNES_IMPORT.length;
     const [titre, decompte, explication] = LIBELLES_TYPE_FICHIER[TYPE_IMPORT] || LIBELLES_TYPE_FICHIER.positions;
     const operations = TYPE_IMPORT !== 'positions';
-    const doublons = LIGNES_IMPORT.filter(l => l.doublon).length;
+    const dejaEnBase = LIGNES_IMPORT.filter(l => l.doublon && !l._doublon_interne).length;
+    const enDouble = LIGNES_IMPORT.filter(l => l._doublon_interne).length;
+    const nf = lus.length;
     $('#dlg-import').querySelector('h2').textContent = titre;
+
+    const source = nf === 1 ? lus[0].fichier
+                            : `${nf} fichiers · ${lus.map(r => r.fichier).join(', ')}`;
+    const ecartes = [];
+    if (dejaEnBase) ecartes.push(`${dejaEnBase} déjà enregistrée${dejaEnBase > 1 ? 's' : ''}`);
+    if (enDouble) ecartes.push(`${enDouble} en double entre les fichiers`);
     $('#import-resume').textContent =
-      `${res.fichier} · ${decompte(n)}`
-      + (doublons ? `, dont ${doublons} déjà enregistré${doublons > 1 ? 's' : ''} (décoché${doublons > 1 ? 's' : ''})` : '')
-      + `. Vérifiez, corrigez si besoin, puis importez. ` + explication;
+      `${source} · ${decompte(n)}`
+      + (ecartes.length ? `, dont ${ecartes.join(' et ')} (décoché${n > 1 ? 'es' : 'e'})` : '')
+      + `. Vérifiez, corrigez si besoin, puis importez. ` + explication
+      + (echecs.length ? ` ${echecs.length} fichier(s) illisible(s) : `
+         + echecs.map(e => `${e.fichier} (${e.erreur})`).join(' ; ') : '');
+    // Fichiers que le compte a déjà vus, reconnus à leur contenu.
+    const revus = lus.filter(r => r.res.deja_importe);
+    const banniere = $('#import-deja');
+    if (revus.length) {
+      const d = r => {
+        const v = r.res.deja_importe;
+        const quand = (v.importe_le || '').slice(0, 10);
+        return `<strong>${echap(r.fichier)}</strong> a déjà été importé`
+             + (quand ? ` le ${dateFr(quand)}` : '')
+             + (v.nb_operations ? ` — ${v.nb_operations} opération${v.nb_operations > 1 ? 's' : ''} enregistrée${v.nb_operations > 1 ? 's' : ''}` : '');
+      };
+      banniere.innerHTML = `<p>${revus.map(d).join('<br>')}</p>
+        <p class="discret" style="margin:6px 0 0">Les lignes déjà présentes dans votre compte sont décochées.
+        Si vous aviez supprimé une opération et souhaitez la rétablir, cochez-la, ou servez-vous du bouton ci-dessous.</p>
+        <button class="mini-btn" id="import-forcer" type="button" style="margin-top:8px">Tout cocher quand même</button>`;
+      banniere.classList.remove('cache');
+      $('#import-forcer').onclick = () => {
+        LIGNES_IMPORT.forEach(l => { if (l.importable) l.inclure = true; });
+        rendreTableauImport();
+        toast('Toutes les lignes lisibles sont cochées.');
+      };
+    } else {
+      banniere.classList.add('cache');
+      banniere.innerHTML = '';
+    }
     $('#import-remplacer').closest('label').classList.toggle('cache', operations);
     $('#import-erreur').classList.add('cache');
-    rendreDetailImport(res);
+    rendreDetailImport(lus);
     rendreTableauImport();
   }
 
   /* Ce que le lecteur a compris du fichier, et ce qu'il n'a pas compris.
      Rien n'est deviné en silence : tout ce qui a été écarté est listé avec son motif. */
-  function rendreDetailImport(res) {
+  function rendreDetailImport(lus) {
     const zone = $('#import-detail');
     if (!zone) return;
+    // Les libellés inconnus sont mis en commun : la même banque emploie le même
+    // vocabulaire d'un avis à l'autre, inutile de poser la question par fichier.
+    const res = {
+      separateur: lus[0].res.separateur, format_date: lus[0].res.format_date,
+      colonnes_reconnues: lus[0].res.colonnes_reconnues, decisions: lus[0].res.decisions,
+      avertissements: lus.flatMap(r => (r.res.avertissements || [])
+        .map(a => lus.length > 1 ? `${r.fichier} — ${a}` : a)),
+      ignorees: lus.flatMap(r => (r.res.ignorees || [])
+        .map(i => ({ ...i, nom: lus.length > 1 ? `${r.fichier} · ${i.nom}` : i.nom }))),
+      a_classer: lus.flatMap(r => r.res.a_classer || []),
+    };
     const cols = Object.entries(res.colonnes_reconnues || {})
       .map(([role, col]) => `<li><strong>${role}</strong> ← « ${echap(String(col).trim())} »`
         + (res.decisions && res.decisions[role] ? ` <span class="discret">(${echap(res.decisions[role])})</span>` : '')
@@ -2082,9 +2425,9 @@
             <option value="VENTE">Vente de titres</option>
             <option value="DIVIDENDE">Dividende encaissé</option>
           </select></div>`).join('')}
-        <button class="btn" id="import-classer">Enregistrer et relire le fichier</button>
+        <button class="btn" id="import-classer">Enregistrer et relire</button>
       </div>` : '';
-    zone.innerHTML = `<details><summary>Ce que le fichier a donné à lire</summary>
+    zone.innerHTML = `<details><summary>Ce que les fichiers ont donné à lire</summary>
         <p class="discret">Séparateur « ${echap(res.separateur || ';')} »,
           dates au format ${echap(res.format_date || 'détecté ligne à ligne')}.</p>
         <ul class="menu-detail">${cols}</ul>
@@ -2108,22 +2451,30 @@
 
   function rendreTableauImport() {
     const operations = TYPE_IMPORT !== 'positions';   // relevé d'opérations ou carnet d'ordres
+    // Avec plusieurs fichiers, chaque ligne doit dire d'où elle vient : sans cela une
+    // ligne douteuse est introuvable dans la pile de PDF qu'on vient de sélectionner.
+    const plusieurs = new Set(LIGNES_IMPORT.map(l => l._fichier)).size > 1;
+    const source = l => plusieurs && l._fichier ? ` · ${echap(l._fichier)}` : '';
+
     $('#import-table').innerHTML = `<table><thead><tr>
         <th style="width:34px"></th><th>Ligne du fichier</th><th style="min-width:150px">Titre reconnu</th>
         ${operations ? '<th style="width:92px">Sens</th>' : ''}
         <th class="num" style="width:110px">Quantité</th>
-        <th class="num" style="width:130px">${operations ? 'Prix / montant' : "Prix d'achat moyen"}</th>
+        <th class="num" style="width:130px">${operations ? 'Prix / montant' : 'Prix de revient'}</th>
         <th style="width:140px">${operations ? "Date d'opération" : "Date d'entrée"}</th></tr></thead>
       <tbody>${LIGNES_IMPORT.map((l, i) => l.espece ? `<tr class="${l.inclure ? '' : 'exclue'} ${l.doublon ? 'doublon' : ''}">
         <td><input type="checkbox" data-i="${i}" data-champ="inclure" ${l.inclure ? 'checked' : ''}></td>
-        <td class="titre-ligne"><strong>${echap(l.nom || '—')}</strong><small>mouvement d'espèces${l.doublon ? ' · déjà enregistré' : ''}</small></td>
+        <td class="titre-ligne"><strong>${echap(l.nom || '—')}</strong><small>mouvement d'espèces${l._doublon_interne ? ' · en double dans la sélection'
+          : (l.doublon ? ' · déjà enregistré' : '')}${source(l)}</small></td>
         <td colspan="${operations ? 3 : 2}"><span class="etiquette ${l.sens}">${NOMS_TYPE[l.sens] || l.sens}</span></td>
         <td class="num"><input type="number" step="any" min="0" data-i="${i}" data-champ="montant_eur" value="${l.montant_eur ?? ''}"></td>
         <td><input type="date" data-i="${i}" data-champ="date" value="${l.date || ''}" max="${new Date().toISOString().slice(0, 10)}"></td>
       </tr>` : `<tr class="${l.inclure ? '' : 'exclue'} ${l.doublon ? 'doublon' : ''}">
         <td><input type="checkbox" data-i="${i}" data-champ="inclure" ${l.inclure ? 'checked' : ''}></td>
         <td class="titre-ligne"><strong>${echap(l.nom || '—')}</strong>
-          <small>${echap(l.isin || '')}${l.deja_en_portefeuille ? ' · déjà en portefeuille' : ''}${l.doublon ? ' · opération déjà enregistrée à l’identique' : ''}</small></td>
+          <small>${echap(l.isin || '')}${l.deja_en_portefeuille ? ' · déjà en portefeuille' : ''}${
+            l._doublon_interne ? ' · en double dans la sélection'
+            : (l.doublon ? ' · opération déjà enregistrée à l’identique' : '')}${source(l)}</small></td>
         <td>
           <input type="text" data-i="${i}" data-champ="ticker" value="${echap(l.ticker || '')}"
                  placeholder="Ticker Yahoo" list="tickers-${i}">
@@ -2170,6 +2521,17 @@
     });
   }
 
+  // Empreinte et nombre de lignes cochées, pour chacun des fichiers du lot.
+  function empreintesRetenues() {
+    return (APERCU_IMPORT || [])
+      .filter(r => r.res && r.res.empreinte)
+      .map(r => ({
+        empreinte: r.res.empreinte, nom: r.fichier,
+        lignes: LIGNES_IMPORT.filter(l => l.inclure && l._fichier === r.fichier).length,
+      }))
+      .filter(f => f.lignes > 0);
+  }
+
   $('#import-annuler').onclick = () => $('#dlg-import').close();
 
   $('#import-valider').onclick = async () => {
@@ -2197,8 +2559,11 @@
         method: 'POST',
         // Le type de fichier suit l'import : il indique au serveur si les dates sont
         // de vraies dates d'exécution ou une approximation d'export de positions.
+        // Les empreintes des fichiers retenus voyagent avec : le serveur retient
+        // qu'ils sont entrés dans le compte, et préviendra au prochain dépôt. Le
+        // décompte est celui des lignes effectivement cochées, fichier par fichier.
         body: JSON.stringify({ lignes, remplacer: $('#import-remplacer').checked,
-                               type_fichier: TYPE_IMPORT }),
+                               type_fichier: TYPE_IMPORT, fichiers: empreintesRetenues() }),
       });
       $('#dlg-import').close();
       toast(`${res.importees.length} ligne(s) importée(s)`

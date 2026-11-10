@@ -120,6 +120,19 @@ class PortfolioDB:
                 cree_le   TEXT NOT NULL,
                 PRIMARY KEY (username, libelle)
             );
+            -- Fichiers déjà importés, reconnus à leur contenu et non à leur nom :
+            -- l'empreinte est un SHA-256 des octets du fichier, donc renommer un
+            -- relevé ou le re-télécharger ne le fait pas passer pour un autre.
+            -- Sert à prévenir d'un double import, jamais à l'interdire.
+            CREATE TABLE IF NOT EXISTS imports_fichiers (
+                username        TEXT NOT NULL,
+                portefeuille_id INTEGER NOT NULL,
+                empreinte       TEXT NOT NULL,
+                nom             TEXT,
+                nb_operations   INTEGER NOT NULL DEFAULT 0,
+                importe_le      TEXT NOT NULL,
+                PRIMARY KEY (username, portefeuille_id, empreinte)
+            );
             """)
             # Migration des bases créées avec les versions précédentes
             cols = [r["name"] for r in c.execute("PRAGMA table_info(operations)")]
@@ -340,6 +353,31 @@ class PortfolioDB:
                 "VALUES (?,?,?,?)",
                 [(username, lib, nat, datetime.now().isoformat(timespec="seconds"))
                  for lib, nat in mappages.items() if lib and nat])
+
+    # ── Mémoire des fichiers importés ────────────────────────────────────────
+
+    def import_deja_vu(self, username: str, pf: int, empreinte: str) -> Optional[dict]:
+        """Le fichier a-t-il déjà été importé sur ce portefeuille ? Sa fiche, sinon None."""
+        with self._connect() as c:
+            r = c.execute("SELECT nom, nb_operations, importe_le FROM imports_fichiers "
+                          "WHERE username=? AND portefeuille_id=? AND empreinte=?",
+                          (username, pf, empreinte)).fetchone()
+            return dict(r) if r else None
+
+    def enregistrer_import(self, username: str, pf: int, empreinte: str,
+                           nom: str, nb_operations: int):
+        """
+        Retient qu'un fichier a été importé. Un second import forcé écrase la fiche
+        du premier : ce qui compte est la dernière fois qu'il est entré dans le compte.
+        """
+        if not empreinte:
+            return
+        with self._connect() as c:
+            c.execute("INSERT OR REPLACE INTO imports_fichiers "
+                      "(username, portefeuille_id, empreinte, nom, nb_operations, importe_le) "
+                      "VALUES (?,?,?,?,?,?)",
+                      (username, pf, empreinte, nom, nb_operations,
+                       datetime.now().isoformat(timespec="seconds")))
 
     # ── Portefeuilles ────────────────────────────────────────────────────────
 

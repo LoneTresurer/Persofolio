@@ -27,8 +27,10 @@ Compte (en-tête « Authorization: Bearer <jeton> » obligatoire)
 """
 
 import asyncio
+import hashlib
 import logging
 import time
+from bisect import bisect_left
 from datetime import date, datetime
 from email.utils import parsedate_to_datetime
 from typing import List, Optional
@@ -324,6 +326,7 @@ async def ajouter_operation(op: OperationIn, user: str = Depends(utilisateur_cou
     except calc.OperationInvalide as e:
         raise HTTPException(422, detail=str(e))
     op_id = pdb.ajouter_operation(user, pf, nouvelle)
+    _oublier_serie(user, pf)
     return {"id": op_id, "operation": nouvelle}
 
 
@@ -340,6 +343,7 @@ async def modifier_operation(op_id: int, op: OperationIn, user: str = Depends(ut
     except calc.OperationInvalide as e:
         raise HTTPException(422, detail=str(e))
     pdb.remplacer_operation(user, pf, op_id, nouvelle)
+    _oublier_serie(user, pf)
     return {"id": op_id, "operation": nouvelle}
 
 
@@ -354,6 +358,7 @@ def supprimer_operation(op_id: int, user: str = Depends(utilisateur_courant), pf
         raise HTTPException(422, detail=f"Suppression impossible, l'historique deviendrait "
                                         f"incohérent : {e}")
     pdb.supprimer_operation(user, pf, op_id)
+    _oublier_serie(user, pf)
     return {"ok": True}
 
 
@@ -501,6 +506,14 @@ async def _synthese(user: str, pf: int) -> dict:
             "investi_eur": _r(investi),
             "dividendes_eur": _r(etat.dividendes_eur),
             "frais_eur": _r(etat.frais_eur),
+            # Frais payés depuis l'ouverture, séparés par sens d'ordre. Rapportés au
+            # capital investi, ils disent ce que le courtage a prélevé sur la
+            # performance — un chiffre qu'on ne voit nulle part sur un relevé.
+            "frais_achat_eur": _r(etat.frais_achat_eur),
+            "frais_vente_eur": _r(etat.frais_vente_eur),
+            "nb_ordres_achat": etat.nb_ordres_achat,
+            "nb_ordres_vente": etat.nb_ordres_vente,
+            "frais_pct_investi": _r(etat.frais_eur / investi * 100) if investi > 0.005 else None,
             "pnl_total_eur": _r(pnl_total),
             # ── Les deux seuls chiffres de l'en-tête ──────────────────────────────
             # La plus-value est la différence entre ce que vaut le compte et ce qui y
@@ -549,10 +562,26 @@ async def synthese(user: str = Depends(utilisateur_courant), pf: int = Depends(p
 
 # ── Reconstitution de l'historique ──────────────────────────────────────────
 
-_cache_serie: dict = {}          # user -> (horodatage, série journalière)
+_cache_serie: dict = {}          # (user, portefeuille) -> (horodatage, série journalière)
 
 
-def _valeur_titres(etat, j, clotures, taux, dernier_prix, entrees_du_jour=None) -> float:
+def _oublier_serie(user: str, pf: int) -> None:
+    """
+    À appeler dès qu'une opération est créée, corrigée ou annulée.
+
+    La série journalière est conservée une minute, parce qu'elle est coûteuse et que
+    trois onglets la demandent coup sur coup. Mais elle est construite à partir des
+    opérations : si l'une d'elles change sans que le cache soit vidé, l'onglet
+    Positions se met à jour — il recalcule à chaque appel — tandis que le graphique
+    de valorisation et tout l'onglet Risque continuent d'afficher un portefeuille qui
+    n'existe plus. On a vu le cas : trois lignes annulées, une seule restante, et le
+    tableau des contributions au risque en montrait encore trois.
+    """
+    _cache_serie.pop((user, pf), None)
+
+
+def _valeur_titres(etat, j, clotures, taux, dernier_prix, entrees_du_jour=None,
+                   prix_prioritaires=None, detail=None) -> float:
     """
     Valeur de marché des positions à la date j.
 
@@ -563,6 +592,18 @@ def _valeur_titres(etat, j, clotures, taux, dernier_prix, entrees_du_jour=None) 
     rapporté au prix de revient.
     """
     entrees_du_jour = entrees_du_jour or {}
+    # Cours du jour, appliqués à la dernière séance pour que la courbe se termine sur
+    # la valorisation qu'affiche l'en-tête.
+    #
+    # Mais jamais aveuglément : historique et cours du jour viennent de deux appels
+    # distincts, parfois de deux sources, et un cours aberrant — devise différente,
+    # cotation périmée, titre homonyme — ferait sauter la dernière séance de plusieurs
+    # centaines de pour cent. On ne retient donc le cours du jour que s'il reste dans
+    # une bande raisonnable autour de la clôture connue. Quand AUCUNE clôture n'existe,
+    # il n'y a rien à comparer et on le prend : la seule autre option serait le prix
+    # d'achat, qui est précisément ce qu'on cherche à ne plus utiliser.
+    prix_prioritaires = prix_prioritaires or {}
+    ECART_MAX = 0.25
     total = 0.0
     for p in etat.positions_ouvertes():
         t = taux[p.devise].get(j) if p.devise in taux.columns else 1.0
@@ -570,17 +611,32 @@ def _valeur_titres(etat, j, clotures, taux, dernier_prix, entrees_du_jour=None) 
         achetee, prix_achat = entrees_du_jour.get(p.ticker, (0.0, 0.0))
         achetee = min(achetee, p.quantite)
         reste = p.quantite - achetee
+        avant = total
         if reste > 0:
             px = clotures[p.ticker].get(j) if p.ticker in clotures.columns else None
+            px = None if (px is not None and pd.isna(px)) else px
+            jour_px = prix_prioritaires.get(p.ticker)
+            if jour_px is not None:
+                if px is None or not (px > 0):
+                    px = jour_px
+                elif abs(jour_px / float(px) - 1) <= ECART_MAX:
+                    px = jour_px
             if px is None or pd.isna(px):
-                px = dernier_prix.get(p.ticker, p.pru)   # dernier prix connu, jamais inventé
+                # Repli sur le dernier COURS retenu — la boucle appelante y range
+                # chaque clôture lue. Le prix d'achat n'arrive qu'en tout dernier
+                # recours, quand aucune cotation n'a jamais été obtenue pour ce titre.
+                px = dernier_prix.get(p.ticker, p.pru)
             total += reste * float(px) * t
+            dernier_prix[p.ticker] = float(px)
         if achetee > 0:
             total += achetee * prix_achat * t
+        # Valeur de chaque ligne, pour l'attribution du risque réalisé
+        if detail is not None:
+            detail[p.ticker] = total - avant
     return total
 
 
-def _parcourir(ops, jours, clotures, taux) -> List[dict]:
+def _parcourir(ops, jours, clotures, taux, cours_jour=None, seances=None) -> List[dict]:
     """
     Rejoue les opérations jour par jour et produit, pour chaque date, deux mesures
     distinctes qu'il ne faut surtout pas confondre :
@@ -590,12 +646,21 @@ def _parcourir(ops, jours, clotures, taux) -> List[dict]:
        réponse à « combien ai-je gagné par rapport à ce que j'ai mis ? ».
 
     2. La PERFORMANCE (champ `base`, indice interne partant de 100) : le rendement
-       enchaîné jour après jour, dont les versements sont neutralisés.
+       enchaîné jour après jour des TITRES SEULS, dont les mouvements sont neutralisés.
 
-           rendement du jour = valeur du jour ÷ (valeur de la veille + versements du jour)
+           rendement du jour = (valeur des titres − argent investi le jour même)
+                               ÷ valeur des titres la veille
 
-       C'est la réponse à « qu'a rapporté un euro placé chez moi ? ». C'est la SEULE
-       mesure comparable à un indice, puisqu'un indice ne reçoit aucun versement.
+       C'est la réponse à « qu'ont rapporté mes titres ? ». C'est la SEULE mesure
+       comparable à un indice, puisqu'un indice ne reçoit aucun versement.
+
+       Les espèces n'entrent jamais dans cette mesure. Ce module suit un portefeuille
+       de titres : de la trésorerie en attente d'être investie amortirait la
+       volatilité et fausserait la performance des lignes détenues, sans rien dire
+       de leur comportement. Un achat payé avec les espèces du compte est donc un
+       ENTRANT dans les titres, et il est neutralisé comme un versement ; une vente
+       est un sortant. Les frais de courtage, eux, sont comptés comme une perte le
+       jour où ils sont payés, puisqu'ils sortent définitivement du portefeuille.
 
     Les deux diffèrent dès qu'on verse à des dates différentes, et c'est normal :
     verser tard sur un portefeuille qui monte laisse la plus-value rapportée au
@@ -609,14 +674,36 @@ def _parcourir(ops, jours, clotures, taux) -> List[dict]:
     """
     etat, i, dernier_prix, points = calc.EtatCompte(), 0, {}, []
     base, valeur_prec, engage_prec, jour_precedent = 100.0, None, 0.0, None
+    titres_prec = None          # valeur des titres la veille : base de l'indice
+    # Cours du jour, appliqués à la dernière séance seulement : c'est la valeur que
+    # l'en-tête affiche, et la courbe doit se terminer exactement dessus.
+    dernier_jour = jours[-1] if len(jours) else None
+    prix_du_jour = {}
+    for tk, info in (cours_jour or {}).items():
+        prix = info.get("prix") if isinstance(info, dict) else None
+        if prix is not None and not pd.isna(prix):
+            prix_du_jour[tk] = float(prix)
     for j in jours:
         jour = j.strftime("%Y-%m-%d")
+        prioritaires = prix_du_jour if (dernier_jour is not None and j == dernier_jour) else None
 
         # Opérations du jour ; on retient ce qui est acheté pour le valoriser au coût
         entrees = {}
+        # Argent entré dans chaque ligne ce jour-là (achats moins ventes moins
+        # dividendes), au montant exact passé par les espèces. Retranché de la
+        # variation de valeur de la ligne, il laisse son gain ou sa perte du jour.
+        investi = {}
+        frais_jour = 0.0
         while i < len(ops) and ops[i]["date"] <= jour:
             o = ops[i]
             calc._appliquer(etat, o)
+            tk_o = o.get("ticker")
+            if tk_o and o["type"] in ("ACHAT", "VENTE"):
+                m = float(o["quantite"]) * float(o["prix"]) * float(o.get("taux_eur") or 1.0)
+                investi[tk_o] = investi.get(tk_o, 0.0) + (m if o["type"] == "ACHAT" else -m)
+                frais_jour += float(o.get("frais_eur") or 0.0)
+            elif tk_o and o["type"] == "DIVIDENDE":
+                investi[tk_o] = investi.get(tk_o, 0.0) - calc._montant_obligatoire(o, o["date"])
             if o["type"] in ("ACHAT", "VENTE"):
                 dernier_prix[o["ticker"]] = float(o["prix"])
             # Un achat entre à son prix d'acquisition le jour où il est pris en compte,
@@ -655,7 +742,9 @@ def _parcourir(ops, jours, clotures, taux) -> List[dict]:
         # complément en apport. Le même état sert ici et dans l'en-tête, pour que les deux
         # écrans ne puissent pas raconter deux histoires.
         cash = max(etat.cash_eur, 0.0)
-        valeur_titres = _valeur_titres(etat, j, clotures, taux, dernier_prix, entrees)
+        lignes = {}
+        valeur_titres = _valeur_titres(etat, j, clotures, taux, dernier_prix, entrees,
+                                       prioritaires, lignes)
         valeur = valeur_titres + cash
         engage = etat.depots_nets_eur + etat.apports_implicites_eur
 
@@ -669,9 +758,15 @@ def _parcourir(ops, jours, clotures, taux) -> List[dict]:
         # variation donnerait des centaines de pour cent). La journée est alors
         # neutralisée plutôt que mesurée.
         flux = engage - engage_prec
-        if valeur_prec is not None and valeur_prec > max(1.0, 0.05 * abs(flux)):
-            base *= (valeur - flux) / valeur_prec
+        # Entrant net dans les TITRES : achats moins ventes, dividendes encaissés en
+        # moins, frais de courtage en plus puisqu'ils sortent du portefeuille.
+        flux_titres = sum(investi.values()) + frais_jour
+        mesure = titres_prec is not None and titres_prec > max(1.0, 0.05 * abs(flux_titres))
+        if mesure:
+            base *= (valeur_titres - flux_titres) / titres_prec
+        titres_veille = titres_prec
         valeur_prec, engage_prec, jour_precedent = valeur, engage, jour
+        titres_prec = valeur_titres
 
         # Plus-value latente des titres rapportée à leur prix de revient : c'est le
         # pourcentage d'un relevé de courtier, agrégé sur toutes les lignes. Les
@@ -689,6 +784,14 @@ def _parcourir(ops, jours, clotures, taux) -> List[dict]:
             "pv_pct": _r((valeur - engage) / engage * 100) if engage > 0.005 else 0.0,
             # Indice de performance interne, base 100 au premier point de l'historique
             "base": base,
+            # Données réservées au calcul du risque réalisé, non transmises à l'écran.
+            # `mesure` : le rendement du jour a bien été calculé (garde-fou levé).
+            # `seance` : au moins un titre du compte a coté ce jour-là ; les jours
+            # fériés, où la courbe ne bouge que par report du dernier cours, sont
+            # ainsi écartés de l'échantillon des rendements quotidiens.
+            "mesure": mesure, "valeur_veille": titres_veille,
+            "seance": True if seances is None else (j.normalize() in seances),
+            "lignes": lignes, "investi": investi,
         })
     return points
 
@@ -706,9 +809,35 @@ async def _serie_journaliere(user: str, pf: int) -> List[dict]:
     devises = sorted({o["devise"] for o in ops if o["type"] in ("ACHAT", "VENTE")})
     jours = pd.bdate_range(debut, date.today())
     clotures = await asyncio.to_thread(md.historique_clotures, tickers, debut)
+    # Jours de cotation effectifs, relevés AVANT l'alignement sur le calendrier : une
+    # fois alignées, les clôtures des jours fériés sont des reports de la veille.
+    seances = None
+    if not clotures.empty:
+        idx = pd.DatetimeIndex(clotures.dropna(how="all").index)
+        if getattr(idx, "tz", None) is not None:
+            idx = idx.tz_localize(None)
+        seances = set(idx.normalize())
     clotures = md.aligner_sur(clotures, jours) if not clotures.empty else pd.DataFrame(index=jours)
     taux = await asyncio.to_thread(md.historique_taux, devises or ["EUR"], debut, jours)
-    points = _parcourir(ops, jours, clotures, taux)
+
+    # Les cours du jour, ceux-là mêmes qui alimentent l'en-tête. On les passe à la
+    # courbe pour deux raisons.
+    #
+    # D'abord la cohérence : l'en-tête annonce une valorisation, la courbe doit finir
+    # dessus. Les deux écrans ne peuvent pas afficher deux valeurs différentes du même
+    # portefeuille au même instant.
+    #
+    # Ensuite la robustesse : l'historique et les cours du jour viennent de deux appels
+    # distincts, et le premier peut revenir incomplet quand le second réussit. Sans ce
+    # filet, une ligne sans clôture retombait sur son prix d'achat — un ETF acheté
+    # 21,40 € et coté 34,71 € paraissait perdre 38 % en une séance, et toute période
+    # se terminant ce jour-là s'effondrait avec lui.
+    try:
+        actuels = await asyncio.to_thread(md.cours_actuels, tickers) if tickers else {}
+    except Exception as e:
+        logger.info("cours du jour indisponibles pour la courbe : %s", e)
+        actuels = {}
+    points = _parcourir(ops, jours, clotures, taux, actuels, seances)
     _cache_serie[(user, pf)] = (time.time(), points)
     return points
 
@@ -826,9 +955,42 @@ async def historique(indice: Optional[str] = None, periode: Optional[str] = None
             # Plus-value accumulée depuis le début de la fenêtre, en euros
             "gain_fenetre_eur": _r(p["pnl_eur"] - depart["pnl_eur"]) if depart else None,
         })
+
+    # Les achats et les ventes de la fenêtre, pour que la courbe puisse les marquer.
+    # Ils voyagent ici plutôt que d'être demandés à part : le graphique vit dans
+    # l'onglet Performance, où le carnet d'ordres n'est pas chargé.
+    #
+    # Une opération est rattachée au premier point de la courbe qui l'atteint, ce qui
+    # la fait tomber sur une date réellement tracée même si elle a eu lieu un jour
+    # férié ou, en vue horaire, entre deux relevés.
+    dates_points = [p["date"] for p in points]
+    marqueurs: dict[str, dict] = {}
+    for o in ops:
+        if o["type"] not in ("ACHAT", "VENTE") or o["date"] < dates_points[0]:
+            continue
+        indice_point = bisect_left(dates_points, o["date"])
+        if indice_point >= len(dates_points):
+            continue
+        m = marqueurs.setdefault(dates_points[indice_point],
+                                 {"date": sortie[indice_point]["date"],
+                                  "indice_point": indice_point, "sens": None, "operations": []})
+        m["operations"].append({
+            "type": o["type"], "ticker": o["ticker"],
+            "quantite": _r(o["quantite"], 4), "prix": _r(o["prix"]),
+            "devise": o["devise"], "frais_eur": _r(o.get("frais_eur") or 0),
+            "montant_eur": _r((o["quantite"] or 0) * (o["prix"] or 0)
+                              * float(o.get("taux_eur") or 1.0)),
+        })
+    for m in marqueurs.values():
+        sens = {o["type"] for o in m["operations"]}
+        # Achats et ventes le même jour : le marqueur est neutre plutôt que d'en
+        # privilégier un arbitrairement.
+        m["sens"] = sens.pop() if len(sens) == 1 else "MIXTE"
+
     manquants = sum(1 for p in sortie if p["indice_pct"] is None)
     return {
-        "points": sortie, "indice": code, "libelle_indice": md.libelle_indice(code),
+        "points": sortie, "marqueurs": sorted(marqueurs.values(), key=lambda m: m["indice_point"]),
+        "indice": code, "libelle_indice": md.libelle_indice(code),
         "source_indice": source, "indice_dividendes": dividendes,
         "mode_indice": mode, "devise_indice": devise_indice,
         "granularite": "heure" if intraday else "jour",
@@ -1107,183 +1269,262 @@ async def performances(indice: Optional[str] = None, mode: Optional[str] = None,
 
 # ─────────────────────────── Indicateurs de risque ──────────────────────────
 
-# Chaque indicateur est accompagné de sa définition exacte : un chiffre de risque
-# qu'on ne sait pas refaire à la main ne vaut rien, et c'est le genre de chose qu'on
-# vous demandera d'expliquer. Les rendements sont quotidiens, convertis en euros
-# (le risque de change est donc compris), sur un an glissant, et le portefeuille est
-# figé dans sa composition d'aujourd'hui.
+# Tous les indicateurs de cet onglet sont tirés d'UNE seule série : les rendements
+# quotidiens réalisés par le portefeuille sur les douze derniers mois, versements
+# neutralisés. C'est la série qui produit l'onglet Performance. La volatilité est
+# donc celle que le portefeuille a réellement eue, la VaR lit ses vraies mauvaises
+# journées, le bêta compare ses vrais mouvements à ceux de l'indice, et le Sharpe
+# divise une performance réalisée par une volatilité réalisée.
 _METHODE_RISQUE = {
-    "base": "Rendements quotidiens des titres détenus, convertis en euros, sur un an "
-            "glissant. La composition retenue est celle d'aujourd'hui : on mesure le "
-            "risque du portefeuille tel qu'il est, pas celui qu'il a eu.",
+    "base": "Rendements quotidiens réalisés par vos titres sur les douze derniers "
+            "mois, mouvements neutralisés — la série qui produit aussi l'onglet "
+            "Performance. Les espèces du compte n'entrent dans aucun de ces calculs.",
     "volatilite": {
         "titre": "Volatilité annualisée",
-        "formule": "σ = √(wᵀ Σ w) × √252",
-        "detail": "Écart-type des rendements quotidiens du portefeuille, ramené à l'année "
-                  "en multipliant par la racine de 252 jours de bourse. Σ est la matrice "
-                  "de covariance des titres, w le vecteur des poids en euros. Les "
-                  "corrélations entre titres sont donc prises en compte : la volatilité du "
-                  "portefeuille est inférieure à la moyenne de celles des lignes.",
+        "formule": "σ = écart-type des rendements quotidiens × √252",
+        "detail": "Écart-type des rendements quotidiens réalisés par vos titres, "
+                  "ramené à l'année en multipliant par la racine de 252 séances.",
     },
     "var": {
-        "titre": "VaR 95 % à 1 jour",
+        "titre": "VaR historique 95 % à 1 jour",
         "formule": "VaR = −quantile 5 % des rendements quotidiens",
         "detail": "Perte quotidienne dépassée un jour sur vingt, lue directement dans les "
-                  "rendements observés sur un an (méthode historique, aucune hypothèse de "
-                  "loi normale). La CVaR est la perte moyenne de ces jours-là, donc "
-                  "toujours supérieure à la VaR : elle dit ce qui se passe quand ça dépasse.",
+                  "rendements réalisés sur un an, et appliquée à la valeur actuelle de "
+                  "vos titres. La CVaR est la perte moyenne de ces jours-là.",
     },
     "drawdown": {
         "titre": "Perte maximale",
         "formule": "min( V(t) / max V(s), s ≤ t ) − 1",
-        "detail": "Plus forte baisse entre un sommet et le creux qui le suit, sur l'année "
-                  "écoulée, à composition constante.",
+        "detail": "Plus forte baisse de l'indice de performance des titres entre un sommet "
+                  "et le creux qui le suit, sur les douze derniers mois.",
     },
     "beta": {
         "titre": "Bêta",
-        "formule": "β = Cov(r_portefeuille, r_indice) / Var(r_indice)",
-        "detail": "Sensibilité du portefeuille à l'indice, estimée par régression des "
-                  "rendements quotidiens en euros sur un an. β = 1,2 signifie qu'en "
-                  "moyenne, une hausse de 1 % de l'indice s'accompagne d'une hausse de "
-                  "1,2 % du portefeuille. C'est une moyenne historique, pas une garantie : "
-                  "la corrélation indiquée dit à quel point cette relation est étroite. "
-                  "Un bêta élevé avec une corrélation faible n'est pas exploitable.",
+        "formule": "β = Cov(Rp, Rm) / Var(Rm)",
+        "detail": "Sensibilité des rendements quotidiens réalisés de vos titres à ceux "
+                  "de l'indice de référence, sur un an.",
     },
     "sharpe": {
         "titre": "Ratio de Sharpe",
-        "formule": "(rendement annuel − taux sans risque) / volatilité annualisée",
-        "detail": "Rendement obtenu par unité de risque pris. Calculé sur un an de "
-                  "rendements passés : c'est une mesure rétrospective, elle ne prédit rien.",
+        "formule": "(rendement sur un an − taux sans risque) / volatilité annualisée",
+        "detail": "Rendement obtenu par unité de risque pris, sur les douze derniers mois.",
     },
     "contribution": {
         "titre": "Part du risque",
-        "formule": "part du risque de la ligne i  =  poids de i  ×  βᵢ/portefeuille\n"
-                   "       où  βᵢ/portefeuille = Cov(rᵢ, r_portefeuille) / Var(r_portefeuille)\n"
-                   "       (c'est wᵢ (Σw)ᵢ / σ² ; la somme de la colonne fait exactement 100 %)",
-        "detail": "Part de la variance du portefeuille imputable à une ligne. Attention : le "
-                  "bêta qui intervient ici est celui de la ligne face à VOTRE PORTEFEUILLE, "
-                  "pas face à l'indice — ce sont deux choses différentes, et les deux colonnes "
-                  "sont affichées. Une ligne peut peser 17 % et porter 20 % du risque : son "
-                  "bêta portefeuille vaut alors 20/17 ≈ 1,2, elle amplifie donc légèrement les "
-                  "mouvements du portefeuille. Une ligne décorrélée du reste porte au contraire "
-                  "moins de risque que son poids ne le suggère. C'est la décomposition d'Euler "
-                  "de la volatilité : elle répond à « si je coupe cette ligne, de combien baisse "
-                  "le risque total ? ».",
+        "formule": "part de la ligne i = Cov(cᵢ, Rp) / Var(Rp)",
+        "detail": "cᵢ est la contribution quotidienne de la ligne au rendement du "
+                  "portefeuille : son gain ou sa perte du jour, divisé par la valeur du "
+                  "portefeuille la veille. Le rendement du portefeuille étant la somme de "
+                  "ces contributions, les parts s'additionnent exactement à 100 %.",
     },
 }
+
+SEUIL_OBSERVATIONS_RISQUE = 30
+
+
+def _rendements_realises(fenetre: List[dict]) -> List[dict]:
+    """
+    Rendements quotidiens réalisés par le portefeuille, une observation par séance.
+
+    Chaque observation porte :
+      r              le rendement du portefeuille, tiré de son indice de performance
+      c              la contribution de chaque ligne : son gain ou sa perte (variation
+                     de valeur, moins l'argent entré dans la ligne, plus celui qui en
+                     est sorti) divisé par la valeur du portefeuille la veille
+      poids          la part de chaque ligne dans les titres en début de séance
+
+    Les jours fériés ne produisent pas d'observation : la courbe n'y bouge que par
+    report du dernier cours, et les compter ajouterait des zéros qui abaisseraient la
+    volatilité. Leur effet éventuel est rattaché à la séance suivante, de sorte que le
+    produit des rendements reste exactement la performance de la période.
+
+    Par construction, r = Σ cᵢ + frais du jour ÷ valeur de la veille : la répartition
+    du risque entre les lignes est donc exacte, sans aucune hypothèse de poids.
+    """
+    obs = []
+    facteur, contrib, depart = 1.0, {}, None
+    for k in range(1, len(fenetre)):
+        a, b = fenetre[k - 1], fenetre[k]
+        if depart is None:
+            depart = a
+        r = b["base"] / a["base"] - 1 if a["base"] > 0 else 0.0
+        facteur *= 1 + r
+        veille = b.get("valeur_veille")
+        if b.get("mesure") and veille and veille > 0:
+            for tk in set(a["lignes"]) | set(b["lignes"]) | set(b["investi"]):
+                gain = (b["lignes"].get(tk, 0.0) - a["lignes"].get(tk, 0.0)
+                        - b["investi"].get(tk, 0.0))
+                contrib[tk] = contrib.get(tk, 0.0) + gain / veille
+        if b.get("seance", True) or k == len(fenetre) - 1:
+            v0 = float(depart["titres_eur"] or 0.0)
+            obs.append({
+                "date": b["date"], "horodatage": b["horodatage"], "r": facteur - 1,
+                "c": contrib,
+                "poids": ({tk: v / v0 for tk, v in depart["lignes"].items()} if v0 > 0 else {}),
+            })
+            facteur, contrib, depart = 1.0, {}, None
+    return obs
+
+
+def _date_fr(iso: str) -> str:
+    a, m, j = iso[:10].split("-")
+    return f"{j}/{m}/{a}"
 
 
 @router.get("/compte/risque")
 async def risque(user: str = Depends(utilisateur_courant), pf: int = Depends(portefeuille_courant)):
     """
-    Indicateurs calculés sur 1 an de cours, avec la composition ACTUELLE du portefeuille
-    (poids en EUR), rendements convertis en EUR (le risque de change est donc inclus).
+    Indicateurs de risque sur les rendements quotidiens réalisés par le portefeuille au
+    cours des douze derniers mois — la série de l'onglet Performance.
     """
-    taux_sans_risque = (pdb.parametres(user).get("taux_sans_risque")
-                        if pdb.parametres(user).get("taux_sans_risque") is not None
+    reglages = pdb.parametres(user)
+    taux_sans_risque = (reglages.get("taux_sans_risque")
+                        if reglages.get("taux_sans_risque") is not None
                         else TAUX_SANS_RISQUE_DEFAUT) / 100.0
-    syn = await _synthese(user, pf)
-    lignes = syn["positions"]
-    if not lignes:
+
+    points = await _serie_journaliere(user, pf)
+    if len(points) < 2:
+        return {"disponible": False, "message": "Pas encore d'historique sur ce compte."}
+    # Plus rien en portefeuille : la page parle de ce qu'on détient, et une VaR de
+    # 0,00 € sur une ligne soldée ne rendrait service à personne.
+    if float(points[-1]["titres_eur"] or 0.0) <= 0.005:
         return {"disponible": False, "message": "Aucune position ouverte."}
+    depuis = _recul(points[-1]["horodatage"], "ans", 1)
+    fenetre = [p for p in points if p["horodatage"] >= depuis]
+    obs = _rendements_realises(fenetre)
+    if len(obs) < SEUIL_OBSERVATIONS_RISQUE:
+        return {"disponible": False,
+                "message": f"Moins de {SEUIL_OBSERVATIONS_RISQUE} séances d'historique : "
+                           "indicateurs non fiables."}
+    r = np.array([o["r"] for o in obs], dtype=float)
 
-    tickers = [l["ticker"] for l in lignes]
-    poids = np.array([l["valeur_eur"] or 0 for l in lignes], dtype=float)
-    poids = poids / poids.sum()
-    debut = (pd.Timestamp.today() - pd.DateOffset(years=1)).strftime("%Y-%m-%d")
+    # ── Rendement sur un an : la ligne « 1 an » de l'onglet Performance ──────────
+    # Le produit des rendements quotidiens ci-dessus redonne exactement ce chiffre.
+    perf = _perf_entre(points, depuis)
+    rend, rend_annualise = None, False
+    if perf:
+        if points[0]["horodatage"] <= depuis:
+            rend = perf["cumul_pct"] / 100          # la fenêtre fait un an : rien à annualiser
+        elif perf["annualise_pct"] is not None:
+            rend = perf["annualise_pct"] / 100      # compte plus jeune : ramené à l'année
+            rend_annualise = True
 
-    code = "MSCI_WORLD"          # référence fixe pour le bêta : indice actions mondial, en euros
-    clotures = await asyncio.to_thread(md.historique_clotures, tickers, debut)
-    serie_indice, _src, _div, _dev = await asyncio.to_thread(md.serie_indice, code, debut, None, clotures.index)
-    taux = await asyncio.to_thread(md.historique_taux, [l["devise"] for l in lignes], debut)
-    if clotures.empty:
-        return {"disponible": False, "message": "Historique de cours indisponible."}
-
-    clotures = clotures.ffill()
-    taux = taux.reindex(clotures.index).ffill().bfill()
-    prix_eur = pd.DataFrame({l["ticker"]: clotures[l["ticker"]] * taux[l["devise"]]
-                             for l in lignes if l["ticker"] in clotures})
-    rdt = prix_eur.pct_change().dropna(how="all").fillna(0.0)
-    if len(rdt) < 30:
-        return {"disponible": False, "message": "Moins de 30 jours d'historique : indicateurs non fiables."}
-
-    cols = list(rdt.columns)
-    w = np.array([poids[tickers.index(c)] for c in cols])
-    w = w / w.sum()
-    r_p = rdt.values @ w
-    cov = np.cov(rdt.values, rowvar=False) * 252
-    cov = np.atleast_2d(cov)
-    vol = float(np.sqrt(w @ cov @ w))
-
-    q5 = float(np.percentile(r_p, 5))
+    # ── Volatilité, VaR, CVaR, perte maximale ────────────────────────────────────
+    vol = float(np.std(r, ddof=1) * np.sqrt(252))
+    q5 = float(np.percentile(r, 5))
     var95 = -q5
-    cvar95 = -float(r_p[r_p <= q5].mean())
-    trajectoire = np.cumprod(1 + r_p)
-    max_dd = float((trajectoire / np.maximum.accumulate(trajectoire) - 1).min())
+    cvar95 = -float(r[r <= q5].mean())
+    bases = np.array([p["base"] for p in fenetre], dtype=float)
+    max_dd = float((bases / np.maximum.accumulate(bases) - 1).min())
+    valeur = float(fenetre[-1]["titres_eur"] or 0.0)
 
-    # Rendement annualisé, formule géométrique — la même que celle de l'onglet
-    # Performance : (1 + performance cumulée) ^ (1 / nombre d'années) − 1.
-    #
-    # L'annualisation arithmétique (moyenne quotidienne × 252) est l'autre convention
-    # admise pour le numérateur du Sharpe, et elle a sa justification : la moyenne et
-    # l'écart-type sont alors mis à l'échelle de la même manière. Mais elle donne
-    # toujours un chiffre supérieur — l'écart étant d'environ σ²/2 — et surtout elle
-    # ferait coexister dans la même application deux « rendement annualisé » calculés
-    # différemment. Une seule définition, vérifiable à la main, vaut mieux.
-    cumul = float(trajectoire[-1]) - 1
-    annees = len(r_p) / 252
-    rend = ((1 + cumul) ** (1 / annees) - 1) if (cumul > -1 and annees > 0) else None
-
+    # ── Bêta : l'indice est lu aux mêmes dates que le portefeuille ───────────────
+    code = "MSCI_WORLD"          # référence fixe pour le bêta : indice actions mondial, en euros
+    dates = [fenetre[0]["horodatage"]] + [o["horodatage"] for o in obs]
+    debut = fenetre[0]["date"]
+    r_m = None
     beta = correl = None
-    r_idx = None
-    if not serie_indice.empty and serie_indice.notna().sum() > 30:
-        r_idx = serie_indice.pct_change().reindex(rdt.index).fillna(0.0).values
-        v_idx = float(np.var(r_idx, ddof=1))
-        if v_idx > 0:
-            beta = float(np.cov(r_p, r_idx, ddof=1)[0, 1] / v_idx)
-            correl = float(np.corrcoef(r_p, r_idx)[0, 1])
+    try:
+        serie, *_ = await asyncio.to_thread(md.serie_indice, code, debut)
+    except Exception as e:
+        logger.info("indice de référence indisponible pour le bêta : %s", e)
+        serie = pd.Series(dtype=float)
+    if len(serie) >= 2:
+        niveaux = md.aligner_sur(serie, dates).values.astype(float)
+        r_m = niveaux[1:] / niveaux[:-1] - 1
+        ok = np.isfinite(r_m)
+        if ok.sum() > SEUIL_OBSERVATIONS_RISQUE and np.var(r_m[ok], ddof=1) > 0:
+            beta = float(np.cov(r[ok], r_m[ok], ddof=1)[0, 1] / np.var(r_m[ok], ddof=1))
+            correl = float(np.corrcoef(r[ok], r_m[ok])[0, 1])
 
-    contrib = (w * (cov @ w)) / (vol ** 2) if vol > 0 else np.zeros_like(w)
-    vols_ind = np.sqrt(np.diag(cov))
-    valeur_titres = syn["totaux"]["titres_eur"] or 0
+    # ── Part du risque de chaque ligne ───────────────────────────────────────────
+    tickers = sorted({tk for o in obs for tk in (set(o["c"]) | set(o["poids"]))})
+    C = (np.array([[o["c"].get(tk, 0.0) for tk in tickers] for o in obs], dtype=float)
+         if tickers else np.zeros((len(obs), 0)))
+    frais = r - C.sum(axis=1)                  # ce que les lignes n'expliquent pas : les frais
+    var_r = float(np.var(r, ddof=1))
 
-    var_p = float(np.var(r_p, ddof=1))
+    def part(x):
+        return float(np.cov(x, r, ddof=1)[0, 1] / var_r) if var_r > 0 else 0.0
+
+    # Volatilité et bêta propres à chaque titre, sur les mêmes séances
+    devises = {}
+    for o in pdb.operations(user, pf):
+        if o.get("ticker") and o["type"] in ("ACHAT", "VENTE"):
+            devises[o["ticker"]] = o["devise"]
+    vol_ligne, beta_ligne = {}, {}
+    if tickers:
+        try:
+            cl = await asyncio.to_thread(md.historique_clotures, tickers, debut)
+            tx = await asyncio.to_thread(md.historique_taux,
+                                         sorted(set(devises.values())) or ["EUR"], debut, dates)
+        except Exception as e:
+            logger.info("cours des lignes indisponibles pour le détail du risque : %s", e)
+            cl, tx = pd.DataFrame(), pd.DataFrame()
+        if not cl.empty:
+            cl = md.aligner_sur(cl, dates)
+            tx = tx.reindex(pd.DatetimeIndex(dates)).ffill().bfill() if not tx.empty else tx
+            for tk in tickers:
+                if tk not in cl.columns:
+                    continue
+                dev = devises.get(tk, "EUR")
+                t = tx[dev].values.astype(float) if dev in getattr(tx, "columns", []) else 1.0
+                px = cl[tk].values.astype(float) * t
+                ri = px[1:] / px[:-1] - 1
+                ok = np.isfinite(ri)
+                if ok.sum() > SEUIL_OBSERVATIONS_RISQUE:
+                    vol_ligne[tk] = float(np.std(ri[ok], ddof=1) * np.sqrt(252))
+                    if r_m is not None:
+                        ok2 = ok & np.isfinite(r_m)
+                        if ok2.sum() > SEUIL_OBSERVATIONS_RISQUE and np.var(r_m[ok2], ddof=1) > 0:
+                            beta_ligne[tk] = float(np.cov(ri[ok2], r_m[ok2], ddof=1)[0, 1]
+                                                   / np.var(r_m[ok2], ddof=1))
+
+    detenus = {tk for tk, v in fenetre[-1]["lignes"].items() if v > 0.005}
     par_ligne = []
-    for k, c in enumerate(cols):
-        l = next(x for x in lignes if x["ticker"] == c)
-        b = None
-        if r_idx is not None and np.var(r_idx) > 0:
-            b = float(np.cov(rdt[c].values, r_idx, ddof=1)[0, 1] / np.var(r_idx, ddof=1))
-        # Bêta de la ligne face au PORTEFEUILLE (et non face à l'indice) : c'est lui qui
-        # commande la part du risque, puisque part = poids × ce bêta. L'afficher rend le
-        # calcul vérifiable à la main, et évite de confondre les deux bêtas.
-        b_pf = (float(np.cov(rdt[c].values, r_p, ddof=1)[0, 1] / var_p) if var_p > 0 else None)
-        par_ligne.append({"ticker": c, "nom": l["nom"], "poids_pct": _r(w[k] * 100),
-                          "volatilite_pct": _r(vols_ind[k] * 100),
-                          "contribution_risque_pct": _r(contrib[k] * 100),
-                          "beta": _r(b), "beta_portefeuille": _r(b_pf)})
+    for k, tk in enumerate(tickers):
+        w = float(np.mean([o["poids"].get(tk, 0.0) for o in obs]))
+        p_i = part(C[:, k])
+        if w < 1e-6 and abs(p_i) < 1e-6:
+            continue
+        par_ligne.append({
+            "ticker": tk, "nom": (pdb.fiche_titre(tk) or {}).get("nom") or tk,
+            "type": "titre", "soldee": tk not in detenus,
+            "poids_pct": _r(w * 100),
+            "volatilite_pct": _r(vol_ligne[tk] * 100) if tk in vol_ligne else None,
+            "beta": _r(beta_ligne.get(tk)),
+            "contribution_risque_pct": _r(p_i * 100),
+        })
     par_ligne.sort(key=lambda x: -(x["contribution_risque_pct"] or 0))
+    p_frais = part(frais)
+    if abs(p_frais) >= 0.00005:
+        par_ligne.append({"ticker": None, "nom": "Frais de courtage", "type": "frais",
+                          "soldee": False, "poids_pct": None, "volatilite_pct": None,
+                          "beta": None, "contribution_risque_pct": _r(p_frais * 100)})
 
     return {
         "disponible": True,
-        "periode": f"{rdt.index[0].strftime('%d/%m/%Y')} → {rdt.index[-1].strftime('%d/%m/%Y')}",
-        "n_jours": len(rdt),
+        "periode": f"{_date_fr(fenetre[0]['date'])} → {_date_fr(obs[-1]['date'])}",
+        "n_jours": len(obs),
         "indice": code,
         "indice_reference": md.libelle_indice(code),
         "methode": _METHODE_RISQUE,
         "volatilite_pct": _r(vol * 100),
-        # Une perte totale rend l'annualisation géométrique indéfinie : on affiche alors
-        # un tiret plutôt qu'un nombre inventé, et le Sharpe suit.
         "rendement_1an_pct": _r(rend * 100) if rend is not None else None,
+        # Vrai quand le compte a moins d'un an : le chiffre est alors ramené à l'année
+        # et reste une extrapolation, que l'interface signale par un astérisque.
+        "rendement_annualise": rend_annualise,
+        "rendement_periode": (f"{perf['debut']} → {perf['fin']}" if perf else None),
+        "rendement_jours": (perf["jours"] if perf else None),
         "sharpe": _r((rend - taux_sans_risque) / vol) if (rend is not None and vol > 0) else None,
         "taux_sans_risque_pct": _r(taux_sans_risque * 100),
         "var95_1j_pct": _r(var95 * 100),
-        "var95_1j_eur": _r(var95 * valeur_titres),
+        "var95_1j_eur": _r(var95 * valeur),
         "cvar95_1j_pct": _r(cvar95 * 100),
         "max_drawdown_pct": _r(max_dd * 100),
         "beta": _r(beta),
         "correlation_indice": _r(correl),
-        "nb_lignes": len(lignes),
+        "nb_lignes": sum(1 for l in par_ligne if l["type"] == "titre"),
         "par_ligne": par_ligne,
     }
 
@@ -1424,7 +1665,7 @@ async def synchroniser_dividendes(user: str = Depends(utilisateur_courant), pf: 
                 "date": date_split, "type": "SPLIT", "ticker": tk, "quantite": ratio,
                 "devise": pos.devise, "taux_eur": 1.0, "origine": "auto",
                 "commentaire": f"Division par {_frg(ratio)} : {_frg(pos.quantite)} → "
-                               f"{_frg(pos.quantite * ratio)} titres, PAM divisé par {_frg(ratio)}"})
+                               f"{_frg(pos.quantite * ratio)} titres, PRU divisé par {_frg(ratio)}"})
             pdb.notifier(user, f"Division d'actions : {nom}",
                          f"{_frg(ratio)} nouvelles actions pour 1 ancienne le "
                          f"{pd.Timestamp(date_split).strftime('%d/%m/%Y')} : votre position passe de "
@@ -1470,6 +1711,9 @@ async def synchroniser_dividendes(user: str = Depends(utilisateur_courant), pf: 
                          f"{pd.Timestamp(date_detach).strftime('%d/%m/%Y')}).")
             nouveaux.append({"ticker": tk, "nom": nom, "date": date_detach, "net_eur": net_eur,
                              "type": "DIVIDENDE"})
+    # Dividendes crédités et divisions appliquées : des opérations ont été créées.
+    if nouveaux:
+        _oublier_serie(user, pf)
     return {"nouveaux": nouveaux}
 
 
@@ -1536,6 +1780,13 @@ class LigneImport(BaseModel):
         return None
 
 
+class FichierImporte(BaseModel):
+    """Un fichier du lot : son empreinte, son nom, et ce qui en a été retenu."""
+    empreinte: str = Field(..., min_length=64, max_length=64)
+    nom: str = Field(default="", max_length=200)
+    lignes: int = Field(default=0, ge=0)
+
+
 class ImportValidation(BaseModel):
     lignes: List[LigneImport] = Field(..., min_length=1, max_length=500)
     remplacer: bool = False          # true : les positions existantes sont d'abord soldées
@@ -1546,6 +1797,11 @@ class ImportValidation(BaseModel):
     # d'exécution (relevé d'opérations, carnet d'ordres) ou une date déduite par
     # l'export de positions — ce qui change la façon de valoriser la première journée.
     type_fichier: str = Field(default="positions")
+    # Empreintes des fichiers d'origine, renvoyées telles quelles par l'aperçu, avec
+    # le nombre de lignes retenues pour chacun. Le serveur s'en sert pour retenir que
+    # ces fichiers sont entrés dans le compte et prévenir au prochain dépôt. Un lot
+    # peut en contenir plusieurs : l'import accepte la sélection multiple.
+    fichiers: List[FichierImporte] = Field(default_factory=list, max_length=50)
 
 
 @router.post("/compte/import/apercu")
@@ -1560,6 +1816,7 @@ async def import_apercu(fichier: UploadFile = File(...), user: str = Depends(uti
     contenu = await fichier.read()
     if len(contenu) > 2_000_000:
         raise HTTPException(413, detail="Fichier trop volumineux (2 Mo maximum).")
+    empreinte = hashlib.sha256(contenu).hexdigest()
     try:
         # Les libellés déjà classés par l'utilisateur lors d'un import précédent sont
         # réappliqués : l'application ne repose jamais deux fois la même question.
@@ -1644,7 +1901,14 @@ async def import_apercu(fichier: UploadFile = File(...), user: str = Depends(uti
             "ignorees": lu["ignorees"], "a_classer": lu.get("a_classer", []),
             "avertissements": lu.get("avertissements", []),
             "format_date": lu.get("format_date"), "fichier": fichier.filename,
-            "type": lu.get("type", "positions")}
+            "type": lu.get("type", "positions"),
+            # Reconnaissance du fichier lui-même, par son contenu. Elle ne bloque rien :
+            # l'aperçu s'ouvre normalement et l'utilisateur décide. Il peut vouloir
+            # réimporter, par exemple après avoir supprimé une ligne par erreur — les
+            # marqueurs « doublon » posés plus haut lui disent alors, ligne par ligne,
+            # ce qui est déjà dans le compte.
+            "empreinte": empreinte,
+            "deja_importe": pdb.import_deja_vu(user, pf, empreinte)}
 
 
 class MappagesIn(BaseModel):
@@ -1748,11 +2012,17 @@ async def import_valider(req: ImportValidation, user: str = Depends(utilisateur_
                      "pru": l.pru, "devise": devise, "date": l.date, "sens": l.sens})
         etat = calc.rejouer(pdb.operations(user, pf))
 
-    _cache_serie.pop(user, None)
+    _oublier_serie(user, pf)
     if cree:
         pdb.notifier(user, "Import réalisé",
                      f"{len(cree)} ligne(s) ajoutée(s) depuis un export courtier"
                      + (f", {len(soldees)} position(s) remplacée(s)" if soldees else "") + ".")
+    # Le compte retient les fichiers qui viennent d'y entrer. Seulement si quelque
+    # chose a été créé : un import entièrement en erreur ne doit pas faire croire au
+    # prochain dépôt que le fichier est déjà passé.
+    if cree:
+        for f in req.fichiers:
+            pdb.enregistrer_import(user, pf, f.empreinte, f.nom, f.lignes)
     return {"importees": cree, "remplacees": soldees, "erreurs": erreurs}
 
 

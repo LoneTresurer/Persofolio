@@ -30,7 +30,10 @@ TYPES_ORDRE     = ("ACHAT", "VENTE")                      # onglet « Ordres »
 # Onglet « Mouvements ». Les versements et retraits d'espèces restent traités par le
 # calcul — une base existante peut en contenir — mais ne sont plus saisissables ni
 # affichés : l'application suit des investissements, pas un compte bancaire.
-TYPES_MOUVEMENT = ("DIVIDENDE", "SPLIT")
+# Ce que l'onglet Mouvements affiche, par opposition aux ordres d'achat et de vente.
+# Les versements et les retraits y figurent de nouveau : à partir du moment où le
+# solde espèces est suivi, il faut pouvoir voir — et corriger — ce qui l'alimente.
+TYPES_MOUVEMENT = ("DEPOT", "RETRAIT", "DIVIDENDE", "SPLIT")
 
 
 class OperationInvalide(ValueError):
@@ -42,17 +45,30 @@ class Position:
     ticker: str
     devise: str
     quantite: float = 0.0
-    pru: float = 0.0            # prix de revient unitaire, en devise, hors frais
+    pru: float = 0.0            # prix moyen pondéré des titres seuls, en devise, HORS frais
+    # Coût de revient dans la devise de cotation, frais compris. Il sert au prix de
+    # revient unitaire affiché : « prix de revient » veut dire frais d'acquisition
+    # inclus, c'est ce qui le distingue du prix d'achat. Les frais, connus en euros,
+    # sont ramenés en devise au taux de l'opération.
+    cout_devise: float = 0.0
     cout_eur: float = 0.0       # coût de revient total en EUR, frais inclus
     pv_realisee_eur: float = 0.0
     pv_realisee_devise: float = 0.0
     dividendes_eur: float = 0.0
     date_entree: Optional[str] = None
 
+    @property
+    def pru_frais_inclus(self) -> float:
+        """Prix de revient unitaire au sens strict : tout ce qu'a coûté une unité,
+        frais d'acquisition compris, dans la devise de cotation."""
+        return self.cout_devise / self.quantite if self.quantite > EPS else 0.0
+
     def to_dict(self) -> dict:
         return {
             "ticker": self.ticker, "devise": self.devise,
             "quantite": round(self.quantite, 6), "pru": round(self.pru, 6),
+            "pru_frais_inclus": round(self.pru_frais_inclus, 6),
+            "cout_devise": round(self.cout_devise, 2),
             "cout_eur": round(self.cout_eur, 2),
             "pv_realisee_eur": round(self.pv_realisee_eur, 2),
             "pv_realisee_devise": round(self.pv_realisee_devise, 2),
@@ -72,6 +88,13 @@ class EtatCompte:
     # disponible et qu'un achat ultérieur a réemployé.
     apports_implicites_eur: float = 0.0
     frais_eur: float = 0.0
+    # Les mêmes frais, ventilés selon le sens de l'ordre. Un courtier facture
+    # rarement au même tarif à l'achat et à la vente, et le total seul ne dit pas
+    # ce que coûte le fait de sortir d'une ligne.
+    frais_achat_eur: float = 0.0
+    frais_vente_eur: float = 0.0
+    nb_ordres_achat: int = 0
+    nb_ordres_vente: int = 0
     dividendes_eur: float = 0.0
     pv_realisee_eur: float = 0.0
     cout_cede_eur: float = 0.0          # coût de revient des titres vendus (pour la perf globale)
@@ -172,8 +195,13 @@ def _appliquer(etat: EtatCompte, op: dict) -> None:
         pos.pru = (pos.pru * pos.quantite + prix * q) / nouvelle_q
         pos.quantite = nouvelle_q
         pos.cout_eur += cout
+        # Frais ramenés en devise de cotation : sur une ligne en euros, taux = 1 et
+        # cout_devise suit exactement cout_eur.
+        pos.cout_devise += q * prix + (frais / taux if taux else frais)
         etat.cash_eur -= cout
         etat.frais_eur += frais
+        etat.frais_achat_eur += frais
+        etat.nb_ordres_achat += 1
         enrichie["flux_cash_eur"] = -cout
         enrichie["montant_brut_eur"] = round(montant_eur, 2)
 
@@ -189,16 +217,23 @@ def _appliquer(etat: EtatCompte, op: dict) -> None:
         q = min(q, detenu)
         produit_eur = q * prix * taux - frais
         cout_unitaire_eur = pos.cout_eur / pos.quantite
+        cout_unitaire_dev = pos.cout_devise / pos.quantite if pos.quantite > EPS else 0.0
         pv_eur = produit_eur - cout_unitaire_eur * q
         pv_dev = (prix - pos.pru) * q
         pos.quantite -= q
         pos.cout_eur -= cout_unitaire_eur * q
+        # Le coût en devise se réduit dans la même proportion que celui en euros :
+        # sans cela, le prix de revient unitaire des titres restants serait faux
+        # après une vente partielle.
+        pos.cout_devise -= cout_unitaire_dev * q
         pos.pv_realisee_eur += pv_eur
         pos.pv_realisee_devise += pv_dev
         if pos.quantite <= EPS:            # ligne soldée
-            pos.quantite, pos.cout_eur = 0.0, 0.0
+            pos.quantite, pos.cout_eur, pos.cout_devise = 0.0, 0.0, 0.0
         etat.cash_eur += produit_eur
         etat.frais_eur += frais
+        etat.frais_vente_eur += frais
+        etat.nb_ordres_vente += 1
         etat.pv_realisee_eur += pv_eur
         etat.cout_cede_eur += cout_unitaire_eur * q
         enrichie["flux_cash_eur"] = produit_eur
