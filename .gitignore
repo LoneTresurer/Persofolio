@@ -1,6 +1,64 @@
+# ===================================================================
+#  PersoFolio — ce que GitHub ne doit PAS publier.
+#
+#  Chaque ligne décrit un fichier ou un dossier qui reste sur votre
+#  machine. Tout le reste du projet est publié normalement.
+# ===================================================================
+
+# ── Vos données personnelles ───────────────────────────────────────
+# La base contient vos comptes, vos positions, vos versements et vos
+# opérations bancaires. Elle ne doit jamais quitter votre ordinateur.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+persofolio/backend/data/
+donnees/
+
+# ── Les relevés et avis d'opération que vous importez ──────────────
+# Si vous déposez un relevé de banque ou un avis de courtier dans le
+# dossier du projet pour le tester, il ne partira pas en ligne.
+*.pdf
+*.csv
+*.ofx
+*.qif
+*.xlsx
+*.xls
+releves/
+imports/
+avis/
+
+# ── Documentation ──────────────────────────────────────────────────
+# Publiée avec le programme (décision du 10 novembre) : REPRENDRE.md et
+# MERGE.md portent la méthode de travail, et les outils de contrôle y
+# renvoient. Pour retirer un document, le dire ici explicitement, fichier par
+# fichier — et se souvenir qu'il restera visible dans l'historique.
+
+# ── L'environnement Python ─────────────────────────────────────────
+# Créé par lancer.bat. Plusieurs centaines de mégaoctets, reconstruits
+# automatiquement chez quiconque lance le projet : inutile à publier.
+.venv/
+.venv-build/
+venv/
+env/
 __pycache__/
 *.pyc
-*.db
-.venv-build/
+*.pyo
+*.pyd
+
+# ── L'exécutable Windows ───────────────────────────────────────────
+# Produit par construire.bat à partir du code déjà publié.
 build/
 dist/
+*.spec.bak
+
+# ── Fichiers techniques de l'éditeur et du système ─────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp
