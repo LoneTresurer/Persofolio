@@ -429,6 +429,14 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
     - `titres_cout_eur` : ce que les titres détenus ont coûté, frais compris ;
     - `verses_depuis_budget_eur` : ce que le budget a effectivement envoyé.
 
+    **Portefeuille par portefeuille.** Chaque portefeuille est rejoué à part,
+    exactement comme l'en-tête du compte-titres le fait pour celui qui est
+    affiché, puis les chiffres sont additionnés. Rejouer toutes les opérations
+    ensemble donnerait d'autres espèces dès qu'il y a plusieurs portefeuilles :
+    un achat de l'un serait payé avec les espèces de l'autre. Avec un seul
+    portefeuille, `cash_eur` est donc au centime le « Solde espèces » du
+    compte-titres.
+
     `apports_hors_budget_eur` est la différence entre tout l'argent entré dans le
     portefeuille et ce que le budget a envoyé. Ce n'est pas une anomalie : un
     versement fait directement chez le courtier est parfaitement légitime. Mais
@@ -440,25 +448,36 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
     conn = _connect()
     try:
         _verifier_schema(conn)
-        pf = portefeuille if portefeuille is not None else portefeuille_unique(conn, username)
-        operations = _operations(conn, username, pf)
+        if portefeuille is not None:
+            ids = [portefeuille]
+        else:
+            ids = [r["id"] for r in conn.execute(
+                "SELECT id FROM portefeuilles WHERE username=? ORDER BY id", (username,)).fetchall()]
+        par_pf = [(i, _operations(conn, username, i)) for i in ids] or [(None, _operations(conn, username, None))]
     finally:
         conn.close()
 
-    etat = rejouer(operations)
-    titres_cout = round(sum(p.cout_eur for p in etat.positions.values()
-                            if p.quantite > 1e-9), 2)
+    rejoues = [(i, ops, rejouer(ops)) for i, ops in par_pf]
+    operations = [o for _, ops, _ in rejoues for o in ops]
+    pf = rejoues[0][0] if len(rejoues) == 1 else None
+    somme = lambda f: sum(f(e) for _, _, e in rejoues)
+    cash = somme(lambda e: e.cash_eur)
+    apports_implicites = somme(lambda e: e.apports_implicites_eur)
+    depots_nets = somme(lambda e: e.depots_nets_eur)
+    titres_cout = round(somme(lambda e: sum(p.cout_eur for p in e.positions.values()
+                                            if p.quantite > 1e-9)), 2)
     net = lambda marque: round(sum(
         float(o.get("montant_eur") or 0) * (1 if o["type"] == "DEPOT" else -1)
         for o in operations
         if o["type"] in ("DEPOT", "RETRAIT") and (o.get("origine") or "") == marque), 2)
     depuis_budget = net(ORIGINE)
     declare_externe = net(ORIGINE_EXTERNE)
-    entre_en_tout = round(etat.depots_nets_eur + etat.apports_implicites_eur, 2)
+    entre_en_tout = round(depots_nets + apports_implicites, 2)
 
     return {
         "portefeuille": pf,
-        "cash_eur": round(etat.cash_eur, 2),
+        "portefeuilles": [i for i, _, _ in rejoues if i is not None],
+        "cash_eur": round(cash, 2),
         "titres_cout_eur": titres_cout,
         "verses_depuis_budget_eur": depuis_budget,
         "verses_exterieurs_eur": declare_externe,
@@ -467,8 +486,8 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
         # un achat passé chez le courtier sans versement enregistré. Ce n'est pas
         # une anomalie, c'est une question à poser. Déclarer le versement le fait
         # tomber à zéro, puisque l'achat n'est alors plus à découvert.
-        "a_expliquer_eur": round(etat.apports_implicites_eur, 2),
-        "a_expliquer_detail": achats_a_decouvert(operations),
+        "a_expliquer_eur": round(apports_implicites, 2),
+        "a_expliquer_detail": [t for _, ops, _ in rejoues for t in achats_a_decouvert(ops)],
         # Tous les mouvements d'espèces, pour pouvoir les relire et annuler ceux
         # que la passerelle a écrits. `virement_id` est nul pour un versement saisi
         # dans le compte-titres lui-même : celui-là se corrige là-bas.
@@ -480,5 +499,5 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
                            if (o.get("commentaire") or "").startswith(PREFIXE) else None,
             "saisi_le": o.get("saisi_le"),
         } for o in operations if o["type"] in ("DEPOT", "RETRAIT")],
-        "nb_lignes": sum(1 for p in etat.positions.values() if p.quantite > 1e-9),
+        "nb_lignes": somme(lambda e: sum(1 for p in e.positions.values() if p.quantite > 1e-9)),
     }

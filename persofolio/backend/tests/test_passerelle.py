@@ -161,6 +161,31 @@ class Remplacement(Base):
         self.assertEqual(self.inv()["cash_eur"], 300.0)
 
 
+class PlusieursPortefeuilles(Base):
+    """Chaque portefeuille rejoué à part, comme l'en-tête du compte-titres."""
+
+    def test_especes_de_chacun_additionnees(self):
+        from core.portfolio_calc import rejouer
+        pf2 = self.pdb.creer_portefeuille(U, "PEA")
+        self.pdb.ajouter_operation(U, self.pf, {"date": "2026-01-02", "type": "DEPOT", "montant_eur": 1000.0,
+                                                "devise": "EUR", "taux_eur": 1.0})
+        self.pdb.ajouter_operation(U, pf2, achat("2026-01-05", "CW8", 1, 500))   # sans versement
+        i = self.inv()
+        # Rejouées ensemble, les espèces de l'un payaient l'achat de l'autre : 500 € et rien à expliquer.
+        self.assertEqual(i["cash_eur"], 1000.0)
+        self.assertEqual(i["a_expliquer_eur"], 500.0)
+        attendu = sum(rejouer(self.pdb.operations(U, p)).cash_eur for p in (self.pf, pf2))
+        self.assertEqual(i["cash_eur"], round(attendu, 2))
+        self.assertEqual(sorted(i["portefeuilles"]), sorted([self.pf, pf2]))
+        self.assertIsNone(i["portefeuille"])
+
+    def test_un_seul_portefeuille_inchange(self):
+        self.pdb.ajouter_operation(U, self.pf, {"date": "2026-01-02", "type": "DEPOT", "montant_eur": 300.0,
+                                                "devise": "EUR", "taux_eur": 1.0})
+        i = self.inv()
+        self.assertEqual((i["portefeuille"], i["portefeuilles"], i["cash_eur"]), (self.pf, [self.pf], 300.0))
+
+
 class LienBudget(Base):
     """Un mouvement écrit par le budget ne se corrige pas depuis le compte-titres."""
 
