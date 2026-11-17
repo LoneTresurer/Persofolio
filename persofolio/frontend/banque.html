@@ -27,6 +27,11 @@
     --ambre-clair: #FBEEDC;
     --champ: #FFFFFF;
     --rayon: 10px;
+    /* Infobulles des formules : leurs propres couleurs, parce que --encre
+       s'éclaircit en mode sombre et qu'un texte blanc dessus devenait illisible. */
+    --bulle-fond: #15261D;
+    --bulle-texte: #FFFFFF;
+    --bulle-filet: transparent;
   }
   /* Mode sombre, repris du compte-titres pour que les deux modules se ressemblent :
      les verts sont éclaircis pour rester lisibles sur fond foncé, et gains et pertes
@@ -48,6 +53,9 @@
     --ambre: #D9A441;
     --ambre-clair: #2E2719;
     --champ: #222A25;
+    --bulle-fond: #2A352E;
+    --bulle-texte: #EEF2EF;
+    --bulle-filet: #3D4A42;
   }
   html { color-scheme: light; }
   html[data-theme="sombre"] { color-scheme: dark; }
@@ -151,7 +159,9 @@
   .grille-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 18px; margin-bottom: 18px; }
   .grille-2 > .panneau { margin-bottom: 0; }
   .grille-large { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px; }
-  @media (max-width: 960px) { .grille-large { grid-template-columns: 1fr; } }
+  /* minmax(0, 1fr) et non 1fr : « 1fr » laisse la colonne s'élargir à la taille d'un
+     tableau large, et la page déborde sur téléphone au lieu de faire défiler le tableau. */
+  @media (max-width: 960px) { .grille-large { grid-template-columns: minmax(0, 1fr); } }
 
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th { text-align: left; font-weight: 500; color: var(--encre-2); font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--filet); white-space: nowrap; }
@@ -226,12 +236,15 @@
     content: attr(data-formule);
     position: absolute; left: 0; top: calc(100% + 7px); z-index: 40;
     width: max-content; max-width: 300px;
-    background: var(--encre); color: #fff; border-radius: 8px; padding: 9px 11px;
+    background: var(--bulle-fond); color: var(--bulle-texte); border: 1px solid var(--bulle-filet);
+    border-radius: 8px; padding: 9px 11px;
     font-size: 12.5px; font-weight: 400; line-height: 1.5; white-space: pre-line;
-    opacity: 0; pointer-events: none; transition: opacity .12s;
+    display: none; pointer-events: none;
     box-shadow: 0 6px 20px rgba(21, 38, 29, .22);
   }
-  .formule:hover::after, .formule:focus-visible::after { opacity: 1; }
+  /* Absente tant qu'on ne la survole pas : invisible mais présente, elle élargissait
+     la page sur téléphone près du bord droit. */
+  .formule:hover::after, .formule:focus-visible::after { display: block; }
   /* Près du bord droit, l'infobulle s'aligne par la droite pour rester dans la page. */
   .formule.droite::after { left: auto; right: 0; }
   @media (hover: none) { .formule::after { display: none; } }
@@ -273,6 +286,14 @@
   .segments button { border: none; background: none; border-radius: 6px; padding: 6px 12px; font-size: 13.5px; color: var(--encre-2); }
   .segments button[aria-pressed="true"] { background: var(--carte); color: var(--encre); box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 500; }
   .nav-mois { display: inline-flex; align-items: center; gap: 6px; }
+  /* Sélecteur Mois / Dépenses historiques / Recettes historiques */
+  .segments { display: inline-flex; border: 1px solid var(--filet); border-radius: 8px; overflow: hidden; background: var(--carte); }
+  .segments button { border: 0; background: transparent; color: var(--encre-2); padding: 7px 12px; font: inherit; font-size: 13.5px; cursor: pointer; }
+  .segments button + button { border-left: 1px solid var(--filet); }
+  .segments button[aria-pressed="true"] { background: var(--foret-clair); color: var(--foret); font-weight: 500; }
+  .tableau-histo td, .tableau-histo th { white-space: nowrap; }
+  .tableau-histo .pastille { margin-right: 8px; }
+  .tableau-histo td.cliquable:hover { background: var(--foret-clair); cursor: pointer; }
   .nav-mois strong { min-width: 150px; text-align: center; font-weight: 500; text-transform: capitalize; }
   select.cat-inline { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 3px 4px; font-size: 13.5px; max-width: 190px; }
   select.cat-inline:hover, select.cat-inline:focus { border-color: var(--filet); background: var(--carte); }
@@ -291,6 +312,9 @@
   .cat-ligne td:first-child { display: flex; align-items: center; gap: 8px; }
   .cat-ligne .progres { min-width: 120px; }
   tr.cliquable { cursor: pointer; }
+  /* Crédit affiché dans l'échéancier */
+  tr.choisi td { background: var(--foret-clair); }
+  tr.choisi td:first-child { box-shadow: inset 3px 0 0 var(--foret); }
 
   /* ── Dettes ────────────────────────────────────────────── */
   .jauge { margin-top: 8px; }
@@ -380,7 +404,7 @@
   .types button[aria-pressed="true"] { background: var(--carte); color: var(--encre); box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 500; }
   .actions-tiroir { display: flex; gap: 10px; margin-top: 6px; }
   .actions-tiroir .btn:first-child { flex: 1; }
-  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--encre); color: #fff; padding: 10px 18px; border-radius: 8px; z-index: 30; font-size: 14px; }
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--bulle-fond); color: var(--bulle-texte); border: 1px solid var(--bulle-filet); padding: 10px 18px; border-radius: 8px; z-index: 30; font-size: 14px; }
 
   @media (max-width: 720px) {
     .chiffres { grid-template-columns: repeat(2, auto); }
@@ -697,15 +721,24 @@ async function chargerInvestissement() {
   // La valeur de marché est un supplément : son absence ne doit jamais empêcher
   // le reste de s'afficher.
   INV.titres_valeur_eur = null; INV.valeur_le = null;
-  if (INV.titres_cout_eur <= 0.005) return;
+  // Les espèces viennent du même calcul que l'en-tête du compte-titres, portefeuille
+  // par portefeuille : le « Solde espèces » de là-bas est donc celui d'ici. Quand le
+  // compte-titres répond, on prend ses chiffres tels qu'il les affiche ; sinon, le
+  // calcul hors ligne de /banque/investissement, qui est le même.
+  const ids = INV.portefeuilles?.length ? INV.portefeuilles : [null];
   try {
-    const s = await api('/compte/synthese');
-    const v = s?.totaux?.titres_eur;
-    if (typeof v === 'number' && isFinite(v)) {
-      INV.titres_valeur_eur = arrondi(v);
-      INV.valeur_le = AUJ;
+    let titres = 0, especes = 0;
+    for (const id of ids) {
+      const s = await api('/compte/synthese', id == null ? {} : { headers: { 'X-Portefeuille': String(id) } });
+      const t = s?.totaux?.titres_eur, c = s?.totaux?.cash_eur;
+      if (typeof t !== 'number' || !isFinite(t) || typeof c !== 'number' || !isFinite(c)) return;
+      titres += t; especes += c;
     }
-  } catch { /* hors ligne, ou cours indisponibles : le prix de revient fera foi */ }
+    if (Math.abs(especes - INV.cash_eur) > 0.005)
+      console.warn(`Solde espèces : ${especes} au compte-titres, ${INV.cash_eur} hors ligne`);
+    INV.cash_eur = arrondi(especes);
+    if (INV.titres_cout_eur > 0.005) { INV.titres_valeur_eur = arrondi(titres); INV.valeur_le = AUJ; }
+  } catch { /* hors ligne, ou cours indisponibles : prix de revient et espèces calculées ici font foi */ }
 }
 
 async function charger() {
@@ -1320,7 +1353,7 @@ function afficherEtape() {
       <div class="accueil-choix">
         <button id="ass-commencer"><strong>Configurer mes comptes</strong><span>Saisir mes propres chiffres, étape par étape.</span></button>
         <button id="ass-exemple"><strong>Explorer avec un exemple</strong><span>Un profil fictif avec quatre mois d'historique, pour voir le module rempli.</span></button>
-        <button id="ass-releves"><strong>Importer mes relevés bancaires</strong><span>Deux ou trois mois de PDF : vos charges, vos budgets et votre historique en sont déduits.</span></button>
+        <button id="ass-releves"><strong>Importer mes relevés bancaires</strong><span>Deux ou trois mois de relevés, en PDF ou en tableur (Excel, CSV) : vos charges, vos budgets et votre historique en sont déduits.</span></button>
         ${localStorage.getItem(ANCIENNE_CLE) ? `<button id="ass-import"><strong>Récupérer mes données</strong><span>Des comptes créés avec la version précédente sont enregistrés dans ce navigateur : les rattacher à votre compte.</span></button>` : ''}
       </div>`;
     pied.innerHTML = '';
@@ -1746,6 +1779,8 @@ function chargerExemple() {
    APPLICATION
    ════════════════════════════════════════════════════════════════════════ */
 let ongletActif = 'synthese', compteVu = 'courant', moisBudget = moisDe(AUJ), graphiques = {};
+// Onglet Budget : le mois, ou l'historique des dépenses ou des recettes.
+let budgetVue = 'mois', histo = { periode: 12, focus: '' };
 let filtre = { mois: 'tous', sens: 'tous', texte: '', categorie: '' }, limiteOps = 80;
 
 function demarrer() {
@@ -1878,11 +1913,13 @@ ${argent0(s)} − ${argent0(aff)} = ${argent0(s - aff)}`)}</span><strong>${argen
       <div><div class="solde">${argent(total)}</div>
         <div class="discret">espèces et titres du compte-titres</div></div>
       <div class="lignes">
-        <span>${formule(esp < 0 ? 'Espèces manquantes' : 'Espèces à investir', `Versements reçus − achats + ventes et dividendes
+        <span>${formule('Solde espèces', `Le « Solde espèces » du compte-titres, au centime.
+Versements reçus − achats + ventes et dividendes
 Calculé sur les seules opérations enregistrées : exact, et connu sans connexion.`)}</span><span class="${esp < 0 ? 'perte' : ''}">${argent(esp)}</span>
         <span>Titres${auCout ? ' <span class="discret">(prix de revient)</span>' : ''}</span><span>${argent(tit)}</span>
         <span>Versé ce mois</span><span>${argent(mois.versInvest, true)}</span>
-        <span>Virement programmé</span><span>${plan.virementInvest ? argent(plan.virementInvest) + ' / mois' : 'aucun'}</span></div>
+        <span>Virement programmé</span><span>${plan.virementInvest ? argent(plan.virementInvest) + ' / mois' : 'aucun'}</span>
+        ${ligneAPlacer()}</div>
       ${esp < 0 ? `<p class="note alerte" style="margin:10px 0 0">Vous avez rapatrié ou investi plus d'espèces que le compte-titres
         n'en a reçu. C'est le signe qu'une vente, ou un versement fait directement chez votre courtier, n'a pas encore été
         enregistré. Saisissez-le dans le compte-titres et ce montant se résorbera.</p>` : ''}
@@ -1974,6 +2011,29 @@ Le trait marque l'avancement du mois : ${pct(avance * 100, 0)}`)}</div><div clas
   vue.querySelectorAll('[data-voir]').forEach(b => b.onclick = () => { compteVu = 'courant'; ouvrirOnglet('comptes'); });
   vue.querySelectorAll('[data-virer]').forEach(b => b.onclick = () => tiroirOperation({ type: 'VIREMENT', compte: b.dataset.virer }));
   $('#btn-objectif').onclick = () => tiroirObjectif();
+}
+
+/* « À placer pour tenir votre cible » : ce qu'il faudrait encore virer vers le
+   compte-titres pour que la part investie de l'épargne libre atteigne la cible.
+   Un conseil, propre au budget : il ne change ni les espèces ni la valeur du
+   compte-titres. Il ne s'affiche que si l'utilisateur s'est fixé une cible, et
+   jamais tant que le coussin de précaution n'est pas constitué — l'application
+   ne pousse pas à placer de l'argent dont on aura besoin.
+
+   Cible × épargne libre − déjà versé, sur la même période que le bloc « Part de
+   l'épargne investie » (depuis l'ouverture). */
+function aPlacerPourCible() {
+  const cible = E.cibleInvestie ?? null, p = partInvestie();
+  if (cible == null || !p || p.taux == null || !coussinConstitue()) return null;
+  return { montant: Math.max(0, arrondi(cible / 100 * p.libre - p.verse)), cible, p };
+}
+
+function ligneAPlacer() {
+  const r = aPlacerPourCible(); if (!r) return '';
+  return `<span>${formule('À placer pour tenir votre cible', `Cible × épargne libre − déjà versé, depuis l'ouverture
+${pct(r.cible, 0)} × ${argent0(r.p.libre)} − ${argent0(r.p.verse)} = ${argent0(r.cible / 100 * r.p.libre - r.p.verse, true)}
+Un repère, pas un ordre : il ne s'affiche que si votre coussin de précaution est constitué.`)}</span>
+        <span>${r.montant > 0.005 ? argent(r.montant) : '<span class="discret">cible tenue</span>'}</span>`;
 }
 
 /* Part de l'épargne investie : deux fenêtres, la cible de l'utilisateur, et un
@@ -2479,7 +2539,17 @@ function tiroirCorrection(op = null) {
 }
 
 /* ═════════════ Onglet 3 : Budget ═════════════ */
+/* Le sélecteur de vue de l'onglet Budget, à côté de l'indicateur du mois. */
+function segmentsBudget() {
+  const b = (cle, nom) => `<button type="button" data-bvue="${cle}" aria-pressed="${budgetVue === cle}">${nom}</button>`;
+  return `<div class="segments" role="group" aria-label="Vue">${b('mois', 'Mois')}${b('depenses', 'Dépenses historiques')}${b('recettes', 'Recettes historiques')}</div>`;
+}
+function brancherSegments(vue) {
+  vue.querySelectorAll('[data-bvue]').forEach(x => x.onclick = () => { budgetVue = x.dataset.bvue; histo.focus = ''; vueBudget(); });
+}
+
 function vueBudget() {
+  if (budgetVue !== 'mois') return vueHistorique(budgetVue === 'depenses' ? 'SORTIE' : 'ENTREE');
   const vue = $('[data-vue="budget"]');
   const F = fluxMois(moisBudget), plan = planMensuel();
   const premier = moisDe(E.creeLe), estCourant = moisBudget === moisDe(AUJ);
@@ -2498,10 +2568,13 @@ function vueBudget() {
 
   vue.innerHTML = `
     <div class="filtres" style="justify-content:space-between">
-      <div class="nav-mois">
-        <button class="mini-btn" id="m-prec" ${moisBudget <= premier ? 'disabled' : ''} aria-label="Mois précédent">‹</button>
-        <strong>${libelleMois(moisBudget)}</strong>
-        <button class="mini-btn" id="m-suiv" ${estCourant ? 'disabled' : ''} aria-label="Mois suivant">›</button>
+      <div class="filtres" style="margin:0">
+        <div class="nav-mois">
+          <button class="mini-btn" id="m-prec" ${moisBudget <= premier ? 'disabled' : ''} aria-label="Mois précédent">‹</button>
+          <strong>${libelleMois(moisBudget)}</strong>
+          <button class="mini-btn" id="m-suiv" ${estCourant ? 'disabled' : ''} aria-label="Mois suivant">›</button>
+        </div>
+        ${segmentsBudget()}
       </div>
       <button class="mini-btn" id="btn-budgets">Ajuster les budgets</button>
     </div>
@@ -2524,6 +2597,13 @@ ${argent0(F.entrees)} − ${argent0(F.sorties)} = ${argent0(F.solde, true)}`)}</
             : `(${argent0(F.entrees)} − ${argent0(F.sorties)}) ÷ ${argent0(F.entrees)} = ${pct(tauxEpargne, 0)}`), true)}</div><div class="valeur ${classe(tauxEpargne ?? 0)}">${tauxEpargne == null ? '—' : pct(tauxEpargne, 0)}</div><div class="aide">${tauxEpargne == null ? 'pas assez d\'entrées ce mois-ci pour être parlant' : 'part des entrées non dépensée'}</div></div>
     </div>
     ${aVenir.length ? `<p class="note" style="margin:-4px 0 18px">Mois en cours : ${aVenir.map(e => `${echap(e.rec.libelle.toLowerCase())} de ${argent0(e.rec.montant)} attendu le ${+e.date.slice(8)}`).join(', ')}. D'ici là, le solde du mois reste mécaniquement négatif.</p>` : ''}
+
+    <div class="panneau">
+      <div class="tete-panneau"><div><h2>Six derniers mois</h2>
+        <p class="sous-titre">Entrées, sorties et solde de chaque mois.</p></div>
+        <div class="filtres" style="margin:0"><button class="mini-btn" data-aller="depenses">Dépenses historiques</button><button class="mini-btn" data-aller="recettes">Recettes historiques</button></div></div>
+      <div class="courbe"><canvas id="c-6mois"></canvas></div>
+    </div>
 
     <div class="panneau">
       <h2>D'où vient l'argent, où il va</h2>
@@ -2573,17 +2653,13 @@ ${argent0(F.entrees)} − ${argent0(F.sorties)} = ${argent0(F.solde, true)}`)}</
           <tr><td><strong>Capacité d'épargne</strong></td><td class="num"><strong class="${classe(plan.capacite)}">${argent0(plan.capacite, true)}</strong></td></tr>
         </tbody></table>
       </div>
-    </div>
-
-    <div class="panneau">
-      <h2>Six derniers mois</h2>
-      <p class="sous-titre">Entrées, sorties et solde de chaque mois.</p>
-      <div class="courbe"><canvas id="c-6mois"></canvas></div>
     </div>`;
 
   $('#m-prec').onclick = () => { moisBudget = decalerMois(moisBudget, -1); vueBudget(); };
   $('#m-suiv').onclick = () => { moisBudget = decalerMois(moisBudget, 1); vueBudget(); };
   $('#btn-budgets').onclick = tiroirBudgets;
+  brancherSegments(vue);
+  vue.querySelectorAll('[data-aller]').forEach(x => x.onclick = () => { budgetVue = x.dataset.aller; histo.focus = ''; vueBudget(); });
   vue.querySelectorAll('[data-cat]').forEach(tr => tr.onclick = () => {
     filtre = { mois: moisBudget, sens: 'tous', texte: '', categorie: tr.dataset.cat }; compteVu = 'courant'; ouvrirOnglet('comptes');
   });
@@ -2603,6 +2679,179 @@ ${argent0(F.entrees)} − ${argent0(F.sorties)} = ${argent0(F.solde, true)}`)}</
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.y)}` } } },
       scales: { x: { grid: { display: false } }, y: axeEuros() } },
   });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   HISTORIQUE DES DÉPENSES ET DES RECETTES
+   Tous les mois suivis, d'un coup d'œil : total et catégories, en courbes, en
+   barres empilées, en camembert et en tableau.
+
+   Les montants sont les opérations débitrices (dépenses) ou créditrices
+   (recettes) de chaque catégorie, virements entre vos comptes exclus — les
+   mêmes que « Sorties » et « Entrées » de la vue du mois, au centime. Un
+   remboursement reçu dans une catégorie de dépense n'est donc pas compté comme
+   une dépense : il va du côté des recettes. Le mois en cours n'est pas fini ;
+   il est tracé en pointillé et n'entre pas dans les moyennes.
+   ════════════════════════════════════════════════════════════════════════ */
+function fluxParSens(cle, sens) {
+  const parCat = {}; let total = 0;
+  E.operations.filter(o => moisDe(o.date) === cle && estFlux(o) && (sens === 'SORTIE' ? o.montant < 0 : o.montant > 0))
+    .forEach(o => { const v = Math.abs(o.montant); parCat[o.categorie] = (parCat[o.categorie] || 0) + v; total += v; });
+  return { parCat, total };
+}
+
+function premierMoisSuivi() {
+  const ops = E.operations.filter(estFlux).map(o => o.date).sort();
+  const m = moisDe(E.creeLe);
+  return ops.length && moisDe(ops[0]) < m ? moisDe(ops[0]) : m;
+}
+
+function vueHistorique(sens) {
+  const vue = $('[data-vue="budget"]');
+  const depense = sens === 'SORTIE', ici = moisDe(AUJ), premier = premierMoisSuivi();
+  const depuis = histo.periode ? [decalerMois(ici, -(histo.periode - 1)), premier].sort().pop() : premier;
+  const moisListe = []; for (let m = depuis; m <= ici; m = decalerMois(m, 1)) moisListe.push(m);
+  const flux = moisListe.map(m => fluxParSens(m, sens));
+  const complets = moisListe.map((m, i) => ({ m, f: flux[i] })).filter(x => x.m < ici);
+
+  // Catégories présentes sur la période, de la plus lourde à la plus légère
+  const cumul = {};
+  flux.forEach(f => Object.entries(f.parCat).forEach(([c, v]) => cumul[c] = (cumul[c] || 0) + v));
+  const cats = Object.keys(cumul).sort((a, b) => cumul[b] - cumul[a]);
+  const total = flux.reduce((s, f) => s + f.total, 0);
+  const moyenne = complets.length ? complets.reduce((s, x) => s + x.f.total, 0) / complets.length : null;
+  const max = complets.reduce((a, x) => !a || x.f.total > a.f.total ? x : a, null);
+  if (histo.focus && !cats.includes(histo.focus)) histo.focus = '';
+  const focus = histo.focus;
+  const nomCat = c => CATEGORIES[c]?.nom || c, couleur = c => CATEGORIES[c]?.couleur || '#A8B2AB';
+  const mot = depense ? 'dépenses' : 'recettes', Mot = depense ? 'Dépenses' : 'Recettes';
+  const periodes = [[6, '6 mois'], [12, '12 mois'], [24, '24 mois'], [0, 'Tout']];
+
+  // Moyenne mensuelle par catégorie, et budget prévu en face pour les dépenses
+  const prevu = {};
+  if (depense) {
+    CATS_SORTIE.forEach(c => prevu[c] = E.budgets[c] || 0);
+    E.programmees.filter(r => r.actif && r.sens === 'SORTIE').forEach(r => prevu[r.categorie] = (prevu[r.categorie] || 0) + r.montant);
+  }
+  const moyCat = c => complets.length ? complets.reduce((s, x) => s + (x.f.parCat[c] || 0), 0) / complets.length : 0;
+
+  vue.innerHTML = `
+    <div class="filtres" style="justify-content:space-between">
+      <div class="filtres" style="margin:0">
+        ${segmentsBudget()}
+        <div class="segments" role="group" aria-label="Période">${periodes.map(([n, t]) =>
+          `<button type="button" data-periode="${n}" aria-pressed="${histo.periode === n}">${t}</button>`).join('')}</div>
+      </div>
+      <div class="champ" style="margin:0;min-width:220px"><select id="h-focus" aria-label="Catégorie">
+        <option value="">Toutes les catégories</option>
+        ${cats.map(c => `<option value="${c}" ${c === focus ? 'selected' : ''}>${echap(nomCat(c))}</option>`).join('')}</select></div>
+    </div>
+    ${!total ? `<div class="panneau"><div class="vide"><p>Aucune ${depense ? 'dépense' : 'recette'} enregistrée sur cette période.</p></div></div>` : `
+    <div class="kpis">
+      <div><div class="nom">${formule(`${Mot} sur la période`, `Somme des opérations ${depense ? 'débitrices' : 'créditrices'} de ${libelleMois(moisListe[0])} à ${libelleMois(ici)}, mois en cours compris.
+Virements entre vos comptes exclus.`)}</div><div class="valeur ${depense ? '' : 'gain'}">${argent0(total)}</div>
+        <div class="aide">${moisListe.length} mois${moisListe.length > complets.length ? ', dont le mois en cours' : ''}</div></div>
+      <div><div class="nom">${formule('Moyenne mensuelle', complets.length ? `Total des mois complets ÷ nombre de mois complets
+${argent0(complets.reduce((s, x) => s + x.f.total, 0))} ÷ ${complets.length} = ${argent0(moyenne)}
+Le mois en cours n'y entre pas : il n'est pas fini.` : 'Pas encore de mois complet sur la période.')}</div>
+        <div class="valeur">${moyenne == null ? '—' : argent0(moyenne)}</div><div class="aide">sur ${complets.length} mois complet${complets.length > 1 ? 's' : ''}</div></div>
+      <div><div class="nom">Mois le plus élevé</div><div class="valeur">${max ? argent0(max.f.total) : '—'}</div>
+        <div class="aide">${max ? libelleMois(max.m) : 'pas encore de mois complet'}</div></div>
+      <div><div class="nom">Premier poste</div><div class="valeur" style="font-size:20px">${cats[0] ? echap(nomCat(cats[0])) : '—'}</div>
+        <div class="aide">${cats[0] ? `${argent0(cumul[cats[0]])}, ${pct(cumul[cats[0]] / total * 100, 0)} des ${mot}` : ''}</div></div>
+    </div>
+
+    <div class="panneau">
+      <h2>${focus ? `${echap(nomCat(focus))}, mois par mois` : `${Mot} mois par mois`}</h2>
+      <p class="sous-titre">${focus ? `La catégorie seule, avec sa moyenne des mois complets en pointillé. Choisissez « Toutes les catégories » pour revenir à l'ensemble.`
+        : `Le total en trait épais, les principales catégories en traits fins. Cliquez un nom de la légende pour masquer ou afficher sa courbe ; choisissez une catégorie en haut à droite pour l'isoler.`}
+        Le mois en cours, inachevé, est en pointillé.</p>
+      <div class="courbe" style="height:280px"><canvas id="c-h-courbe"></canvas></div>
+    </div>
+
+    <div class="grille-large">
+      <div class="panneau">
+        <h2>Composition de chaque mois</h2>
+        <p class="sous-titre">Les ${mot} de chaque mois, empilées par catégorie${cats.length > 7 ? ' (les sept premières, le reste regroupé)' : ''}.</p>
+        <div class="courbe" style="height:280px"><canvas id="c-h-barres"></canvas></div>
+      </div>
+      <div class="panneau">
+        <h2>Répartition sur la période</h2>
+        <p class="sous-titre">${argent0(total)} au total</p>
+        <div class="donut"><canvas id="c-h-part"></canvas></div>
+        <div class="legende-part" id="leg-h-part"></div>
+      </div>
+    </div>
+
+    <div class="panneau">
+      <h2>Moyenne mensuelle par catégorie${depense ? ', face au budget' : ''}</h2>
+      <p class="sous-titre">Sur les mois complets de la période.${depense ? ' Le budget est celui d\'aujourd\'hui : budgets variables et opérations programmées de la catégorie.' : ''}</p>
+      <div class="courbe" style="height:${Math.max(160, cats.length * 30 + 40)}px"><canvas id="c-h-moyennes"></canvas></div>
+    </div>
+
+    <div class="panneau">
+      <h2>Tableau détaillé</h2>
+      <p class="sous-titre">Cliquez un montant pour voir les opérations correspondantes.</p>
+      <div class="defile"><table class="tableau-histo">
+        <thead><tr><th>Catégorie</th>${moisListe.map(m => `<th class="num">${libelleMois(m, true)} ${m.slice(2, 4)}${m === ici ? '*' : ''}</th>`).join('')}<th class="num">Total</th><th class="num">Moyenne</th></tr></thead>
+        <tbody>${cats.map(c => `<tr><td><i class="pastille" style="background:${couleur(c)}"></i>${echap(nomCat(c))}</td>
+          ${moisListe.map((m, i) => flux[i].parCat[c] ? `<td class="num cliquable" data-hm="${m}" data-hc="${c}">${argent0(flux[i].parCat[c])}</td>` : '<td class="num discret">—</td>').join('')}
+          <td class="num"><strong style="font-weight:500">${argent0(cumul[c])}</strong></td><td class="num discret">${complets.length ? argent0(moyCat(c)) : '—'}</td></tr>`).join('')}
+          <tr><td><strong style="font-weight:500">Total</strong></td>${flux.map(f => `<td class="num"><strong style="font-weight:500">${argent0(f.total)}</strong></td>`).join('')}
+          <td class="num"><strong style="font-weight:500">${argent0(total)}</strong></td><td class="num">${moyenne == null ? '—' : argent0(moyenne)}</td></tr>
+        </tbody></table></div>
+      ${moisListe.includes(ici) ? `<p class="discret" style="margin:8px 0 0">* mois en cours, inachevé.</p>` : ''}
+    </div>`}`;
+
+  brancherSegments(vue);
+  vue.querySelectorAll('[data-periode]').forEach(x => x.onclick = () => { histo.periode = +x.dataset.periode; vueBudget(); });
+  $('#h-focus').onchange = e => { histo.focus = e.target.value; vueBudget(); };
+  vue.querySelectorAll('[data-hm]').forEach(td => td.onclick = () => {
+    filtre = { mois: td.dataset.hm, sens: depense ? 'sorties' : 'entrees', texte: '', categorie: td.dataset.hc };
+    compteVu = 'courant'; ouvrirOnglet('comptes');
+  });
+  if (!total) return;
+
+  const labels = moisListe.map(m => `${libelleMois(m, true)} ${m.slice(2, 4)}`);
+  const dernier = moisListe.length - 1, enCours = moisListe[dernier] === ici;
+  const pointille = { borderDash: c => enCours && c.p1DataIndex === dernier ? [5, 4] : undefined };
+  const ligne = (nom, data, coul, epais) => ({ type: 'line', label: nom, data, borderColor: coul, backgroundColor: coul,
+    borderWidth: epais ? 3 : 1.6, pointRadius: epais ? 3 : 2, tension: .25, segment: pointille });
+  const infobulle = { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.y)}` } };
+
+  // 1. Courbes
+  const jeux = focus
+    ? [ligne(nomCat(focus), flux.map(f => arrondi(f.parCat[focus] || 0)), couleur(focus), true),
+       ...(complets.length ? [{ type: 'line', label: 'Moyenne des mois complets', data: moisListe.map(() => arrondi(moyCat(focus))),
+          borderColor: couleurTheme('--encre-2'), borderDash: [3, 3], borderWidth: 1.2, pointRadius: 0 }] : [])]
+    : [ligne(`Total des ${mot}`, flux.map(f => arrondi(f.total)), couleurTheme('--encre'), true),
+       ...cats.slice(0, 6).map(c => ligne(nomCat(c), flux.map(f => arrondi(f.parCat[c] || 0)), couleur(c), false))];
+  graphique('c-h-courbe', { data: { labels, datasets: jeux },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: infobulle },
+      scales: { x: { grid: { display: false } }, y: { ...axeEuros(), beginAtZero: true } } } });
+
+  // 2. Barres empilées : sept catégories, le reste regroupé
+  const tete = focus ? [focus] : cats.slice(0, 7), reste = focus ? [] : cats.slice(7);
+  const barres = tete.map(c => ({ type: 'bar', label: nomCat(c), stack: 'h', borderRadius: 2, backgroundColor: couleur(c),
+    data: flux.map(f => arrondi(f.parCat[c] || 0)) }));
+  if (reste.length) barres.push({ type: 'bar', label: `Autres (${reste.length})`, stack: 'h', borderRadius: 2, backgroundColor: '#C3CCC5',
+    data: flux.map(f => arrondi(reste.reduce((s, c) => s + (f.parCat[c] || 0), 0))) });
+  graphique('c-h-barres', { data: { labels, datasets: barres },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: infobulle },
+      scales: { x: { stacked: true, grid: { display: false } }, y: { ...axeEuros(), stacked: true } } } });
+
+  // 3. Camembert de la période
+  camembert('c-h-part', 'leg-h-part', cats.map(c => ({ cle: c, v: cumul[c] })), `Aucune ${depense ? 'dépense' : 'recette'} sur la période.`);
+
+  // 4. Moyennes par catégorie (barres horizontales), budget en face pour les dépenses
+  const jeuxMoy = [{ type: 'bar', label: 'Moyenne mensuelle', data: cats.map(c => arrondi(moyCat(c))), backgroundColor: cats.map(couleur), borderRadius: 3 }];
+  if (depense) jeuxMoy.push({ type: 'bar', label: 'Budget prévu', data: cats.map(c => arrondi(prevu[c] || 0)), backgroundColor: couleurTheme('--filet'), borderRadius: 3 });
+  graphique('c-h-moyennes', { data: { labels: cats.map(nomCat), datasets: jeuxMoy },
+    options: { indexAxis: 'y', maintainAspectRatio: false,
+      plugins: { legend: { display: depense, position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.x)}` } } },
+      scales: { x: { ...axeEuros(), beginAtZero: true }, y: { grid: { display: false } } } } });
 }
 
 /* Camembert d'une répartition par catégorie, avec sa légende chiffrée.
@@ -2676,7 +2925,7 @@ function dessinerSankey(F, entreesCat) {
 }
 
 /* ═════════════ Onglet 4 : Dettes ═════════════ */
-let simu = { detteId: null, extra: 100, anticipe: 0 }, strategieExtra = 100;
+let simu = { detteId: null, extra: 100, anticipe: 0 };
 
 /* Situation d'un crédit aujourd'hui et projection au rythme actuel. */
 function ligneDette(d) {
@@ -2759,7 +3008,7 @@ function vueDettes() {
         <button class="mini-btn" id="btn-dette">Ajouter un crédit</button></div>
       <div class="defile"><table>
         <thead><tr><th>Crédit</th><th style="width:15%">Remboursé</th><th class="num">Capital restant</th><th class="num">Taux</th><th class="num">Mensualité</th><th class="num">Dont intérêts ce mois</th><th class="num">Fin</th><th class="num">Coût restant</th><th></th></tr></thead>
-        <tbody>${[...lignes].sort((a, b) => b.d.taux - a.d.taux).map(({ d, etat, ass, proj, fin, total, coutAss, ecartContrat, part }) => `<tr>
+        <tbody>${[...lignes].sort((a, b) => b.d.taux - a.d.taux).map(({ d, etat, ass, proj, fin, total, coutAss, ecartContrat, part }) => `<tr class="cliquable" data-echeancier="${d.id}" title="Afficher son échéancier">
           <td><strong style="font-weight:500">${echap(d.nom)}</strong><span class="sous">${TYPES_DETTE[d.type]} · prélevé le ${d.jour}</span></td>
           <td><div class="progres"><i style="width:${Math.min(100, part * 100)}%"></i></div><span class="sous">${pct(part * 100, 0)} depuis le suivi</span></td>
           <td class="num">${etat.capital > 0.005 ? argent(etat.capital) : '<span class="statut fini">Soldé</span>'}</td>
@@ -2773,15 +3022,21 @@ function vueDettes() {
       ${decales.length ? `<p class="note alerte" style="margin:12px 0 0">Au rythme actuel, ${decales.map(l => `${echap(l.d.nom)} se termine ${dureeTexte(Math.abs(l.ecartContrat))} ${l.ecartContrat > 0 ? 'après' : 'avant'} l'échéance du contrat`).join(' ; ')}. Vérifiez la mensualité, le taux ou la date de dernière échéance sur votre tableau d'amortissement.</p>` : ''}
     </div>
 
-    <div class="grille-2">
-      <div class="panneau" id="bloc-simu"></div>
-      <div class="panneau" id="bloc-strategie"></div>
-    </div>`;
+    <div class="panneau" id="bloc-echeancier"></div>
+    <div class="panneau" id="bloc-simu"></div>`;
 
   $('#btn-dette').onclick = () => tiroirDette();
-  vue.querySelectorAll('[data-modif-dette]').forEach(b => b.onclick = () => tiroirDette(b.dataset.modifDette));
+  vue.querySelectorAll('[data-modif-dette]').forEach(b => b.onclick = ev => { ev.stopPropagation(); tiroirDette(b.dataset.modifDette); });
+  // Le crédit affiché dans l'échéancier : celui qu'on a cliqué, sinon le premier du tableau.
+  const ordre = [...lignes].sort((a, b) => b.d.taux - a.d.taux);
+  if (!lignes.some(l => l.d.id === detteVue)) detteVue = (ordre.find(l => l.etat.capital > 0.005) || ordre[0])?.d.id || null;
+  vue.querySelectorAll('[data-echeancier]').forEach(tr => {
+    tr.classList.toggle('choisi', tr.dataset.echeancier === detteVue);
+    tr.onclick = () => { detteVue = tr.dataset.echeancier;
+      vue.querySelectorAll('[data-echeancier]').forEach(x => x.classList.toggle('choisi', x === tr)); afficherEcheancier(lignes); };
+  });
+  afficherEcheancier(lignes);
   afficherSimulateur();
-  afficherStrategie(enCours);
 
   // Projection empilée du capital restant
   const horizon = Math.min(360, Math.max(12, ...enCours.map(l => l.proj.impossible ? 120 : l.proj.mois)));
@@ -2848,53 +3103,105 @@ function afficherSimulateur() {
   };
 }
 
-/* Avalanche (taux le plus élevé d'abord) contre boule de neige (plus petit capital d'abord).
-   Avec report, la mensualité et l'assurance d'un crédit soldé sont reversées sur le suivant. */
-function simulerStrategie(lignes, extra, ordre, report = true) {
-  const etats = lignes.map(l => ({ nom: l.d.nom, c: l.etat.capital, r: tauxMensuel(l.d.taux), m: l.d.mensualite, ass: l.ass, taux: l.d.taux, fin: null }));
-  const trier = ordre === 'avalanche' ? (a, b) => b.taux - a.taux : (a, b) => a.c - b.c;
-  let mois = 0, interets = 0, assurance = 0; const ordreFin = [];
-  while (etats.some(e => e.c > 0.005) && mois < 720) {
-    mois++;
-    let reserve = extra;
-    etats.forEach(e => {
-      if (e.c <= 0.005) { if (report) reserve += e.m + e.ass; return; }
-      const i = e.c * e.r; interets += i; assurance += e.ass;
-      const p = Math.min(e.m, e.c + i); e.c = e.c + i - p;
-      if (e.c <= 0.005 && !e.fin) { e.fin = mois; ordreFin.push(e.nom); }
+/* ── Échéancier d'un crédit ─────────────────────────────────────────────
+   Les douze dernières échéances et les douze suivantes du crédit choisi dans
+   « Vos crédits », chacune décomposée en capital, intérêts et assurance.
+
+   Le passé n'est pas une projection : ce sont les échéances réellement
+   enregistrées, rejouées exactement comme etatDette() — intérêts du mois sur le
+   capital restant, le reste amortit, l'assurance n'amortit rien, un
+   remboursement anticipé est tout en capital, un recalage remet le capital à la
+   valeur saisie. L'avenir part du capital restant d'aujourd'hui, à mensualité
+   constante. */
+let detteVue = null;
+
+function echeancesPassees(dette) {
+  const r = tauxMensuel(dette.taux);
+  let capital = dette.capitalDepart;
+  const sortie = [];
+  const recalages = (dette.recalages || []).map(x => ({ date: x.date, recalage: x.capital }));
+  E.operations.filter(o => o.detteId === dette.id).concat(recalages)
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.recalage != null) - (b.recalage != null))
+    .forEach(o => {
+      if (o.recalage != null) { capital = o.recalage; return; }
+      const assurance = o.assurance || 0, paiement = -o.montant - assurance;
+      if (o.anticipe) {
+        const p = Math.min(paiement, capital); capital -= p;
+        sortie.push({ date: o.date, anticipe: arrondi(p), capital: 0, interets: 0, assurance: 0, restant: Math.max(0, arrondi(capital)) });
+        return;
+      }
+      const i = capital * r, p = Math.min(Math.max(paiement - i, 0), capital);
+      capital -= p;
+      sortie.push({ date: o.date, anticipe: 0, capital: arrondi(p), interets: arrondi(i), assurance: arrondi(assurance), restant: Math.max(0, arrondi(capital)) });
     });
-    for (const e of etats.filter(x => x.c > 0.005).sort(trier)) {
-      const p = Math.min(reserve, e.c); e.c -= p; reserve -= p;
-      if (e.c <= 0.005 && !e.fin) { e.fin = mois; ordreFin.push(e.nom); }
-      if (reserve <= 0) break;
-    }
-  }
-  return { mois, interets, assurance, cout: interets + assurance, ordreFin, impossible: mois >= 720 };
+  return sortie;
 }
 
-function afficherStrategie(enCours) {
-  const zone = $('#bloc-strategie');
-  if (enCours.length < 2) {
-    zone.innerHTML = `<h2>Par où commencer</h2><p class="sous-titre">Avec plusieurs crédits, ce bloc compare deux méthodes pour affecter un surplus mensuel.</p><div class="vide"><p>${enCours.length ? 'Un seul crédit en cours : tout surplus va naturellement sur celui-ci.' : 'Aucun crédit en cours.'}</p></div>`;
-    return;
+function echeancesFutures(dette, nb) {
+  const r = tauxMensuel(dette.taux), ass = assuranceDe(dette), sortie = [];
+  let capital = etatDette(dette).capital, mois = prochainMois(dette.jour);
+  while (capital > 0.005 && sortie.length < nb) {
+    const i = capital * r, p = Math.min(Math.max(dette.mensualite - i, 0), capital);
+    if (p <= 0.005) break;                                   // la mensualité ne couvre pas les intérêts
+    capital -= p;
+    sortie.push({ date: dateDansMois(mois, dette.jour), anticipe: 0, capital: arrondi(p), interets: arrondi(i), assurance: ass, restant: Math.max(0, arrondi(capital)), prevue: true });
+    mois = decalerMois(mois, 1);
   }
-  const base = simulerStrategie(enCours, 0, 'avalanche', false);
-  const av = simulerStrategie(enCours, strategieExtra, 'avalanche'), bn = simulerStrategie(enCours, strategieExtra, 'boule');
-  const ligne = (nom, s, aide) => `<tr><td><strong style="font-weight:500">${nom}</strong><span class="sous">${aide}</span></td>
-    <td class="num">${s.impossible ? '—' : dureeTexte(s.mois)}</td><td class="num perte">${argent0(s.cout)}</td><td class="num gain">${argent0(base.cout - s.cout)}</td></tr>`;
-  zone.innerHTML = `
-    <h2>Par où commencer</h2>
-    <p class="sous-titre">Un surplus mensuel fixe ; la mensualité d'un crédit soldé est reportée sur le suivant.</p>
-    <div class="champ" style="max-width:220px"><label for="st-extra">Surplus mensuel consacré aux dettes</label><input id="st-extra" inputmode="decimal" value="${strategieExtra}"></div>
-    <div class="defile"><table><thead><tr><th>Méthode</th><th class="num">Durée totale</th><th class="num">Coût restant</th><th class="num">Économie</th></tr></thead><tbody>
-      ${ligne('Rythme actuel', base, 'mensualités actuelles, sans report')}
-      ${ligne('Avalanche', av, 'le taux le plus élevé d\'abord : ' + av.ordreFin.map(echap).join(', '))}
-      ${ligne('Boule de neige', bn, 'le plus petit capital d\'abord : ' + bn.ordreFin.map(echap).join(', '))}
-    </tbody></table></div>
-    <p class="discret" style="margin:12px 0 0">Coût restant : intérêts et assurance. ${av.cout <= bn.cout - 1
-      ? `L'avalanche coûte ${argent0(bn.cout - av.cout)} de moins. La boule de neige solde plus vite un premier crédit, ce qui libère une mensualité et aide à tenir l'effort.`
-      : 'Les deux méthodes reviennent au même ici : choisissez celle qui vous motive le plus.'}</p>`;
-  $('#st-extra').addEventListener('change', e => { strategieExtra = Math.max(0, lireNombre(e.target.value)); afficherStrategie(enCours); });
+  return sortie;
+}
+
+function afficherEcheancier(lignes) {
+  const zone = $('#bloc-echeancier'); if (!zone) return;
+  const l = lignes.find(x => x.d.id === detteVue); if (!l) { zone.innerHTML = ''; return; }
+  const d = l.d, ici = moisDe(AUJ);
+  const passees = echeancesPassees(d), futures = echeancesFutures(d, 12);
+  const debut = decalerMois(ici, -11), fin = decalerMois(ici, 12);
+  const moisListe = []; for (let m = debut; m <= fin; m = decalerMois(m, 1)) moisListe.push(m);
+  const parMois = {};
+  passees.concat(futures).forEach(e => {
+    const m = moisDe(e.date); if (m < debut || m > fin) return;
+    const t = parMois[m] || (parMois[m] = { capital: 0, interets: 0, assurance: 0, anticipe: 0, prevue: !!e.prevue });
+    t.capital += e.capital; t.interets += e.interets; t.assurance += e.assurance; t.anticipe += e.anticipe;
+  });
+  const fond = (couleur, m) => parMois[m]?.prevue ? couleur + '55' : couleur;
+  const serie = (cle, nom, couleur) => ({ type: 'bar', label: nom, stack: 'e', borderRadius: 2,
+    data: moisListe.map(m => parMois[m] ? arrondi(parMois[m][cle]) : 0),
+    backgroundColor: moisListe.map(m => fond(couleur, m)) });
+
+  const avant = passees.slice(-3), apres = futures.slice(0, 6);
+  const ligneTable = e => `<tr class="${e.prevue ? 'discret' : ''}">
+      <td>${dateLongue(e.date)}</td><td>${e.prevue ? 'prévue' : e.anticipe ? 'anticipée' : 'payée'}</td>
+      <td class="num">${argent(e.capital + e.interets + e.assurance + e.anticipe)}</td>
+      <td class="num">${argent(e.capital + e.anticipe)}</td><td class="num">${argent(e.interets)}</td>
+      <td class="num">${e.assurance ? argent(e.assurance) : '—'}</td><td class="num">${argent(e.restant)}</td></tr>`;
+
+  zone.innerHTML = `<div class="tete-panneau"><div><h2>Échéancier — ${echap(d.nom)}</h2>
+      <p class="sous-titre">Les douze dernières échéances enregistrées et les douze suivantes, à mensualité constante.
+        Couleurs pleines : payé ; pâles : à venir. Cliquez un autre crédit dans le tableau pour l'afficher.</p></div></div>
+    <div class="courbe" style="height:240px"><canvas id="c-echeancier"></canvas></div>
+    ${passees.length ? '' : '<p class="discret" style="margin:10px 0 0">Aucune échéance enregistrée depuis le début du suivi : seules les prochaines sont affichées.</p>'}
+    <div class="defile" style="margin-top:14px"><table>
+      <thead><tr><th>Échéance</th><th></th><th class="num">Montant</th><th class="num">Capital</th><th class="num">Intérêts</th><th class="num">Assurance</th><th class="num">Capital restant</th></tr></thead>
+      <tbody>${avant.map(ligneTable).join('')}${apres.map(ligneTable).join('') || '<tr><td colspan="7" class="discret">Plus aucune échéance à venir : ce crédit est soldé.</td></tr>'}</tbody></table></div>`;
+
+  const iAuj = moisListe.indexOf(ici);
+  graphique('c-echeancier', {
+    data: { labels: moisListe.map(m => libelleMois(m, true) + ' ' + m.slice(2, 4)), datasets: [
+      serie('capital', 'Capital', '#1E6A48'), serie('interets', 'Intérêts', '#B23A2E'),
+      serie('assurance', 'Assurance', '#C08A3E'), serie('anticipe', 'Remboursement anticipé', '#2B5680'),
+    ].filter(ds => ds.data.some(v => v > 0.005)) },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } },
+        tooltip: { callbacks: { title: c => libelleMois(moisListe[c[0].dataIndex]) + (parMois[moisListe[c[0].dataIndex]]?.prevue ? ' (prévue)' : ''),
+                                label: c => `${c.dataset.label} : ${argent(c.parsed.y)}` } } },
+      scales: { x: { stacked: true, grid: { display: false } }, y: { ...axeEuros(), stacked: true } } },
+    plugins: [{ id: 'aujourdhui', afterDatasetsDraw(ch) {
+      if (iAuj < 0) return;
+      const x = ch.scales.x.getPixelForValue(iAuj) + ch.scales.x.width / moisListe.length / 2, { top, bottom } = ch.chartArea, g = ch.ctx;
+      g.save(); g.strokeStyle = couleurTheme('--encre-2'); g.setLineDash([4, 4]); g.beginPath(); g.moveTo(x, top); g.lineTo(x, bottom); g.stroke();
+      g.fillStyle = couleurTheme('--encre-2'); g.font = '11px system-ui'; g.fillText("aujourd'hui", x + 4, top + 10); g.restore();
+    } }],
+  });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2953,7 +3260,7 @@ async function envoyerReleves(fichiers) {
     };
     let principal = null, maxOps = -1;
     data.fichiers.forEach(f => (f.comptes || []).forEach(c => {
-      if (!c.equilibre) return;
+      if (!releveAccepte(c)) return;
       if (c.nb_operations > maxOps) { maxOps = c.nb_operations; principal = c.numero; }
       IMP.affectation[c.numero] = 'ignorer';
     }));
@@ -2969,6 +3276,10 @@ async function envoyerReleves(fichiers) {
   }
 }
 
+/* Un compte de relevé est retenu s'il se recalcule au centime (PDF), ou s'il vient
+   d'un tableur, qui n'a pas de soldes à contrôler (core/tableur.py). */
+const releveAccepte = c => !!(c.equilibre || c.tableur);
+
 function comptesImport() {
   const liste = [];
   (IMP?.fichiers || []).forEach(f => (f.comptes || []).forEach(c => liste.push({ ...c, banque: f.banque, fichier: f.nom })));
@@ -2980,7 +3291,9 @@ function soldeProposeImport() {
   // avec la clôture du dernier relevé est précisément ce qu'il faut montrer.
   if (E && retourImport === 'app') return arrondi(soldeCompte('courant'));
   const retenus = comptesImport().filter(c => IMP.affectation[c.numero] === 'courant' && c.equilibre);
-  if (!retenus.length) return 0;
+  // Seulement des tableurs : aucun solde connu. On laisse le champ vide plutôt que
+  // d'y mettre un 0 qui ressemblerait à une information.
+  if (!retenus.length) return null;
   const dernier = retenus.sort((a, b) => (a.fin || '').localeCompare(b.fin || '')).pop();
   return dernier.solde_cloture ?? 0;
 }
@@ -3030,18 +3343,27 @@ function budgetsImport() {
 function opsImport() {
   const parCompte = {};
   comptesImport().forEach(c => { parCompte[c.numero] = IMP.affectation[c.numero]; });
-  const vues = new Set(), ops = [];
+  // Deux relevés qui se chevauchent contiennent deux fois la même opération ; mais
+  // deux cafés identiques le même jour, dans un seul relevé, sont deux opérations.
+  // On garde donc, pour chaque opération, le nombre de fois qu'elle apparaît dans le
+  // relevé qui en contient le plus — pas une seule, pas la somme des relevés.
+  const garde = {}, exemple = {};
   comptesImport().forEach(c => {
     const dest = parCompte[c.numero];
-    if (!c.equilibre || !dest || dest === 'ignorer') return;
+    if (!releveAccepte(c) || !dest || dest === 'ignorer') return;
+    const ici = {};
     c.operations.forEach(o => {
-      // Deux relevés qui se chevauchent contiennent deux fois la même opération.
       const cle = `${dest}|${o.date}|${o.montant}|${o.libelle.slice(0, 40)}`;
-      if (vues.has(cle)) return;
-      vues.add(cle);
-      const t = IMP.p.operations.find(x => x.date === o.date && x.montant === o.montant && x.libelle === o.libelle);
-      ops.push({ ...o, compte: dest, tiers: t ? t.tiers : '' });
+      ici[cle] = (ici[cle] || 0) + 1;
+      exemple[cle] = exemple[cle] || { ...o, compte: dest };
     });
+    Object.entries(ici).forEach(([cle, n]) => { garde[cle] = Math.max(garde[cle] || 0, n); });
+  });
+  const ops = [];
+  Object.entries(garde).forEach(([cle, n]) => {
+    const o = exemple[cle];
+    const t = IMP.p.operations.find(x => x.date === o.date && x.montant === o.montant && x.libelle === o.libelle);
+    for (let k = 0; k < n; k++) ops.push({ ...o, tiers: t ? t.tiers : '' });
   });
   return ops.sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -3056,8 +3378,8 @@ function rendreImport() {
         <p class="sous-titre">Deux ou trois mois suffisent. Vos catégories, vos charges fixes et vos budgets
           en sont déduits — vous n'avez plus qu'à relire.</p>
         <label class="depot" id="depot">
-          <input type="file" id="imp-fichiers" accept="application/pdf,.pdf" multiple hidden>
-          <strong>Déposez vos relevés PDF ici</strong>
+          <input type="file" id="imp-fichiers" accept="application/pdf,.pdf,.xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" multiple hidden>
+          <strong>Déposez vos relevés ici : PDF, Excel ou CSV</strong>
           <span>ou cliquez pour les choisir · jusqu'à 24 fichiers</span>
         </label>
         <p class="discret" style="margin-top:14px">Téléchargez-les depuis l'espace client de votre banque, au format PDF.
@@ -3099,13 +3421,15 @@ function blocFichiers(comptes) {
       <td>${echap(f.nom.slice(0, 28))}<span class="sous">${echap(f.banque || 'banque non reconnue')}${c.libelle ? ' · ' + echap(c.libelle) : ''}</span></td>
       <td style="white-space:nowrap">${c.debut ? dateCourte(c.debut) : '?'} → ${c.fin ? dateCourte(c.fin) : '?'}</td>
       <td class="num">${c.nb_operations}</td>
-      <td class="num discret">${argent(c.solde_ouverture)} ${argent(c.mouvements, true)}</td>
-      <td class="num">${c.equilibre
-        ? `<span class="statut ok">${argent(c.solde_cloture)}</span>`
-        : `<span class="statut ko">écart ${argent(c.ecart)}</span>`}</td></tr>`));
+      <td class="num discret">${c.tableur ? argent(c.mouvements, true) : `${argent(c.solde_ouverture)} ${argent(c.mouvements, true)}`}</td>
+      <td class="num">${c.tableur
+        ? '<span class="statut" title="Un export tableur ne donne pas de soldes : le solde du jour, plus bas, fait foi.">tableur, sans soldes</span>'
+        : c.equilibre
+          ? `<span class="statut ok">${argent(c.solde_cloture)}</span>`
+          : `<span class="statut ko">écart ${argent(c.ecart)}</span>`}</td></tr>`));
     (f.anomalies || []).forEach(a => lignes.push(`<tr><td colspan="5" class="discret">${echap(f.nom.slice(0, 28))} : ${echap(a)}</td></tr>`));
   });
-  const casses = comptes.filter(c => !c.equilibre).length;
+  const casses = comptes.filter(c => !releveAccepte(c)).length;
   return `<div class="panneau">
     <div class="tete-panneau"><div><h2>Relevés lus</h2>
       <p class="sous-titre">Pour chaque compte : solde d'ouverture, somme des mouvements, solde de clôture.
@@ -3123,7 +3447,7 @@ function blocAffectation(comptes) {
   // Un même compte apparaît dans chaque relevé mensuel : on le regroupe par numéro,
   // sinon l'utilisateur voit six lignes pour deux comptes.
   const parNumero = {};
-  comptes.filter(c => c.equilibre && c.nb_operations).forEach(c => {
+  comptes.filter(c => releveAccepte(c) && c.nb_operations).forEach(c => {
     const u = parNumero[c.numero] || (parNumero[c.numero] = {
       numero: c.numero, libelle: c.libelle, banque: c.banque, nb_operations: 0,
       debut: c.debut, fin: c.fin, solde_cloture: c.solde_cloture,
@@ -3262,7 +3586,7 @@ function ecartImport() {
 function blocSolde(ops, total) {
   const dernier = dernierReleveCourant();
   const fin = dernier ? dernier.fin : null, cloture = dernier ? dernier.solde_cloture : 0;
-  const solde = IMP.solde == null ? cloture : IMP.solde;
+  const solde = IMP.solde == null ? (dernier ? cloture : null) : IMP.solde;
   const ecart = ecartImport();
   const jours = fin ? Math.round((versDate(AUJ) - versDate(fin)) / 86400000) : 0;
   return `<div class="panneau">
@@ -3273,7 +3597,7 @@ function blocSolde(ops, total) {
         : 'Indiquez le solde réel de votre compte courant aujourd\'hui : c\'est lui qui fait foi, l\'historique se cale dessus.'}</p>
     <div class="deux-col" style="max-width:520px">
       <div class="champ"><label for="imp-solde">Solde du compte courant aujourd'hui</label>
-        <input id="imp-solde" inputmode="decimal" value="${nombre(solde, 2)}" ${E && retourImport === 'app' ? 'disabled' : ''}></div>
+        <input id="imp-solde" inputmode="decimal" value="${solde == null ? '' : nombre(solde, 2)}" placeholder="à saisir" ${E && retourImport === 'app' ? 'disabled' : ''}></div>
       <div class="champ"><label>Opérations importées</label>
         <div style="padding:9px 0">${ops.length} opérations · ${argent(total, true)}</div></div>
     </div>
@@ -3316,7 +3640,7 @@ function brancherImport() {
   z.querySelectorAll('[data-budgetImp], [data-budget-imp]').forEach(el => el.onchange = () => {
     IMP.budgets[el.dataset.budgetImp] = lireNombre(el.value);
   });
-  if ($('#imp-solde')) $('#imp-solde').onchange = e => { IMP.solde = lireNombre(e.target.value); rendreImport(); };
+  if ($('#imp-solde')) $('#imp-solde').onchange = e => { IMP.solde = e.target.value.trim() === '' ? null : lireNombre(e.target.value); rendreImport(); };
   if ($('#imp-correction')) $('#imp-correction').querySelectorAll('button').forEach(b => b.onclick = () => {
     IMP.correction = b.dataset.corr; rendreImport();
   });
@@ -3328,6 +3652,11 @@ function brancherImport() {
 function appliquerImport() {
   const ops = opsImport();
   if (!ops.length) { const z = $('#imp-erreur'); z.textContent = 'Aucune opération à importer.'; z.classList.remove('cache'); return; }
+  if (IMP.solde == null && !dernierReleveCourant() && !(E && retourImport === 'app')) {
+    const z = $('#imp-erreur');
+    z.textContent = 'Indiquez le solde de votre compte courant aujourd\'hui : un relevé tableur ne le donne pas.';
+    z.classList.remove('cache'); $('#imp-solde')?.focus(); return;
+  }
 
   const neuf = !E;
   if (neuf) {
@@ -3345,13 +3674,14 @@ function appliquerImport() {
   // et les empêcherait d'être reconnus plus tard, dictionnaire enrichi.
   Object.entries(IMP.cats).forEach(([cle, cat]) => { if (cle && cat && cat !== 'inconnu') E.regles[cle] = cat; });
 
-  // 2. Les opérations, dédoublonnées contre ce qui est déjà en base.
-  const connues = new Set(E.operations.map(o => `${o.compte}|${o.date}|${arrondi(o.montant)}|${(o.libelle || '').slice(0, 40)}`));
+  // 2. Les opérations, dédoublonnées contre ce qui est déjà en base : chaque
+  //    opération déjà enregistrée en « consomme » une identique de l'import.
+  const connues = {};
+  E.operations.forEach(o => { const k = `${o.compte}|${o.date}|${arrondi(o.montant)}|${(o.libelle || '').slice(0, 40)}`; connues[k] = (connues[k] || 0) + 1; });
   let ajoutees = 0, somme = 0;
   ops.forEach(o => {
     const cle = `${o.compte}|${o.date}|${arrondi(o.montant)}|${o.libelle.slice(0, 40)}`;
-    if (connues.has(cle)) return;
-    connues.add(cle);
+    if (connues[cle] > 0) { connues[cle]--; return; }
     E.operations.push({
       id: uid(), date: o.date, compte: o.compte, montant: arrondi(o.montant),
       libelle: o.libelle.slice(0, 120), categorie: IMP.cats[o.tiers] || 'inconnu',
