@@ -20,8 +20,6 @@ navigateur le fait relire à l'utilisateur, et seul l'enregistrement de l'état
 
 import json
 import logging
-import os
-import tempfile
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -29,9 +27,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from core import passerelle
 from core.banque_db import BanqueDB, ConflitVersion
-from core.categorisation import categoriser
-from core.habitudes import analyser
-from core.releve import extraire
+from core.import_releves import lire_fichiers
 from routes_portefeuille import utilisateur_courant
 
 logger = logging.getLogger("persofolio.banque")
@@ -236,12 +232,7 @@ def declarer_apports(corps: ApportsIn, user: str = Depends(utilisateur_courant))
 
 # ─────────────────────── Lecture de relevés bancaires ───────────────────────
 
-TAILLE_MAX_PDF = 10 * 1024 * 1024      # 10 Mo : un relevé en fait quelques centaines de Ko
 NB_MAX_FICHIERS = 24                   # deux ans de relevés mensuels
-
-
-def _date(d) -> Optional[str]:
-    return d.isoformat() if d else None
 
 
 @router.post("/banque/releves")
@@ -250,7 +241,11 @@ async def lire_releves(
     regles: Optional[str] = Form(None),
     user: str = Depends(utilisateur_courant),
 ):
-    """Lit des relevés PDF et renvoie ce qui a été compris, sans rien enregistrer.
+    """Lit des relevés (PDF, ou tableur .xls, .xlsx, .csv) et renvoie ce qui a été
+    compris, sans rien enregistrer.
+
+    Un tableur n'a pas de soldes : ses opérations sont reprises sans le contrôle
+    d'équilibre des PDF (voir core/tableur.py), et le compte est marqué `tableur`.
 
     La réponse contient, pour chaque fichier, le contrôle d'équilibre compte par
     compte — c'est lui qui dit si l'extraction est digne de confiance — puis une
@@ -271,69 +266,5 @@ async def lire_releves(
     if len(fichiers) > NB_MAX_FICHIERS:
         raise HTTPException(400, f"{NB_MAX_FICHIERS} relevés au maximum par envoi.")
 
-    lus, operations, periodes = [], [], []
-    for f in fichiers:
-        contenu = await f.read()
-        if len(contenu) > TAILLE_MAX_PDF:
-            lus.append({"nom": f.filename, "erreur": "fichier trop volumineux (10 Mo maximum)"})
-            continue
-        if not contenu[:5].startswith(b"%PDF"):
-            lus.append({"nom": f.filename, "erreur": "ce fichier n'est pas un PDF"})
-            continue
-        chemin = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                tmp.write(contenu)
-                chemin = tmp.name
-            rel = extraire(chemin)
-        except Exception as e:                       # un PDF illisible ne doit pas tuer l'envoi
-            logger.warning("relevé illisible (%s) : %s", f.filename, e)
-            lus.append({"nom": f.filename, "erreur": "relevé illisible"})
-            continue
-        finally:
-            if chemin and os.path.exists(chemin):
-                os.unlink(chemin)                    # le PDF n'est jamais conservé
-
-        comptes = []
-        for c in rel.comptes:
-            comptes.append({
-                "numero": c.numero, "libelle": c.libelle,
-                "debut": _date(c.date_ouverture), "fin": _date(c.date_cloture),
-                "solde_ouverture": c.solde_ouverture, "solde_cloture": c.solde_cloture,
-                "mouvements": c.somme_mouvements, "nb_operations": len(c.operations),
-                "ecart": c.ecart, "equilibre": c.equilibre,
-                "operations": [
-                    {"date": _date(o.date), "libelle": o.libelle, "montant": round(o.montant, 2)}
-                    for o in c.operations
-                ],
-            })
-            if c.equilibre and c.operations:
-                operations.extend(c.operations)
-                periodes.append((c.date_ouverture, c.date_cloture))
-        lus.append({"nom": f.filename, "banque": rel.banque,
-                    "comptes": comptes, "anomalies": rel.anomalies})
-
-    a = analyser(operations, periodes, apprises) if operations else None
-    proposition = None
-    if a:
-        proposition = {
-            "mois_complets": a["mois_complets"],
-            "mois_complets_ignores": a["mois_complets_ignores"],
-            "budgets": a["budgets"],
-            "mesure": a["mesure"],
-            "recurrences": [r.proposition() for r in a["recurrences"]],
-            "tiers": [{
-                "cle": t.cle, "libelle": t.libelle, "categorie": t.categorie,
-                "confiance": t.confiance, "sens": t.sens, "total": t.total,
-                "occurrences": t.occurrences, "mois": t.mois,
-                # De quoi proposer une opération programmée même pour un tiers que la
-                # détection automatique n'a pas retenu : l'utilisateur peut le vouloir.
-                "montant_type": abs(t.montant_type), "jour_type": t.jour_type,
-                "stabilite": t.stabilite_montant, "ecart_jour": t.ecart_jour,
-            } for t in a["tiers"]],
-            "operations": [{
-                "date": _date(o.date), "libelle": o.libelle, "montant": round(o.montant, 2),
-                "tiers": categoriser(o.libelle, o.montant, apprises).tiers,
-            } for o in sorted(operations, key=lambda o: o.date)],
-        }
-    return {"fichiers": lus, "proposition": proposition}
+    contenus = [(f.filename, await f.read()) for f in fichiers]
+    return lire_fichiers(contenus, apprises)

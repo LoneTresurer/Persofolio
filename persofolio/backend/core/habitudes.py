@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from core.categorisation import INCONNU, categoriser
+from core.categorisation import INCONNU, Classement, categoriser
 
 
 # ── Couverture du calendrier ────────────────────────────────────────────────
@@ -146,6 +146,12 @@ def regrouper(operations, regles_utilisateur: Optional[dict] = None) -> List[Tie
     groupes: Dict[Tuple[str, str], Tiers] = {}
     for o in operations:
         c = categoriser(o.libelle, o.montant, regles_utilisateur)
+        # Relevé tableur : la catégorie de la banque passe avant le classement par
+        # commerçant (le libellé n'en nomme souvent aucun), jamais avant une
+        # correction de l'utilisateur. Voir core/tableur.py.
+        banque = getattr(o, "categorie_banque", None)
+        if banque and c.origine != "regle_utilisateur":
+            c = Classement(banque, "probable", "banque", c.tiers, c.type_operation)
         sens = "ENTREE" if o.montant > 0 else "SORTIE"
         cle = (c.tiers or "(sans libellé)", sens)   # un même tiers peut débiter et créditer
         t = groupes.get(cle)

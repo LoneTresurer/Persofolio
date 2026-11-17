@@ -66,6 +66,7 @@ caches = [
     "uvicorn.protocols.websockets.auto", "uvicorn.lifespan.on", "uvicorn.lifespan.off",
     "anyio._backends._asyncio",
     "routes_portefeuille", "routes_banque", "main", "essai_bureau",
+    "xlrd", "openpyxl",                                   # importés à la demande par core/tableur.py
 ]
 caches += collect_submodules("core")
 caches += collect_submodules("agents")
@@ -77,7 +78,8 @@ if MACOS:
     caches += ["webview.platforms.cocoa"]
 
 exclus = [
-    "matplotlib", "scipy", "sklearn", "openpyxl",         # l'optimiseur est archivé
+    "matplotlib", "scipy", "sklearn",                     # l'optimiseur est archivé
+    # openpyxl n'est plus exclu : il lit les relevés .xlsx (core/tableur.py).
     "tkinter.test", "test", "unittest", "pytest",
     "IPython", "jupyter", "notebook", "pandas.tests", "numpy.tests",
     # Moteurs de fenêtre des autres systèmes

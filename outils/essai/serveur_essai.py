@@ -42,7 +42,22 @@ class H(SimpleHTTPRequestHandler):
         try: return self._json(200, {"version": bdb.ecrire(U, c["etat"], c["version"])})
         except CV1 as e: return self._json(409, {"detail": {"message": "version", "version": e.version_actuelle}})
 
+    def _multipart(self):
+        """Champs d'un formulaire multipart : [(nom, nom de fichier, contenu)]."""
+        from email.parser import BytesParser
+        from email.policy import default
+        n = int(self.headers.get("Content-Length") or 0)
+        brut = b"Content-Type: " + self.headers["Content-Type"].encode() + b"\r\n\r\n" + self.rfile.read(n)
+        msg = BytesParser(policy=default).parsebytes(brut)
+        return [(p.get_param("name", header="content-disposition"), p.get_filename(), p.get_payload(decode=True))
+                for p in msg.iter_parts()]
+
     def do_POST(self):
+        if self.path == "/banque/releves":
+            from core.import_releves import lire_fichiers
+            champs = self._multipart()
+            regles = next((json.loads(c.decode() or "{}") for n, _, c in champs if n == "regles"), {})
+            return self._json(200, lire_fichiers([(f, c) for n, f, c in champs if n == "fichiers"], regles))
         c = self._corps()
         try:
             if self.path == "/banque/virement":
