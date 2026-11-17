@@ -74,6 +74,10 @@ Chacun a été découvert en production ou en test, pas par raisonnement.
 | **PyInstaller ne suit que les `import`** | Les fichiers de données — les pages web — doivent être déclarés dans le `.spec`, sinon l'exécutable démarre et sert une page blanche. |
 | **Un versement daté d'aujourd'hui ne couvre pas un achat passé** | Le rejeu du compte-titres trie par date puis par ordre de saisie. Un versement enregistré aujourd'hui pour « expliquer » un achat de 2025 passe *après* lui : l'apport implicite reste, et le versement s'ajoute aux espèces. C'était le bouton « d'où venait cet argent ? » : +4 085 € de patrimoine à chaque clic, et la question restait posée. Ces versements sont maintenant datés de la veille de l'achat, côté serveur. |
 | **Supprimer un virement côté budget seulement** | La ligne du compte courant disparaissait, le versement restait dans le compte-titres : le patrimoine montait d'autant. Même chose en *modifiant* un virement. Tout passe maintenant par `/banque/virement/annuler` ou `remplace`. |
+| **Fichiers marqués « téléchargé depuis internet » (Windows)** | Extraits d'un zip téléchargé, ils portent la marque Zone.Identifier ; le .NET Framework refuse alors pythonnet : « Failed to resolve Python.Runtime.Loader.Initialize », pas de fenêtre. Le lanceur retire la marque de ses bibliothèques .NET ; le workflow pose la marque sur tout avant l'essai pour le vérifier. |
+| **Un vrai relevé dans le dépôt** | Le dépôt est public. Le .gitignore exclut *.pdf, *.csv, *.xls, *.xlsx ; seule exception, `tests/tableurs/`, qui ne contient que des relevés inventés par `outils/essai/generer_tableurs.py`. Le relevé reçu le 17 novembre (compte carte de l'enseignant) n'est **jamais** versé. |
+| **xlrd absent des sessions Claude** | Le test `.xls` est sauté localement (pas de PyPI) et tourne dans GitHub Actions. LibreOffice (`soffice`) est installé : il convertit un .xls en .xlsx ou .csv pour l'examiner. |
+| **Grille et téléphone** | `grid-template-columns: 1fr` laisse une colonne s'élargir à la taille d'un tableau : la page déborde au lieu de faire défiler le tableau. `minmax(0, 1fr)`. De même, une infobulle invisible (opacity 0) occupe de la place : elle est en `display: none` hors survol. |
 | **Deux écritures concurrentes** | Tout ce qui envoie l'état du budget porte un numéro de version. Deux envois simultanés et le second est refusé (409). Les virements s'enchaînent pour cette raison. |
 
 ---
@@ -186,6 +190,12 @@ Python qui lance la commande. Avec un environnement virtuel, c'est
 
 ## 8. Ce qui reste ouvert
 
+- **Synthèse, sur téléphone** : la ligne des objectifs (« Serré ↑ ↓ »,
+  « Modifier ») déborde encore de 31 px. Antérieur au 17 novembre.
+- **Une installation neuve déjà connectée** (17 novembre, point laissé pour
+  plus tard) : rien dans le code ni dans l'exécutable n'emporte de données ; le
+  profil venait du dossier de données du poste. `journal.txt` le confirmera.
+
 - **Le vrai serveur tourne**, dans l'application construite (GitHub Actions,
   Windows et Mac Intel) : session locale, profil d'exemple à 1 150,86 €. Les
   routes `/banque/virement`, `/banque/virement/annuler` et `/banque/apports`
@@ -236,3 +246,13 @@ le navigateur si WebView2 manque.
   `~/Library/Application Support/PersoFolio` (macOS). Le stockage de la
   fenêtre (localStorage) est dans le sous-dossier `fenetre/`.
 - **Éditeur** affiché : « IAE Caen - Master G2C 2026 ».
+
+## 10. Relevés en tableur (17 novembre)
+
+`core/tableur.py` lit .xls, .xlsx et .csv ; `core/import_releves.py` porte le
+corps de POST /banque/releves (PDF et tableurs mêlés), appelable sans FastAPI.
+Pas de soldes dans un tableur : pas de contrôle d'équilibre, le compte est
+marqué `tableur` et le solde du jour saisi fait foi. Les lignes « DEBIT MENSUEL
+CARTE » d'un compte carte sont écartées (ce n'est pas un revenu). Les
+catégories de la banque passent avant le classement par commerçant, jamais
+avant une correction de l'utilisateur.
