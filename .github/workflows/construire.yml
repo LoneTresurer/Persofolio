@@ -64,6 +64,9 @@ jobs:
         run: python outils/essai/essai_passerelle.py .
       - name: Calcul du patrimoine à date fixe
         run: python outils/essai/essai_exemple.py .
+      - name: Relevés tableur
+        working-directory: persofolio/backend
+        run: python -m unittest tests.test_tableur tests.test_calc_frais -v
 
   construire:
     name: ${{ matrix.nom }}
@@ -120,9 +123,33 @@ jobs:
           file dist/PersoFolio.app/Contents/MacOS/PersoFolio
           codesign --verify --deep --verbose=2 dist/PersoFolio.app || true
 
+      - name: Marque « téléchargé depuis internet » (Windows)
+        # Comme l'Explorateur en extrayant un zip téléchargé : chaque fichier reçoit
+        # la marque Zone.Identifier. Le .NET Framework refuse alors de charger les
+        # bibliothèques marquées — c'est ce qui empêchait la fenêtre de s'ouvrir le
+        # 16 novembre. L'essai qui suit doit réussir malgré tout.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $marque = "[ZoneTransfer]`r`nZoneId=3`r`nHostUrl=https://github.com/"
+          Get-ChildItem dist/PersoFolio -Recurse -File | ForEach-Object { Set-Content -LiteralPath $_.FullName -Stream Zone.Identifier -Value $marque }
+          $dll = "dist/PersoFolio/_internal/pythonnet/runtime/Python.Runtime.dll"
+          if (-not (Get-Item -LiteralPath $dll -Stream Zone.Identifier -ErrorAction SilentlyContinue)) { throw "la marque n'a pas été posée sur $dll" }
+          echo "::notice title=Windows - marque internet::posée sur $((Get-ChildItem dist/PersoFolio -Recurse -File).Count) fichiers"
+
       - name: Essai de l'application construite
         shell: bash
         run: python outils/essai/lancer_essai_bureau.py "$EXE" essai "$CONSTRUIT"
+
+      - name: Déblocage constaté (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          if grep -q "marque « téléchargé depuis internet » retirée" essai/journal.txt; then
+            echo "::notice title=Windows - déblocage::$(grep -o "retirée de [0-9]* bibliothèque" essai/journal.txt | head -1) .NET par le lanceur"
+          else
+            echo "::error title=Windows - déblocage::le lanceur n'a rien débloqué alors que les fichiers étaient marqués"; exit 1
+          fi
 
       - name: Archive (Windows)
         if: always() && runner.os == 'Windows'

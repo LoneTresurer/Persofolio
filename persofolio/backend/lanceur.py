@@ -76,7 +76,7 @@ def _assurer_sorties() -> None:
 
 _assurer_sorties()
 
-from core.emplacements import RACINE, dossier_donnees   # noqa: E402  (après _assurer_sorties)
+from core.emplacements import GELE, RACINE, dossier_donnees   # noqa: E402  (après _assurer_sorties)
 
 FICHIER_VERROU = os.path.join(dossier_donnees(), "instance.json")
 JOURNAL = os.path.join(dossier_donnees(), "journal.txt")
@@ -234,6 +234,43 @@ def attendre_serveur(port: int, limite: int = ATTENTE_DEMARRAGE) -> bool:
             return True
         time.sleep(0.1)
     return False
+
+
+# ── Marque « téléchargé depuis internet » (Windows) ─────────────────────────
+DOSSIERS_DOTNET = ("pythonnet", "webview", "clr_loader")
+
+
+def retirer_marque_internet() -> int:
+    """Retire la marque « téléchargé depuis internet » des bibliothèques .NET.
+
+    Windows marque chaque fichier téléchargé (flux NTFS `Zone.Identifier`), et
+    l'extraction d'un zip par l'Explorateur la recopie sur chaque fichier extrait.
+    Le .NET Framework refuse alors de charger une bibliothèque marquée : la fenêtre
+    tombait sur « Failed to resolve Python.Runtime.Loader.Initialize ». C'est ce que
+    fait « Propriétés → Débloquer », appliqué ici à nos propres fichiers.
+
+    Seules les bibliothèques .NET sont concernées (pythonnet, pywebview) : les DLL
+    ordinaires se chargent marquées ou non. Un seul test suffit à savoir s'il y a
+    quelque chose à faire, si bien qu'une installation non marquée ne paie rien.
+    Rend le nombre de fichiers débloqués.
+    """
+    if not (WINDOWS and GELE):
+        return 0
+    temoin = os.path.join(RACINE, "pythonnet", "runtime", "Python.Runtime.dll")
+    if not os.path.exists(temoin + ":Zone.Identifier"):
+        return 0
+    n = 0
+    for dossier in DOSSIERS_DOTNET:
+        for racine, _, fichiers in os.walk(os.path.join(RACINE, dossier)):
+            for f in fichiers:
+                if f.lower().endswith((".dll", ".exe")):
+                    try:
+                        os.remove(os.path.join(racine, f) + ":Zone.Identifier")
+                        n += 1
+                    except OSError:
+                        pass
+    log.info("marque « téléchargé depuis internet » retirée de %s bibliothèque(s) .NET", n)
+    return n
 
 
 # ── Fenêtre native ──────────────────────────────────────────────────────────
@@ -479,6 +516,11 @@ def main() -> int:
     port = choisir_port()
     log.info("PersoFolio %s — port %s — données dans %s", VERSION, port, dossier_donnees())
 
+    try:
+        retirer_marque_internet()
+    except Exception:                                       # noqa: BLE001
+        log.exception("marque internet : déblocage impossible")
+
     natif = webview2_present()
     if natif:
         try:
@@ -497,7 +539,19 @@ def main() -> int:
         return 1
 
     if natif:
-        return ouvrir_fenetre_native(port, essai)
+        try:
+            return ouvrir_fenetre_native(port, essai)
+        except Exception as e:                              # noqa: BLE001
+            # La fenêtre n'a pas pu être créée (bibliothèque .NET refusée, moteur
+            # absent…). Le serveur n'est pas encore lancé à ce stade : il démarre une
+            # fois la fenêtre affichée. On peut donc repartir proprement en mode
+            # navigateur plutôt que de montrer une trace d'erreur.
+            log.exception("fenêtre native impossible : repli sur le navigateur")
+            if essai:
+                with open(essai, "w", encoding="utf-8") as f:
+                    json.dump({"ok": False, "erreurs": [f"fenêtre native impossible : {e!r}"],
+                               "version": VERSION, "plateforme": sys.platform}, f, ensure_ascii=False)
+                return 1
     return ouvrir_dans_le_navigateur(port)
 
 
