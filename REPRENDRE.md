@@ -78,6 +78,7 @@ Chacun a été découvert en production ou en test, pas par raisonnement.
 | **Un vrai relevé dans le dépôt** | Le dépôt est public. Le .gitignore exclut *.pdf, *.csv, *.xls, *.xlsx ; seule exception, `tests/tableurs/`, qui ne contient que des relevés inventés par `outils/essai/generer_tableurs.py`. Le relevé reçu le 17 novembre (compte carte de l'enseignant) n'est **jamais** versé. |
 | **xlrd absent des sessions Claude** | Le test `.xls` est sauté localement (pas de PyPI) et tourne dans GitHub Actions. LibreOffice (`soffice`) est installé : il convertit un .xls en .xlsx ou .csv pour l'examiner. |
 | **Grille et téléphone** | `grid-template-columns: 1fr` laisse une colonne s'élargir à la taille d'un tableau : la page déborde au lieu de faire défiler le tableau. `minmax(0, 1fr)`. De même, une infobulle invisible (opacity 0) occupe de la place : elle est en `display: none` hors survol. |
+| **Une échéance passée dans `E.operations`** | `soldeCompte` additionne *toutes* les opérations, sans filtre de date. Une échéance d'avant le début du suivi (`E.creeLe`) y serait retranchée une seconde fois : le solde de départ la contient déjà. Elle va dans `dette.historique`, que seul `etatDette` rejoue (`evenementsDette`). |
 | **Deux écritures concurrentes** | Tout ce qui envoie l'état du budget porte un numéro de version. Deux envois simultanés et le second est refusé (409). Les virements s'enchaînent pour cette raison. |
 
 ---
@@ -256,3 +257,38 @@ marqué `tableur` et le solde du jour saisi fait foi. Les lignes « DEBIT MENSUE
 CARTE » d'un compte carte sont écartées (ce n'est pas un revenu). Les
 catégories de la banque passent avant le classement par commerçant, jamais
 avant une correction de l'utilisateur.
+
+## 11. Crédits, moyennes, dépenser ou investir (18 novembre)
+
+**Crédits.** La saisie demande « Vous connaissez : le capital restant dû
+aujourd'hui | le capital total emprunté » (`b.mode` : `restant` | `contrat`).
+- *Restant* : capital du jour et **prochaine échéance** (le prélèvement ne
+  démarre plus le lendemain). Rien n'est rejoué.
+- *Contrat* : capital emprunté et première échéance, même lointaine.
+  `tableauContrat()` déroule le contrat ; chaque échéance passée est supposée
+  payée. Avant `E.creeLe` → `dette.historique` (hors compte courant, voir §3).
+  Depuis → rattachée à l'opération du relevé (montant à 5 %, date à 5 jours,
+  pas un virement), sinon ajoutée (`rapprocherEcheances`, `creerCredit`).
+  L'assistant passe « demain » comme début de suivi : tout le passé va dans
+  l'historique.
+- **Différé** (`dette.premiere`, `dette.differe = {type, mois}`) : partiel =
+  intérêts seuls ; total = rien (sauf assurance), intérêts capitalisés aux dates
+  d'échéance (`evenementsDette`). Suivi par le postage, l'échéancier,
+  `projDette`. `dette.mensualite` = mensualité *après* le différé.
+- Les centimes laissés par une mensualité arrondie vont sur la dernière
+  échéance (`dernierReste`, seuil 5 % d'une mensualité), dans toutes les
+  projections et le postage.
+- Si le prélèvement réel diffère du contrat, le rejeu suit le réel : le capital
+  restant bouge de l'écart. Voulu (rien ne s'invente).
+- Le profil d'exemple crée ses crédits par `ajouterDette` comme avant : son
+  patrimoine daté (1 150,86 / 200,85 / −898,08 €) ne doit pas bouger.
+
+**Budget et comptes.** « Six derniers mois » est dans Comptes (compte courant),
+sous l'évolution du solde : entrées, sorties, solde en barres, mois en cours
+pâle. Dans Budget, « Moyennes mensuelles » (3 mois, 6 mois, 12 mois, 5 ans) sur
+les mois *complets* (`premierMoisComplet`) ; taux d'épargne = total épargné ÷
+total des entrées. Sur 3 mois, le solde moyen égale la capacité constatée de la
+Synthèse. Dépenses historiques : « Dépenser ou investir » (versements nets vers
+le compte-titres). Onglet « Simulateur d'investissement », sans « Le coût
+d'attendre ».
+
