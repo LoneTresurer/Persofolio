@@ -292,6 +292,9 @@
   .segments button + button { border-left: 1px solid var(--filet); }
   .segments button[aria-pressed="true"] { background: var(--foret-clair); color: var(--foret); font-weight: 500; }
   .tableau-histo td, .tableau-histo th { white-space: nowrap; }
+  .tete-moyennes { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin: 6px 0 12px; }
+  .tete-moyennes h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .tete-moyennes .sous-titre { margin: 2px 0 0; }
   /* « Vous connaissez : capital restant dû | capital emprunté » : pleine largeur, libellés sur deux lignes au besoin */
   .segments.large { display: flex; width: 100%; }
   .segments.large button { flex: 1 1 0; white-space: normal; line-height: 1.3; padding: 9px 10px; }
@@ -499,7 +502,7 @@
       <button role="tab" data-onglet="comptes">Comptes</button>
       <button role="tab" data-onglet="budget">Budget</button>
       <button role="tab" data-onglet="dettes">Dettes</button>
-      <button role="tab" data-onglet="simulateur">Simulateur</button>
+      <button role="tab" data-onglet="simulateur">Simulateur d'investissement</button>
     </nav>
 
     <div data-vue="synthese"></div>
@@ -2003,7 +2006,7 @@ function chargerExemple() {
    ════════════════════════════════════════════════════════════════════════ */
 let ongletActif = 'synthese', compteVu = 'courant', moisBudget = moisDe(AUJ), graphiques = {};
 // Onglet Budget : le mois, ou l'historique des dépenses ou des recettes.
-let budgetVue = 'mois', histo = { periode: 12, focus: '' };
+let budgetVue = 'mois', histo = { periode: 12, focus: '' }, periodeMoyenne = 3;
 let filtre = { mois: 'tous', sens: 'tous', texte: '', categorie: '' }, limiteOps = 80;
 
 function demarrer() {
@@ -2455,7 +2458,7 @@ function afficherAccrocheSimu(plan) {
   });
 }
 
-/* ═════════════ Onglet 5 : Simulateur ═════════════ */
+/* ═════════════ Onglet 5 : Simulateur d'investissement ═════════════ */
 function vueSimulateur() {
   const vue = $('[data-vue="simulateur"]');
   if (!sim) sim = simDefauts();
@@ -2498,20 +2501,6 @@ Intérêts calculés chaque mois au taux équivalent (1 + taux annuel)^(1/12) �
       </div>
       <p class="note" style="margin-top:16px">${phraseSimu(p, sim)}</p>
       <p class="discret" style="margin-top:12px">Versements en fin de mois, intérêts réinvestis chaque mois, rendement constant. Le taux saisi est annuel : un rendement de 5 % par an produit exactement 5 % sur douze mois, et non 5 % ÷ 12 chaque mois — d'où un résultat légèrement inférieur à celui des calculatrices qui divisent le taux par douze. La réalité ne l'est pas : un placement en actions fait ce rendement <em>en moyenne</em>, avec des années à −30 %. Ni fiscalité ni frais ne sont déduits ; comptez 0,5 à 2 % de frais annuels selon le support, qui se retirent du rendement saisi.</p>
-    </div>
-
-    <div class="panneau">
-      <h2>Le coût d'attendre</h2>
-      <p class="sous-titre">Même versement, même rendement, en commençant plus tard.</p>
-      <div class="defile"><table>
-        <thead><tr><th>Si vous commencez</th><th class="num">Durée</th><th class="num">Versé</th><th class="num">Capital final</th><th class="num">Écart</th></tr></thead>
-        <tbody>${[0, 2, 5, 10].filter(d => sim.annees - d >= 1).map(retard => {
-          const q = projeterEpargne({ ...sim, annees: sim.annees - retard });
-          return `<tr><td>${retard === 0 ? 'maintenant' : `dans ${retard} an${retard > 1 ? 's' : ''}`}</td>
-            <td class="num">${sim.annees - retard} ans</td><td class="num discret">${aff(q.verse)}</td>
-            <td class="num">${aff(q.total)}</td>
-            <td class="num ${retard ? 'perte' : ''}">${retard ? argent0(-(p.total - q.total) / (sim.reel ? deflateur : 1)) : '—'}</td></tr>`;
-        }).join('')}</tbody></table></div>
     </div>`;
 
   const relire = () => {
@@ -2584,6 +2573,12 @@ function vueComptes() {
           ${compteVu === 'courant' ? '<button class="btn-lien" type="button" id="btn-corriger-solde" style="font-size:13px">Corriger le solde</button>' : ''}</div></div>
       <div class="courbe"><canvas id="c-solde"></canvas></div>
     </div>
+    ${compteVu === 'courant' ? `<div class="panneau">
+      <div class="tete-panneau"><div><h2>Six derniers mois</h2>
+        <p class="sous-titre">Entrées, sorties et solde de chaque mois, virements entre vos comptes exclus. Le mois en cours, inachevé, est en teinte pâle.</p></div>
+        <div class="filtres" style="margin:0"><button class="mini-btn" data-aller="depenses">Dépenses historiques</button><button class="mini-btn" data-aller="recettes">Recettes historiques</button></div></div>
+      <div class="courbe"><canvas id="c-6mois"></canvas></div>
+    </div>` : ''}
     <div class="panneau">
       <div class="tete-panneau"><div><h2>Opérations programmées</h2><p class="sous-titre">Enregistrées automatiquement chaque mois au jour indiqué.</p></div>
         <button class="mini-btn" id="btn-prog">Programmer une opération</button></div>
@@ -2651,6 +2646,31 @@ function vueComptes() {
     options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => argent(c.parsed.y) } } },
       scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: axeEuros() } },
+  });
+  if (compteVu === 'courant') {
+    vue.querySelectorAll('[data-aller]').forEach(x => x.onclick = () => { budgetVue = x.dataset.aller; histo.focus = ''; ouvrirOnglet('budget'); });
+    graphiqueSixMois();
+  }
+}
+
+/* Six derniers mois : trois barres par mois. Le solde prend l'encre du thème
+   (lisible en clair comme en sombre), en rouge quand le mois est négatif. */
+function graphiqueSixMois() {
+  const premier = premierMoisSuivi();
+  const mois6 = Array.from({ length: 6 }, (_, k) => decalerMois(moisDe(AUJ), k - 5)).filter(c => c >= premier);
+  const f6 = mois6.map(fluxMois), encre = couleurTheme('--encre'), perte = couleurTheme('--perte');
+  // Mois en cours en teinte pâle : inachevé (le salaire n'est peut-être pas encore arrivé)
+  const teinte = (couleur, i) => mois6[i] === moisDe(AUJ) ? couleur + '55' : couleur;
+  graphique('c-6mois', {
+    type: 'bar',
+    data: { labels: mois6.map(c => libelleMois(c, true)), datasets: [
+      { label: 'Entrées', data: f6.map(f => arrondi(f.entrees)), backgroundColor: f6.map((f, i) => teinte('#9CC5A9', i)), borderRadius: 4 },
+      { label: 'Sorties', data: f6.map(f => arrondi(f.sorties)), backgroundColor: f6.map((f, i) => teinte('#C9D1CA', i)), borderRadius: 4 },
+      { label: 'Solde du mois', data: f6.map(f => arrondi(f.solde)), backgroundColor: f6.map((f, i) => teinte(f.solde < 0 ? perte : encre, i)), borderRadius: 4 },
+    ] },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.y)}` } } },
+      scales: { x: { grid: { display: false } }, y: axeEuros() } },
   });
 }
 
@@ -2763,6 +2783,50 @@ function tiroirCorrection(op = null) {
 
 /* ═════════════ Onglet 3 : Budget ═════════════ */
 /* Le sélecteur de vue de l'onglet Budget, à côté de l'indicateur du mois. */
+/* ── Moyennes mensuelles (vue Budget) ─────────────────────────────────────
+   Sur les derniers mois complets : le mois en cours est exclu, et le premier
+   mois de suivi aussi quand il a commencé en cours de mois (sauf si des relevés
+   importés le couvrent). Définitions identiques aux indicateurs du mois. */
+function premierMoisComplet() {
+  const p = premierMoisSuivi(), c = moisDe(E.creeLe);
+  if (p < c) return p;                                      // relevés importés : historique antérieur au suivi
+  return E.creeLe.endsWith('-01') ? c : decalerMois(c, 1);
+}
+const PERIODES_MOYENNE = [[3, '3 mois'], [6, '6 mois'], [12, '12 mois'], [60, '5 ans']];
+function blocMoyennes() {
+  const ici = moisDe(AUJ), premier = premierMoisComplet(), n = periodeMoyenne, mois = [];
+  for (let k = 1; k <= n; k++) { const c = decalerMois(ici, -k); if (c >= premier) mois.push(c); }
+  const seg = `<div class="segments" role="group" aria-label="Période des moyennes">${PERIODES_MOYENNE.map(([v, l]) =>
+    `<button type="button" data-moy="${v}" aria-pressed="${v === n}">${l}</button>`).join('')}</div>`;
+  const nomPeriode = PERIODES_MOYENNE.find(([v]) => v === n)[1];
+  const tete = sousTitre => `<div class="tete-moyennes"><div><h2>Moyennes mensuelles</h2><p class="sous-titre">${sousTitre}</p></div>${seg}</div>`;
+  if (!mois.length) return tete('Disponibles après un premier mois complet de suivi.');
+  const f = mois.map(fluxMois), nb = mois.length, somme = cle => f.reduce((t, x) => t + x[cle], 0), moy = cle => somme(cle) / nb;
+  const ent = somme('entrees'), sor = somme('sorties'), sol = somme('solde');
+  const taux = ent > 0 && ent >= sor * 0.25 ? sol / ent * 100 : null;
+  const plage = nb > 1 ? `de ${libelleMois(mois[nb - 1])} à ${libelleMois(mois[0])}` : libelleMois(mois[0]);
+  const detail = cle => mois.slice().reverse().map((m, i) => `${libelleMois(m, true)} ${argent0(f[nb - 1 - i][cle], cle === 'solde')}`).join(' · ');
+  return `${tete(nb < n
+      ? `Seulement ${nb} mois complet${nb > 1 ? 's' : ''} suivi${nb > 1 ? 's' : ''} (${plage}) : la moyenne sur ${nomPeriode} porte sur ${nb === 1 ? 'ce mois' : 'ces mois'}.`
+      : `Sur les ${nb} derniers mois complets, ${plage}.`)}
+    <div class="kpis">
+      <div><div class="nom">${formule('Entrées', `Moyenne des entrées mensuelles, virements entre vos comptes exclus.
+${argent0(ent)} ÷ ${nb} mois = ${argent0(ent / nb)}
+${detail('entrees')}`)}</div><div class="valeur gain">${argent0(moy('entrees'))}</div><div class="aide">par mois en moyenne</div></div>
+      <div><div class="nom">${formule('Sorties', `Moyenne des sorties mensuelles, virements entre vos comptes exclus.
+${argent0(sor)} ÷ ${nb} mois = ${argent0(sor / nb)}
+${detail('sorties')}`)}</div><div class="valeur">${argent0(moy('sorties'))}</div><div class="aide">dont ${argent0(moy('fixes'))} de charges programmées</div></div>
+      <div><div class="nom">${formule('Solde du mois', `Moyenne de (entrées − sorties) par mois.
+${argent0(sol, true)} ÷ ${nb} mois = ${argent0(sol / nb, true)}
+${detail('solde')}`)}</div><div class="valeur ${classe(sol)}">${argent0(moy('solde'), true)}</div><div class="aide">${somme('versInvest') ? `dont ${argent0(moy('versInvest'))} placés sur l'investissement` : 'par mois en moyenne'}</div></div>
+      <div><div class="nom">${formule("Taux d'épargne", `Total épargné ÷ total des entrées, sur toute la période.
+`
+        + (taux == null ? 'Non calculé : les entrées de la période sont trop faibles devant les sorties pour que le rapport ait un sens.'
+          : `${argent0(sol, true)} ÷ ${argent0(ent)} = ${pct(taux, 0)}
+Plutôt que la moyenne des taux de chaque mois, qui donnerait autant de poids à un mois de faibles revenus qu'aux autres.`), true)}</div><div class="valeur ${classe(taux ?? 0)}">${taux == null ? '—' : pct(taux, 0)}</div><div class="aide">sur l'ensemble de la période</div></div>
+    </div>`;
+}
+
 function segmentsBudget() {
   const b = (cle, nom) => `<button type="button" data-bvue="${cle}" aria-pressed="${budgetVue === cle}">${nom}</button>`;
   return `<div class="segments" role="group" aria-label="Vue">${b('mois', 'Mois')}${b('depenses', 'Dépenses historiques')}${b('recettes', 'Recettes historiques')}</div>`;
@@ -2821,12 +2885,7 @@ ${argent0(F.entrees)} − ${argent0(F.sorties)} = ${argent0(F.solde, true)}`)}</
     </div>
     ${aVenir.length ? `<p class="note" style="margin:-4px 0 18px">Mois en cours : ${aVenir.map(e => `${echap(e.rec.libelle.toLowerCase())} de ${argent0(e.rec.montant)} attendu le ${+e.date.slice(8)}`).join(', ')}. D'ici là, le solde du mois reste mécaniquement négatif.</p>` : ''}
 
-    <div class="panneau">
-      <div class="tete-panneau"><div><h2>Six derniers mois</h2>
-        <p class="sous-titre">Entrées, sorties et solde de chaque mois.</p></div>
-        <div class="filtres" style="margin:0"><button class="mini-btn" data-aller="depenses">Dépenses historiques</button><button class="mini-btn" data-aller="recettes">Recettes historiques</button></div></div>
-      <div class="courbe"><canvas id="c-6mois"></canvas></div>
-    </div>
+    ${blocMoyennes()}
 
     <div class="panneau">
       <h2>D'où vient l'argent, où il va</h2>
@@ -2882,26 +2941,13 @@ ${argent0(F.entrees)} − ${argent0(F.sorties)} = ${argent0(F.solde, true)}`)}</
   $('#m-suiv').onclick = () => { moisBudget = decalerMois(moisBudget, 1); vueBudget(); };
   $('#btn-budgets').onclick = tiroirBudgets;
   brancherSegments(vue);
-  vue.querySelectorAll('[data-aller]').forEach(x => x.onclick = () => { budgetVue = x.dataset.aller; histo.focus = ''; vueBudget(); });
   vue.querySelectorAll('[data-cat]').forEach(tr => tr.onclick = () => {
     filtre = { mois: moisBudget, sens: 'tous', texte: '', categorie: tr.dataset.cat }; compteVu = 'courant'; ouvrirOnglet('comptes');
   });
   dessinerSankey(F, entreesCat);
   camembert('c-part-sorties', 'leg-sorties', lignesCat.filter(l => l.reel > 0).map(l => ({ cle: l.c, v: l.reel })), 'Aucune dépense ce mois-ci.');
   camembert('c-part-entrees', 'leg-entrees', entreesCat.map(l => ({ cle: l.c, v: l.v })), 'Aucune entrée ce mois-ci.');
-
-  const mois6 = Array.from({ length: 6 }, (_, k) => decalerMois(moisDe(AUJ), k - 5)).filter(c => c >= premier);
-  const f6 = mois6.map(fluxMois);
-  graphique('c-6mois', {
-    data: { labels: mois6.map(c => libelleMois(c, true)), datasets: [
-      { type: 'bar', label: 'Entrées', data: f6.map(f => arrondi(f.entrees)), backgroundColor: '#9CC5A9', borderRadius: 4 },
-      { type: 'bar', label: 'Sorties', data: f6.map(f => arrondi(f.sorties)), backgroundColor: '#D8DED8', borderRadius: 4 },
-      { type: 'line', label: 'Solde du mois', data: f6.map(f => arrondi(f.solde)), borderColor: '#15261D', backgroundColor: '#15261D', pointRadius: 3, borderWidth: 2 },
-    ] },
-    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.y)}` } } },
-      scales: { x: { grid: { display: false } }, y: axeEuros() } },
-  });
+  vue.querySelectorAll('[data-moy]').forEach(x => x.onclick = () => { periodeMoyenne = +x.dataset.moy; vueBudget(); });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2957,6 +3003,10 @@ function vueHistorique(sens) {
     E.programmees.filter(r => r.actif && r.sens === 'SORTIE').forEach(r => prevu[r.categorie] = (prevu[r.categorie] || 0) + r.montant);
   }
   const moyCat = c => complets.length ? complets.reduce((s, x) => s + (x.f.parCat[c] || 0), 0) / complets.length : 0;
+  // Dépenser ou investir : ce qui part vers le compte-titres, net de ce qui en revient
+  const investi = depense ? moisListe.map(m => Math.max(0, fluxMois(m).versInvest)) : [];
+  const totInvesti = investi.reduce((s, v) => s + v, 0);
+  const avecInvest = depense && !focus && totInvesti > 0.005;
 
   vue.innerHTML = `
     <div class="filtres" style="justify-content:space-between">
@@ -2991,6 +3041,20 @@ Le mois en cours n'y entre pas : il n'est pas fini.` : 'Pas encore de mois compl
         Le mois en cours, inachevé, est en pointillé.</p>
       <div class="courbe" style="height:280px"><canvas id="c-h-courbe"></canvas></div>
     </div>
+    ${avecInvest ? `<div class="grille-large">
+      <div class="panneau">
+        <h2>Dépenser ou investir</h2>
+        <p class="sous-titre">Chaque mois, ce qui est dépensé (charges et crédits compris) et ce qui part vers le compte-titres, net de ce qui en est revenu.</p>
+        <div class="courbe" style="height:260px"><canvas id="c-h-invest"></canvas></div>
+      </div>
+      <div class="panneau">
+        <h2>Sur la période</h2>
+        <p class="sous-titre">${formule(`${pct(totInvesti / (total + totInvesti) * 100, 0)} de ce qui est sorti a été investi`, `Placé sur le compte-titres ÷ (dépenses + placé)
+${argent0(totInvesti)} ÷ (${argent0(total)} + ${argent0(totInvesti)}) = ${pct(totInvesti / (total + totInvesti) * 100, 1)}`)}</p>
+        <div class="donut"><canvas id="c-h-invest-part"></canvas></div>
+        <div class="legende-part" id="leg-h-invest"></div>
+      </div>
+    </div>` : ''}
 
     <div class="grille-large">
       <div class="panneau">
@@ -3065,6 +3129,20 @@ Le mois en cours n'y entre pas : il n'est pas fini.` : 'Pas encore de mois compl
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: infobulle },
       scales: { x: { stacked: true, grid: { display: false } }, y: { ...axeEuros(), stacked: true } } } });
 
+  // Dépenser ou investir
+  if (avecInvest) {
+    const coulDep = '#B9A58A', coulInv = couleurTheme('--invest');
+    graphique('c-h-invest', { type: 'bar', data: { labels, datasets: [
+        { label: 'Dépenses', data: flux.map(f => arrondi(f.total)), backgroundColor: coulDep, borderRadius: 3, stack: 'm' },
+        { label: 'Placé sur le compte-titres', data: investi.map(arrondi), backgroundColor: coulInv, borderRadius: 3, stack: 'm' }] },
+      options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } },
+          tooltip: { callbacks: { label: c => `${c.dataset.label} : ${argent(c.parsed.y)}`,
+            footer: c => { const i = c[0].dataIndex, t = flux[i].total + investi[i]; return t > 0 ? `Part investie : ${pct(investi[i] / t * 100, 0)}` : ''; } } } },
+        scales: { x: { stacked: true, grid: { display: false } }, y: { ...axeEuros(), stacked: true } } } });
+    camembert('c-h-invest-part', 'leg-h-invest', [{ cle: 'dep', nom: 'Dépenses', couleur: coulDep, v: total }, { cle: 'inv', nom: 'Placé sur le compte-titres', couleur: coulInv, v: totInvesti }], '');
+  }
+
   // 3. Camembert de la période
   camembert('c-h-part', 'leg-h-part', cats.map(c => ({ cle: c, v: cumul[c] })), `Aucune ${depense ? 'dépense' : 'recette'} sur la période.`);
 
@@ -3087,7 +3165,7 @@ function camembert(idCanvas, idLegende, parts, messageVide) {
     zone.innerHTML = ''; return;
   }
   const tri = [...parts].sort((a, b) => b.v - a.v);
-  const tete = tri.slice(0, 6).map(p => ({ nom: CATEGORIES[p.cle].nom, v: p.v, couleur: CATEGORIES[p.cle].couleur }));
+  const tete = tri.slice(0, 6).map(p => ({ nom: p.nom || CATEGORIES[p.cle].nom, v: p.v, couleur: p.couleur || CATEGORIES[p.cle].couleur }));
   const reste = tri.slice(6).reduce((s, p) => s + p.v, 0);
   if (reste > 0) tete.push({ nom: `Autres (${tri.length - 6})`, v: reste, couleur: '#C3CCC5' });
   graphique(idCanvas, {
