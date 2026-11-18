@@ -292,6 +292,10 @@
   .segments button + button { border-left: 1px solid var(--filet); }
   .segments button[aria-pressed="true"] { background: var(--foret-clair); color: var(--foret); font-weight: 500; }
   .tableau-histo td, .tableau-histo th { white-space: nowrap; }
+  /* « Vous connaissez : capital restant dû | capital emprunté » : pleine largeur, libellés sur deux lignes au besoin */
+  .segments.large { display: flex; width: 100%; }
+  .segments.large button { flex: 1 1 0; white-space: normal; line-height: 1.3; padding: 9px 10px; }
+  .choix-credit .lib { display: block; margin-bottom: 6px; }
   .tableau-histo .pastille { margin-right: 8px; }
   .tableau-histo td.cliquable:hover { background: var(--foret-clair); cursor: pointer; }
   .nav-mois strong { min-width: 150px; text-align: center; font-weight: 500; text-transform: capitalize; }
@@ -842,19 +846,77 @@ const echeancesRestantes = (echeance, jour, debut = decalerJours(AUJ, 1)) => eca
 const assuranceMensuelle = a => !a || !a.valeur ? 0 : a.mode === 'pct' ? a.valeur / 100 * (a.base || 0) / 12 : a.valeur;
 const assuranceDe = d => arrondi(assuranceMensuelle(d.assurance));
 
+/* ── Calendrier contractuel : première échéance et différé ─────────────────
+   `premiere` (AAAA-MM) est le mois de la première échéance du contrat ; les
+   `differe.mois` premières échéances sont en différé :
+   - partiel : on ne paie que les intérêts du mois (et l'assurance) ;
+   - total : on ne paie rien (sauf l'assurance), les intérêts s'ajoutent au capital.
+   Les crédits saisis avant ces champs n'en ont pas : aucun différé. */
+const dateEcheance = (d, k) => dateDansMois(decalerMois(d.premiere, k), d.jour);
+function phaseDiffere(d, date) {
+  if (!d.premiere || !d.differe || !(d.differe.mois > 0)) return null;
+  const k = ecartMois(d.premiere, moisDe(date));
+  return k >= 0 && k < d.differe.mois ? d.differe.type : null;
+}
+/* Premier mois où une échéance est encore à venir. */
+const premierMoisAVenir = d => d.premiere && dateEcheance(d, 0) > AUJ ? d.premiere : prochainMois(d.jour);
+
+/* Échéancier complet d'un contrat, de la première échéance à la dernière :
+   différé éventuel, puis amortissement à mensualité constante. La mensualité est
+   celle du contrat si elle est donnée, sinon celle qui solde le capital (augmenté
+   des intérêts capitalisés d'un différé total) en `duree − différé` mois. */
+function tableauContrat({ capital, taux, premiere, jour, duree, mensualite, differe, ass = 0 }) {
+  const r = tauxMensuel(taux), nd = differe && differe.mois > 0 ? differe.mois : 0, lignes = [];
+  let c = capital, mois = premiere;
+  for (let k = 0; k < nd; k++) {
+    const i = c * r, date = dateDansMois(mois, jour);
+    if (differe.type === 'total') { c += i; lignes.push({ date, phase: 'total', credit: 0, interets: arrondi(i), amorti: 0, capitalise: arrondi(i), assurance: ass, restant: arrondi(c) }); }
+    else lignes.push({ date, phase: 'partiel', credit: arrondi(i), interets: arrondi(i), amorti: 0, capitalise: 0, assurance: ass, restant: arrondi(c) });
+    mois = decalerMois(mois, 1);
+  }
+  const m = mensualite > 0 ? arrondi(mensualite) : (duree > nd ? arrondi(mensualiteAnnuite(c, taux, duree - nd)) : null);
+  if (!m) return { lignes, mensualite: null, erreur: 'indiquez la durée du crédit ou sa mensualité.' };
+  if (c > 0.005 && m <= c * r + 0.005) return { lignes, mensualite: m, erreur: `une mensualité de ${argent(m)} ne couvre pas les ${argent(c * r)} d'intérêts du mois.` };
+  while (c > 0.005 && lignes.length < 720) {
+    const i = c * r, date = dateDansMois(mois, jour);
+    let p = Math.min(m - i, c);
+    if (dernierReste(c - p, m)) p = c;
+    c -= p;
+    lignes.push({ date, phase: null, credit: arrondi(p + i), interets: arrondi(i), amorti: arrondi(p), capitalise: 0, assurance: ass, restant: Math.max(0, arrondi(c)) });
+    mois = decalerMois(mois, 1);
+  }
+  return { lignes, mensualite: arrondi(m), erreur: null };
+}
+
+/* Tout ce qui fait bouger le capital d'une dette, dans l'ordre :
+   - les échéances du compte courant qui lui sont rattachées ;
+   - celles d'avant le début du suivi (`historique`), déjà dans le solde de départ
+     du compte courant : elles comptent pour la dette, pas pour le compte ;
+   - les recalages saisis par l'utilisateur ;
+   - les intérêts capitalisés d'un différé total, échus jusqu'à aujourd'hui. */
+function evenementsDette(dette) {
+  const hist = (dette.historique || []).map(h => ({ date: h.date, montant: -arrondi(h.credit + (h.assurance || 0)),
+    assurance: h.assurance || 0, differeTotal: h.differeTotal, avantSuivi: true }));
+  const recalages = (dette.recalages || []).map(r => ({ date: r.date, recalage: r.capital }));
+  const capit = [];
+  if (dette.premiere && dette.differe?.type === 'total')
+    for (let k = 0; k < dette.differe.mois; k++) { const date = dateEcheance(dette, k); if (date <= AUJ) capit.push({ date, capitalise: true }); }
+  const rang = o => o.capitalise ? 0 : o.recalage != null ? 2 : 1;
+  return E.operations.filter(o => o.detteId === dette.id).concat(hist, capit, recalages)
+    .sort((a, b) => a.date.localeCompare(b.date) || rang(a) - rang(b));
+}
+
 /* Rejoue toutes les échéances d'une dette pour connaître son capital restant dû.
    Chaque échéance normale = intérêts du mois + amortissement ; un remboursement anticipé = 100 % capital. */
 function etatDette(dette, jusquA = '9999-12-31') {
   const r = tauxMensuel(dette.taux);
   let capital = dette.capitalDepart, interets = 0, amorti = 0, nb = 0;
-  const recalages = (dette.recalages || []).map(r => ({ date: r.date, recalage: r.capital }));
-  E.operations
-    .filter(o => o.detteId === dette.id)
-    .concat(recalages)
+  evenementsDette(dette)
     .filter(o => o.date <= jusquA)
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.recalage != null) - (b.recalage != null))
     .forEach(o => {
       if (o.recalage != null) { capital = o.recalage; return; }   // capital corrigé par l'utilisateur
+      if (o.capitalise) { const i = capital * r; capital += i; interets += i; return; }   // différé total
+      if (o.differeTotal) return;                                // pendant un différé total, seule l'assurance est payée
       const paiement = -o.montant - (o.assurance || 0);          // l'assurance n'amortit rien
       if (o.anticipe) { const p = Math.min(paiement, capital); capital -= p; amorti += p; return; }
       const i = capital * r, p = Math.min(Math.max(paiement - i, 0), capital);
@@ -864,13 +926,20 @@ function etatDette(dette, jusquA = '9999-12-31') {
 }
 
 /* Projection d'amortissement à mensualité constante. */
+/* Une mensualité arrondie au centime laisse quelques centimes à la fin du
+   tableau : comme les banques, on les ajoute à la dernière échéance plutôt que
+   d'en créer une de plus. Seuil : 5 % d'une mensualité. */
+const dernierReste = (reste, mensualite) => reste > 0.005 && reste < mensualite * 0.05;
+
 function projeter(capital, tauxAnnuel, mensualite, extra = 0) {
   const r = tauxMensuel(tauxAnnuel), paiement = mensualite + extra;
   if (capital <= 0.005) return { mois: 0, interets: 0, serie: [0] };
   if (paiement <= capital * r + 0.005) return { impossible: true };
   let c = capital, interets = 0, mois = 0; const serie = [c];
   while (c > 0.005 && mois < 720) {
-    const i = c * r, p = Math.min(paiement, c + i);
+    const i = c * r;
+    let p = Math.min(paiement, c + i);
+    if (dernierReste(c + i - p, paiement)) p = c + i;
     c = c + i - p; interets += i; mois++; serie.push(Math.max(0, c));
   }
   return { mois, interets, serie };
@@ -931,10 +1000,23 @@ function posterEcheances() {
     if (rec.detteId) {
       const dette = E.dettes.find(d => d.id === rec.detteId);
       if (!dette) continue;
-      const etat = etatDette(dette, date);
+      const etat = etatDette(dette, date), phase = phaseDiffere(dette, date), ass = assuranceDe(dette);
       if (etat.capital <= 0.005) { rec.actif = false; continue; }             // prêt soldé : on arrête le prélèvement
-      const credit = Math.min(dette.mensualite, arrondi(etat.capital * (1 + tauxMensuel(dette.taux)))), ass = assuranceDe(dette);
-      E.operations.push({ id: uid(), date, compte: rec.compte, montant: -arrondi(credit + ass), libelle: rec.libelle, categorie: 'credit',
+      if (phase === 'total') {
+        // Différé total : rien à payer, les intérêts s'ajoutent au capital (etatDette).
+        // Seule l'assurance, s'il y en a, est prélevée.
+        if (ass) E.operations.push({ id: uid(), date, compte: rec.compte, montant: -ass, libelle: `${rec.libelle} (différé)`, categorie: 'credit',
+          occurrence: occ, programmeeId: rec.id, detteId: dette.id, assurance: ass, differeTotal: true });
+        else (E.ignorees = E.ignorees || []).push(occ);
+        n++; continue;
+      }
+      const credit = phase === 'partiel'
+        ? arrondi(etat.capital * tauxMensuel(dette.taux))                        // différé partiel : les intérêts seuls
+        : (() => {
+            const du = arrondi(etat.capital * (1 + tauxMensuel(dette.taux)));
+            return du - dette.mensualite < dette.mensualite * 0.05 ? du : dette.mensualite;   // dernière échéance : solde les centimes restants
+          })();
+      E.operations.push({ id: uid(), date, compte: rec.compte, montant: -arrondi(credit + ass), libelle: rec.libelle + (phase ? ' (différé)' : ''), categorie: 'credit',
         occurrence: occ, programmeeId: rec.id, detteId: dette.id, ...(ass ? { assurance: ass } : {}) });
       n++; continue;
     }
@@ -1407,7 +1489,7 @@ function afficherEtape() {
   if (etapeCourante === 2) {
     zone.innerHTML = `
       <h1>Vos crédits en cours</h1>
-      <p class="intro">Le capital restant dû, le taux nominal et la date de la dernière échéance figurent sur votre tableau d'amortissement. La mensualité en découle ; corrigez-la si elle diffère de votre contrat. Elle sera prélevée sur le compte courant et le capital restant se mettra à jour à chaque échéance.</p>
+      <p class="intro">Tout figure sur votre tableau d'amortissement. Indiquez au choix le capital restant dû aujourd'hui, ou le capital emprunté et la date de la première échéance : l'application retrouve alors ce qui reste dû. La mensualité découle de la dernière échéance ; corrigez-la si elle diffère de votre contrat. Elle sera prélevée sur le compte courant et le capital restant se mettra à jour à chaque échéance.</p>
       <label class="case"><input type="checkbox" id="sans-dette" ${B.sansDette ? 'checked' : ''}> Je n'ai aucun crédit en cours</label>
       <div id="bloc-dettes" class="${B.sansDette ? 'cache' : ''}">
         ${B.dettes.map((d, i) => `<div class="bloc-dette" data-bloc="${i}"><div class="tete-panneau"><strong style="font-weight:600">${echap(d.nom) || `Crédit ${i + 1}`}</strong>
@@ -1507,7 +1589,7 @@ function calculBrouillon() {
   const capacite = totRev - totFixes - totCredits - variables;
   return {
     revenus, fixes, dettes, totRev, totFixes, totCredits, variables, capacite,
-    totalDettes: dettes.reduce((s, x) => s + x.c.capital, 0),
+    totalDettes: dettes.reduce((s, x) => s + x.c.restant, 0),
     soldeCourant: lireNombre(B.soldeCourant), soldeInvest: lireNombre(B.soldeInvest), virement: lireNombre(B.virement),
     precaution: Math.round((totFixes + totCredits + variables) * 6 / 100) * 100,   // six mois de dépenses
   };
@@ -1572,7 +1654,8 @@ function terminerAssistant() {
   // Les soldes saisis valent « aujourd'hui » : les échéances démarrent demain.
   p.revenus.forEach(r => E.programmees.push({ id: uid(), libelle: r.libelle.trim(), sens: 'ENTREE', categorie: r.categorie, compte: 'courant', montant: lireNombre(r.montant), jour: +r.jour, debut: demain, actif: true }));
   p.fixes.forEach(r => E.programmees.push({ id: uid(), libelle: r.libelle.trim(), sens: 'SORTIE', categorie: r.categorie, compte: 'courant', montant: lireNombre(r.montant), jour: +r.jour, debut: demain, actif: true }));
-  p.dettes.forEach(({ b, c }) => ajouterDette({ nom: b.nom.trim(), type: b.type, capital: c.capital, taux: c.taux, mensualite: c.mensualite, jour: +b.jour, echeance: b.echeance, assurance: c.assurance }, demain));
+  // Les soldes saisis valent aujourd'hui : toute échéance déjà passée y est, elle va dans l'historique du crédit.
+  p.dettes.forEach(({ b, c }) => creerCredit(b, c, demain));
   if (p.virement > 0) E.programmees.push({ id: uid(), type: 'VIREMENT', libelle: 'Virement mensuel vers l\'investissement', sens: 'INTERNE', categorie: 'virement', compte: 'courant', versCompte: 'invest', montant: p.virement, jour: +B.jourVirement, debut: demain, actif: true });
   if (B.objectifPrecaution && p.precaution > 0)
     E.objectifs.push({ id: uid(), nom: 'Épargne de précaution', cible: p.precaution, echeance: decalerMois(moisDe(AUJ), 24), compte: 'courant', affecte: Math.min(p.precaution, Math.max(0, p.soldeCourant - (p.totFixes + p.totCredits + p.variables))) });
@@ -1591,8 +1674,9 @@ function terminerAssistant() {
   }
 }
 
-function ajouterDette({ nom, type, capital, taux, mensualite, jour, echeance, assurance }, debut) {
-  const d = { id: uid(), nom, type, capitalDepart: capital, taux, mensualite, jour, echeance, assurance: assurance || null, dateDepart: debut };
+function ajouterDette({ nom, type, capital, taux, mensualite, jour, echeance, assurance, premiere, differe, historique, depuisOrigine }, debut) {
+  const d = { id: uid(), nom, type, capitalDepart: capital, taux, mensualite, jour, echeance, assurance: assurance || null, dateDepart: debut,
+              ...(premiere ? { premiere } : {}), ...(differe ? { differe } : {}), ...(historique?.length ? { historique } : {}), ...(depuisOrigine ? { depuisOrigine } : {}) };
   E.dettes.push(d);
   E.programmees.push({ id: uid(), libelle: `Échéance ${nom}`, sens: 'SORTIE', categorie: 'credit', compte: 'courant', montant: arrondi(mensualite + assuranceDe(d)), jour, debut, actif: true, detteId: d.id });
   return d;
@@ -1620,6 +1704,13 @@ function normaliserTiers(t) {
     .replace(/[^A-Za-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase();
 }
 
+/* Différé encore à venir d'un crédit, pour préremplir sa modification. */
+function differeRestant(d) {
+  if (!d.premiere || !(d.differe?.mois > 0)) return { differeType: 'aucun', differeMois: '' };
+  const reste = d.differe.mois - ecartMois(d.premiere, premierMoisAVenir(d));
+  return reste > 0 ? { differeType: d.differe.type, differeMois: String(reste) } : { differeType: 'aucun', differeMois: '' };
+}
+
 /* Dettes créées avant l'ajout de la maturité et de l'assurance : on déduit la dernière échéance du rythme actuel. */
 function migrerDette(d) {
   if (d.assurance === undefined) d.assurance = null;
@@ -1629,78 +1720,210 @@ function migrerDette(d) {
   }
 }
 
-/* ── Saisie d'un crédit (assistant et tiroir) : maturité → mensualité calculée, modifiable ── */
+/* ── Saisie d'un crédit (assistant et tiroir) ──────────────────────────────
+   Deux façons de décrire un crédit, au choix de l'utilisateur :
+   - « restant » : le capital restant dû aujourd'hui et la prochaine échéance ;
+     les échéances passées sont déjà dans ce capital, rien n'est rejoué ;
+   - « contrat » : le capital emprunté et la première échéance, même lointaine ;
+     le tableau d'amortissement est rejoué jusqu'à aujourd'hui, en supposant
+     chaque échéance payée à sa date.
+   Dans les deux cas : dernière échéance → mensualité calculée, modifiable ;
+   différé partiel ou total possible au début du calendrier saisi. */
 const OPTIONS_ASSURANCE = [['aucune', 'Sans assurance'], ['euros', 'Montant fixe par mois'], ['pct', 'Taux annuel sur le capital emprunté']];
+const OPTIONS_DIFFERE = [['aucun', 'Sans différé'], ['partiel', 'Partiel'], ['total', 'Total']];
+const ecartJours = (a, b) => Math.round((versDate(b) - versDate(a)) / 864e5);
+/* Mois de départ du calendrier saisi : première échéance du contrat, ou prochaine à venir. */
+const debutSaisi = b => b.mode === 'contrat' ? (b.premiere || '') : (b.prochaine || prochainMois(+b.jour));
+
 function calcDette(b, permettreZero = false) {
-  const capital = lireNombre(b.capital), taux = lireNombre(b.taux);
-  const n = b.echeance ? echeancesRestantes(b.echeance, +b.jour) : 0;
-  const calc = capital > 0 && n >= 1 ? arrondi(mensualiteAnnuite(capital, taux, n)) : null;
-  const mensualite = b.manuelle ? arrondi(lireNombre(b.mensualite)) : (calc || 0);
-  const assurance = b.assMode === 'aucune' ? null : { mode: b.assMode, valeur: lireNombre(b.assValeur), base: lireNombre(b.assBase) || capital };
+  const contrat = b.mode === 'contrat';
+  const capital = lireNombre(b.capital), taux = lireNombre(b.taux), jour = +b.jour, premiere = debutSaisi(b);
+  const nd = b.differeType && b.differeType !== 'aucun' ? Math.round(lireNombre(b.differeMois)) : 0;
+  const differe = nd > 0 ? { type: b.differeType, mois: nd } : null;
+  const duree = premiere && b.echeance ? ecartMois(premiere, b.echeance) + 1 : 0;
+  const assurance = b.assMode === 'aucune' ? null
+    : { mode: b.assMode, valeur: lireNombre(b.assValeur), base: contrat ? capital : (lireNombre(b.assBase) || capital) };
   const ass = arrondi(assuranceMensuelle(assurance));
+  const base = { capital, taux, premiere, jour, duree, differe, ass };
+  const auto = capital > 0 && premiere && duree > nd ? tableauContrat({ ...base, mensualite: null }) : null;
+  const calc = auto && !auto.erreur ? auto.mensualite : null;
+  const saisie = b.manuelle ? arrondi(lireNombre(b.mensualite)) : 0;
   let erreur = null;
-  if (capital < 0 || (!capital && !permettreZero)) erreur = 'indiquez le capital restant dû.';
+  if (capital < 0 || (!capital && !permettreZero)) erreur = contrat ? 'indiquez le capital emprunté.' : 'indiquez le capital restant dû.';
   else if (taux < 0 || taux > 30) erreur = 'le taux doit être compris entre 0 et 30 %.';
+  else if (capital > 0 && !premiere) erreur = 'indiquez le mois de la première échéance.';
+  else if (capital > 0 && !contrat && dateDansMois(premiere, jour) <= AUJ)
+    erreur = `l'échéance du ${dateLongue(dateDansMois(premiere, jour))} est passée, et le capital restant dû d'aujourd'hui en tient compte : indiquez la suivante.`;
+  else if (b.differeType && b.differeType !== 'aucun' && !(nd >= 1 && nd <= 120)) erreur = 'indiquez la durée du différé, entre 1 et 120 mois.';
   else if (capital > 0 && !b.echeance) erreur = 'indiquez le mois de la dernière échéance.';
-  else if (capital > 0 && n < 1) erreur = 'la dernière échéance doit tomber après la prochaine date de prélèvement.';
-  else if (capital > 0 && mensualite <= capital * tauxMensuel(taux)) erreur = `une mensualité de ${argent(mensualite)} ne couvre pas les ${argent(capital * tauxMensuel(taux))} d'intérêts du mois.`;
+  else if (capital > 0 && duree <= nd) erreur = differe ? 'la dernière échéance doit tomber après la fin du différé.'
+    : `la dernière échéance doit tomber après ${contrat ? 'la première' : 'la prochaine'}.`;
   else if (assurance && !assurance.valeur) erreur = 'indiquez le montant ou le taux de l\'assurance, ou choisissez « Sans assurance ».';
-  const proj = erreur || !capital ? null : projeter(capital, taux, mensualite);
-  return { capital, taux, n, calc, mensualite, assurance, ass, total: arrondi(mensualite + ass), proj, erreur };
+  let tab = null;
+  if (!erreur && capital > 0) {
+    tab = tableauContrat({ ...base, mensualite: saisie > 0 ? saisie : null });
+    if (tab.erreur) erreur = tab.erreur;
+    else if (contrat && tab.lignes[tab.lignes.length - 1].date <= AUJ) erreur = 'd\'après ces dates, ce crédit est déjà entièrement remboursé.';
+  }
+  if (erreur) tab = null;
+  const passees = tab ? tab.lignes.filter(l => l.date <= AUJ) : [], futures = tab ? tab.lignes.filter(l => l.date > AUJ) : [];
+  const mensualite = tab ? tab.mensualite : (saisie || calc || 0);
+  const proj = tab ? { mois: futures.length, interets: futures.reduce((s, l) => s + l.interets, 0), fin: moisDe(futures[futures.length - 1].date) } : null;
+  return { contrat, capital, restant: passees.length ? passees[passees.length - 1].restant : capital, taux, premiere, differe, n: duree, calc,
+           mensualite, assurance, ass, total: arrondi(mensualite + ass), tab, passees, futures, proj, erreur };
 }
+
+/* Échéances passées depuis le début du suivi : chacune est cherchée parmi les
+   opérations du compte courant (montant à 5 % près, date à 5 jours près, pas
+   déjà rattachée à un crédit ni un virement). Sans rien modifier : la saisie
+   s'en sert pour annoncer, l'enregistrement pour rattacher ou ajouter. */
+function rapprocherEcheances(lignes, suiviDepuis) {
+  const prises = new Set();
+  return lignes.filter(l => l.date >= suiviDepuis && l.date <= AUJ).map(l => {
+    const attendu = arrondi(l.credit + l.assurance);
+    if (attendu <= 0.005) return { ligne: l, attendu, op: null };          // différé total sans assurance : rien n'est prélevé
+    const op = E.operations
+      .filter(o => o.compte === 'courant' && !o.detteId && o.montant < 0 && !o.virementId && o.categorie !== 'virement' && !prises.has(o.id)
+        && Math.abs(-o.montant - attendu) <= attendu * 0.05 && Math.abs(ecartJours(o.date, l.date)) <= 5)
+      .sort((a, b) => Math.abs(ecartJours(a.date, l.date)) - Math.abs(ecartJours(b.date, l.date)) || Math.abs(-a.montant - attendu) - Math.abs(-b.montant - attendu))[0] || null;
+    if (op) prises.add(op.id);
+    return { ligne: l, attendu, op };
+  });
+}
+
+/* Enregistre un nouveau crédit saisi (assistant ou tiroir). `suiviDepuis` :
+   les échéances antérieures sont déjà dans le solde de départ du compte courant
+   (elles vont dans l'historique du crédit) ; celles d'après, jusqu'à aujourd'hui,
+   sont rattachées à l'opération du relevé ou ajoutées au compte courant. */
+function creerCredit(b, c, suiviDepuis) {
+  const nom = String(b.nom).trim(), futures = c.futures;
+  const historique = c.passees.filter(l => l.date < suiviDepuis && (l.credit + l.assurance) > 0.005)
+    .map(l => ({ date: l.date, credit: l.credit, assurance: l.assurance, ...(l.phase === 'total' ? { differeTotal: true } : {}) }));
+  const d = ajouterDette({ nom, type: b.type, capital: c.capital, depuisOrigine: c.contrat, taux: c.taux, mensualite: c.mensualite, jour: +b.jour, echeance: moisDe(futures[futures.length - 1].date),
+    assurance: c.assurance, premiere: c.premiere, differe: c.differe, historique }, futures[0].date);
+  const prog = E.programmees.find(r => r.detteId === d.id);
+  let lies = 0, ajoutes = 0;
+  rapprocherEcheances(c.passees, suiviDepuis).forEach(({ ligne, attendu, op }) => {
+    const marque = { detteId: d.id, programmeeId: prog.id, occurrence: prog.id + ':' + moisDe(ligne.date),
+                     ...(ligne.assurance ? { assurance: ligne.assurance } : {}), ...(ligne.phase === 'total' ? { differeTotal: true } : {}) };
+    if (op) { Object.assign(op, { categorie: 'credit' }, marque); lies++; }
+    else if (attendu > 0.005) {
+      E.operations.push({ id: uid(), date: ligne.date, compte: 'courant', montant: -attendu, libelle: `Échéance ${nom}${ligne.phase ? ' (différé)' : ''}`, categorie: 'credit', ...marque });
+      ajoutes++;
+    }
+  });
+  return { dette: d, historique: historique.length, lies, ajoutes };
+}
+
 function champsDette(b) {
   const opt = (liste, v) => liste.map(([k, l]) => `<option value="${k}" ${String(k) === String(v) ? 'selected' : ''}>${l}</option>`).join('');
+  const contrat = b.mode === 'contrat', ed = b.edition, avecDiffere = b.differeType && b.differeType !== 'aucun';
+  const champEcheance = `<label class="champ"><span class="lib">Dernière échéance</span><input data-d="echeance" type="month" min="${decalerMois(moisDe(AUJ), 1)}" value="${echap(b.echeance)}"></label>`;
+  const champJour = `<label class="champ"><span class="lib">Prélevée</span><select data-d="jour">${opt(OPTIONS_JOUR, b.jour)}</select></label>`;
   return `
+    ${ed ? '' : `<div class="champ choix-credit"><span class="lib">Vous connaissez</span>
+      <div class="segments large" role="group" aria-label="Vous connaissez">
+        <button type="button" data-dmode="restant" aria-pressed="${!contrat}">Le capital restant dû aujourd'hui</button>
+        <button type="button" data-dmode="contrat" aria-pressed="${contrat}">Le capital total emprunté</button>
+      </div></div>`}
     <div class="deux-col">
       <label class="champ"><span class="lib">Nom</span><input data-d="nom" maxlength="60" value="${echap(b.nom)}" placeholder="Prêt auto"></label>
       <label class="champ"><span class="lib">Type</span><select data-d="type">${opt(Object.entries(TYPES_DETTE), b.type)}</select></label>
     </div>
     <div class="deux-col">
-      <label class="champ"><span class="lib">Capital restant dû (€)</span><input data-d="capital" inputmode="decimal" value="${echap(b.capital)}" placeholder="0"></label>
+      <label class="champ"><span class="lib">${contrat ? 'Capital emprunté (€)' : 'Capital restant dû (€)'}</span><input data-d="capital" inputmode="decimal" value="${echap(b.capital)}" placeholder="0"></label>
       <label class="champ"><span class="lib">Taux nominal annuel (%)</span><input data-d="taux" inputmode="decimal" value="${echap(b.taux)}" placeholder="0,0" title="Le taux débiteur de votre contrat, hors assurance. Le TAEG, qui inclut l'assurance et les frais, surestimerait les intérêts."></label>
     </div>
+    ${ed ? `<div class="deux-col">${champEcheance}${champJour}</div>` : `
     <div class="deux-col">
-      <label class="champ"><span class="lib">Dernière échéance</span><input data-d="echeance" type="month" min="${decalerMois(moisDe(AUJ), 1)}" value="${echap(b.echeance)}"></label>
-      <label class="champ"><span class="lib">Prélevée</span><select data-d="jour">${opt(OPTIONS_JOUR, b.jour)}</select></label>
+      ${contrat
+        ? `<label class="champ"><span class="lib">Première échéance</span><input data-d="premiere" type="month" value="${echap(b.premiere)}"></label>`
+        : `<label class="champ"><span class="lib">Prochaine échéance</span><input data-d="prochaine" type="month" min="${moisDe(AUJ)}" value="${echap(debutSaisi(b))}"></label>`}
+      ${champEcheance}
     </div>
     <div class="deux-col">
-      <div class="champ"><label><span class="lib">Mensualité hors assurance (€)</span><input class="saisie" data-d="mensualite" inputmode="decimal" value="${echap(b.mensualite)}"></label><span class="discret" data-mode-mens></span></div>
+      ${champJour}
+      <label class="champ"><span class="lib">Différé${contrat ? ' au début du crédit' : ' à venir'}</span><select data-d="differeType">${opt(OPTIONS_DIFFERE, b.differeType || 'aucun')}</select></label>
+    </div>
+    ${avecDiffere ? `<div class="deux-col">
+      <label class="champ"><span class="lib">Durée du différé (mois)</span><input data-d="differeMois" inputmode="numeric" value="${echap(b.differeMois)}" placeholder="12"></label>
+      <div></div>
+    </div>
+    <p class="discret" style="margin:-4px 0 14px">À compter de la ${contrat ? 'première' : 'prochaine'} échéance. ${b.differeType === 'total'
+        ? 'Vous ne payez rien (hors assurance) ; les intérêts s\'ajoutent au capital.' : 'Vous ne payez que les intérêts (et l\'assurance).'}</p>` : ''}`}
+    <div class="deux-col">
+      <div class="champ"><label><span class="lib">Mensualité${avecDiffere ? ' après le différé' : ''} hors assurance (€)</span><input class="saisie" data-d="mensualite" inputmode="decimal" value="${echap(b.mensualite)}"></label><span class="discret" data-mode-mens></span></div>
       <label class="champ"><span class="lib">Assurance emprunteur</span><select data-d="assMode">${opt(OPTIONS_ASSURANCE, b.assMode)}</select></label>
     </div>
     ${b.assMode === 'aucune' ? '' : `<div class="deux-col">
       <label class="champ"><span class="lib">${b.assMode === 'pct' ? 'Taux d\'assurance annuel (%)' : 'Assurance par mois (€)'}</span><input data-d="assValeur" inputmode="decimal" value="${echap(b.assValeur)}" placeholder="${b.assMode === 'pct' ? '0,30' : '0'}"></label>
-      ${b.assMode === 'pct' ? `<label class="champ"><span class="lib">Capital emprunté à l'origine (€)</span><input data-d="assBase" inputmode="decimal" value="${echap(b.assBase)}" placeholder="capital restant par défaut"></label>` : ''}
+      ${b.assMode === 'pct' && !contrat ? `<label class="champ"><span class="lib">Capital emprunté à l'origine (€)</span><input data-d="assBase" inputmode="decimal" value="${echap(b.assBase)}" placeholder="capital restant par défaut"></label>` : ''}
     </div>`}
     <p class="note" data-resume style="margin:0"></p>`;
 }
+
+/* Résumé sous le formulaire. `suiviDepuis` : null dans l'assistant (tout le passé
+   est déjà dans les soldes saisis), E.creeLe dans le tiroir. */
+function resumeDette(b, c, suiviDepuis) {
+  if (c.erreur) return `<span class="perte">${c.erreur.charAt(0).toUpperCase() + c.erreur.slice(1)}</span>`;
+  if (!c.capital) return 'Crédit soldé : le prélèvement sera arrêté.';
+  const pl = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
+  const nb = c.proj.mois, lignes = [];
+  if (c.contrat) {
+    let passe = '';
+    if (c.passees.length) {
+      const morceaux = [], enTotal = c.passees.filter(l => l.phase === 'total');
+      if (enTotal.length) morceaux.push(`${enTotal.length} mois de différé total${c.ass ? ' (assurance seule)' : ', sans paiement'} : ${argent0(enTotal.reduce((s, l) => s + l.capitalise, 0))} d'intérêts ajoutés au capital`);
+      const avant = c.passees.filter(l => l.phase !== 'total' && (!suiviDepuis || l.date < suiviDepuis)).length;
+      const depuis = suiviDepuis ? rapprocherEcheances(c.passees.filter(l => l.phase !== 'total'), suiviDepuis) : [];
+      const lies = depuis.filter(x => x.op).length, ajoutes = depuis.filter(x => !x.op && x.attendu > 0.005).length;
+      if (avant) morceaux.push(`${pl(avant, 'échéance')} payée${avant > 1 ? 's' : ''} ${suiviDepuis ? `avant le début du suivi (${dateLongue(suiviDepuis)})` : 'avant aujourd\'hui'} : historique du crédit, ${suiviDepuis ? 'déjà dans le solde de votre compte courant' : 'déjà dans le solde du compte courant que vous indiquerez'}`);
+      if (lies) morceaux.push(`${pl(lies, 'échéance')} depuis, retrouvée${lies > 1 ? 's' : ''} dans vos opérations et rattachée${lies > 1 ? 's' : ''} au crédit`);
+      if (ajoutes) morceaux.push(`${pl(ajoutes, 'échéance')} depuis le début du suivi${avant ? '' : ` (${dateLongue(suiviDepuis)})`}, introuvable${ajoutes > 1 ? 's' : ''} dans vos opérations : ajoutée${ajoutes > 1 ? 's' : ''} au compte courant`);
+      passe = ` Déjà passé, en supposant chaque échéance payée à sa date : ${morceaux.join(' ; ')}.`;
+    }
+    lignes.push(`Capital restant dû aujourd'hui : <strong>${argent(c.restant)}</strong>.${passe}`);
+  }
+  lignes.push(`${pl(nb, 'échéance')} à venir jusqu'en ${libelleMois(c.proj.fin)}, ${argent0(c.proj.interets)} d'intérêts${c.ass ? ` et ${argent0(c.ass * nb)} d'assurance` : ''}. Prélevé chaque mois : <strong>${argent(c.total)}</strong>${c.ass ? ` dont ${argent(c.ass)} d'assurance` : ''}.`);
+  const enDiffere = c.futures.filter(l => l.phase);
+  if (enDiffere.length) {
+    const f = enDiffere[0], fin = moisDe(enDiffere[enDiffere.length - 1].date);
+    lignes.push(f.phase === 'partiel'
+      ? `Jusqu'en ${libelleMois(fin)}, différé partiel : ${argent(f.credit + f.assurance)} le premier mois, les intérêts seuls${c.ass ? ' et l\'assurance' : ''}.`
+      : `Jusqu'en ${libelleMois(fin)}, différé total : ${c.ass ? `${argent(c.ass)} d'assurance seulement` : 'rien à payer'} ; ${argent0(enDiffere.reduce((s, l) => s + l.capitalise, 0))} d'intérêts s'ajouteront au capital.`);
+  }
+  const decalage = b.echeance ? ecartMois(b.echeance, c.proj.fin) : 0;
+  if (b.manuelle && Math.abs(decalage) >= 1)
+    lignes.push(`Avec cette mensualité, le crédit se termine en ${libelleMois(c.proj.fin)}, ${dureeTexte(Math.abs(decalage))} ${decalage > 0 ? 'après' : 'avant'} l'échéance indiquée.`);
+  return lignes.join('<br>');
+}
+
 /* Relie les champs d'un formulaire de crédit à l'objet `b` ; `rerendre` est appelé quand la structure change. */
-function brancherDette(racine, b, rerendre, permettreZero = false) {
+function brancherDette(racine, b, rerendre, permettreZero = false, suiviDepuis = null) {
   const maj = () => {
     const c = calcDette(b, permettreZero), mens = racine.querySelector('[data-d="mensualite"]');
     if (!b.manuelle) { b.mensualite = c.calc != null ? String(c.calc).replace('.', ',') : ''; mens.value = b.mensualite; }
+    const proch = racine.querySelector('[data-d="prochaine"]'); if (proch && !b.prochaine) proch.value = debutSaisi(b);
     racine.querySelector('[data-mode-mens]').innerHTML = b.manuelle
       ? `Saisie manuelle${c.calc != null ? ` · <button type="button" class="btn-lien" data-recalc>recalculer (${argent(c.calc)})</button>` : ''}`
       : 'Calculée d\'après la dernière échéance';
     const r = racine.querySelector('[data-recalc]'); if (r) r.onclick = () => { b.manuelle = false; maj(); };
-    let texte;
-    if (c.erreur) texte = `<span class="perte">${c.erreur.charAt(0).toUpperCase() + c.erreur.slice(1)}</span>`;
-    else if (!c.capital) texte = 'Crédit soldé : le prélèvement sera arrêté.';
-    else {
-      const finReelle = c.proj.mois, decalage = finReelle - c.n;
-      texte = `${finReelle} mensualité${finReelle > 1 ? 's' : ''} restante${finReelle > 1 ? 's' : ''}, ${argent0(c.proj.interets)} d'intérêts${c.ass ? ` et ${argent0(c.ass * finReelle)} d'assurance` : ''}. Prélevé chaque mois : <strong>${argent(c.total)}</strong>${c.ass ? ` dont ${argent(c.ass)} d'assurance` : ''}.`
-        + (b.manuelle && Math.abs(decalage) >= 1 ? `<br>Avec cette mensualité, le crédit se termine en ${libelleMois(decalerMois(prochainMois(+b.jour), finReelle - 1))}, ${dureeTexte(Math.abs(decalage))} ${decalage > 0 ? 'après' : 'avant'} l'échéance indiquée.` : '');
-    }
-    racine.querySelector('[data-resume]').innerHTML = texte;
+    racine.querySelector('[data-resume]').innerHTML = resumeDette(b, c, suiviDepuis);
   };
+  racine.querySelectorAll('[data-dmode]').forEach(bt => bt.onclick = () => {
+    if (b.mode === bt.dataset.dmode) return;
+    b.mode = bt.dataset.dmode; b.manuelle = false; rerendre();
+  });
   racine.querySelectorAll('[data-d]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
     b[el.dataset.d] = el.value;
     if (el.dataset.d === 'mensualite') b.manuelle = true;
-    if (el.dataset.d === 'assMode') return rerendre();
+    if (el.dataset.d === 'assMode' || el.dataset.d === 'differeType') return rerendre();
     maj(); if (racine.onmaj) racine.onmaj();
   }));
   maj();
 }
-const nouveauCredit = () => ({ nom: '', type: 'conso', capital: '', taux: '', echeance: decalerMois(moisDe(AUJ), 36), jour: 5, mensualite: '', manuelle: false, assMode: 'aucune', assValeur: '', assBase: '' });
+const nouveauCredit = () => ({ mode: 'restant', nom: '', type: 'conso', capital: '', taux: '', premiere: '', prochaine: '', echeance: decalerMois(moisDe(AUJ), 36), jour: 5,
+  mensualite: '', manuelle: false, assMode: 'aucune', assValeur: '', assBase: '', differeType: 'aucun', differeMois: '' });
 
 /* ── Profil d'exemple, avec historique généré ──────────── */
 function chargerExemple() {
@@ -2928,9 +3151,19 @@ function dessinerSankey(F, entreesCat) {
 let simu = { detteId: null, extra: 100, anticipe: 0 };
 
 /* Situation d'un crédit aujourd'hui et projection au rythme actuel. */
+/* Projection d'un crédit : celle de projeter(), sauf s'il reste un différé à
+   venir, qu'il faut dérouler échéance par échéance. */
+function projDette(d, etat = etatDette(d)) {
+  const differeAVenir = d.premiere && d.differe?.mois > 0 && dateEcheance(d, d.differe.mois - 1) > AUJ;
+  if (!differeAVenir) return projeter(etat.capital, d.taux, d.mensualite);
+  const fut = echeancesFutures(d, 720);
+  if (!fut.length || fut[fut.length - 1].restant > 0.005) return { impossible: true };
+  return { mois: fut.length, interets: fut.reduce((s, e) => s + e.interets, 0), serie: [etat.capital, ...fut.map(e => e.restant)] };
+}
+
 function ligneDette(d) {
-  const etat = etatDette(d), ass = assuranceDe(d), proj = projeter(etat.capital, d.taux, d.mensualite);
-  const premier = prochainMois(d.jour);
+  const etat = etatDette(d), ass = assuranceDe(d), proj = projDette(d, etat);
+  const premier = premierMoisAVenir(d);
   const fin = proj.impossible || etat.capital <= 0.005 ? null : decalerMois(premier, proj.mois - 1);
   return {
     d, etat, ass, proj, fin, total: arrondi(d.mensualite + ass),
@@ -3010,7 +3243,7 @@ function vueDettes() {
         <thead><tr><th>Crédit</th><th style="width:15%">Remboursé</th><th class="num">Capital restant</th><th class="num">Taux</th><th class="num">Mensualité</th><th class="num">Dont intérêts ce mois</th><th class="num">Fin</th><th class="num">Coût restant</th><th></th></tr></thead>
         <tbody>${[...lignes].sort((a, b) => b.d.taux - a.d.taux).map(({ d, etat, ass, proj, fin, total, coutAss, ecartContrat, part }) => `<tr class="cliquable" data-echeancier="${d.id}" title="Afficher son échéancier">
           <td><strong style="font-weight:500">${echap(d.nom)}</strong><span class="sous">${TYPES_DETTE[d.type]} · prélevé le ${d.jour}</span></td>
-          <td><div class="progres"><i style="width:${Math.min(100, part * 100)}%"></i></div><span class="sous">${pct(part * 100, 0)} depuis le suivi</span></td>
+          <td><div class="progres"><i style="width:${Math.min(100, part * 100)}%"></i></div><span class="sous">${pct(part * 100, 0)} ${d.depuisOrigine ? 'remboursé' : 'depuis le suivi'}</span></td>
           <td class="num">${etat.capital > 0.005 ? argent(etat.capital) : '<span class="statut fini">Soldé</span>'}</td>
           <td class="num">${pct(d.taux, 2)}</td>
           <td class="num">${argent(total)}${ass ? `<span class="sous">dont assurance ${argent(ass)}</span>` : ''}</td>
@@ -3119,32 +3352,52 @@ function echeancesPassees(dette) {
   const r = tauxMensuel(dette.taux);
   let capital = dette.capitalDepart;
   const sortie = [];
-  const recalages = (dette.recalages || []).map(x => ({ date: x.date, recalage: x.capital }));
-  E.operations.filter(o => o.detteId === dette.id).concat(recalages)
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.recalage != null) - (b.recalage != null))
+  evenementsDette(dette)
     .forEach(o => {
       if (o.recalage != null) { capital = o.recalage; return; }
+      if (o.capitalise) {
+        const i = capital * r; capital += i;
+        const deja = sortie.find(x => x.date === o.date && x.differeTotal);
+        if (deja) { deja.capitalise = arrondi(i); deja.restant = arrondi(capital); }
+        else sortie.push({ date: o.date, anticipe: 0, capital: 0, interets: 0, capitalise: arrondi(i), assurance: 0, restant: arrondi(capital), differeTotal: true });
+        return;
+      }
+      if (o.differeTotal) {
+        const deja = sortie.find(x => x.date === o.date && x.differeTotal);
+        if (deja) deja.assurance = o.assurance || 0;
+        else sortie.push({ date: o.date, anticipe: 0, capital: 0, interets: 0, capitalise: 0, assurance: o.assurance || 0, restant: Math.max(0, arrondi(capital)), differeTotal: true, avantSuivi: o.avantSuivi });
+        return;
+      }
       const assurance = o.assurance || 0, paiement = -o.montant - assurance;
       if (o.anticipe) {
         const p = Math.min(paiement, capital); capital -= p;
-        sortie.push({ date: o.date, anticipe: arrondi(p), capital: 0, interets: 0, assurance: 0, restant: Math.max(0, arrondi(capital)) });
+        sortie.push({ date: o.date, anticipe: arrondi(p), capital: 0, interets: 0, capitalise: 0, assurance: 0, restant: Math.max(0, arrondi(capital)) });
         return;
       }
       const i = capital * r, p = Math.min(Math.max(paiement - i, 0), capital);
       capital -= p;
-      sortie.push({ date: o.date, anticipe: 0, capital: arrondi(p), interets: arrondi(i), assurance: arrondi(assurance), restant: Math.max(0, arrondi(capital)) });
+      sortie.push({ date: o.date, anticipe: 0, capital: arrondi(p), interets: arrondi(i), capitalise: 0, assurance: arrondi(assurance), restant: Math.max(0, arrondi(capital)), avantSuivi: o.avantSuivi });
     });
   return sortie;
 }
 
 function echeancesFutures(dette, nb) {
   const r = tauxMensuel(dette.taux), ass = assuranceDe(dette), sortie = [];
-  let capital = etatDette(dette).capital, mois = prochainMois(dette.jour);
+  let capital = etatDette(dette).capital, mois = premierMoisAVenir(dette);
   while (capital > 0.005 && sortie.length < nb) {
-    const i = capital * r, p = Math.min(Math.max(dette.mensualite - i, 0), capital);
-    if (p <= 0.005) break;                                   // la mensualité ne couvre pas les intérêts
-    capital -= p;
-    sortie.push({ date: dateDansMois(mois, dette.jour), anticipe: 0, capital: arrondi(p), interets: arrondi(i), assurance: ass, restant: Math.max(0, arrondi(capital)), prevue: true });
+    const date = dateDansMois(mois, dette.jour), phase = phaseDiffere(dette, date), i = capital * r;
+    if (phase === 'total') {
+      capital += i;
+      sortie.push({ date, anticipe: 0, capital: 0, interets: 0, capitalise: arrondi(i), assurance: ass, restant: arrondi(capital), prevue: true, differeTotal: true });
+    } else if (phase === 'partiel') {
+      sortie.push({ date, anticipe: 0, capital: 0, interets: arrondi(i), capitalise: 0, assurance: ass, restant: arrondi(capital), prevue: true, differePartiel: true });
+    } else {
+      let p = Math.min(Math.max(dette.mensualite - i, 0), capital);
+      if (p <= 0.005) break;                                 // la mensualité ne couvre pas les intérêts
+      if (dernierReste(capital - p, dette.mensualite)) p = capital;
+      capital -= p;
+      sortie.push({ date, anticipe: 0, capital: arrondi(p), interets: arrondi(i), capitalise: 0, assurance: ass, restant: Math.max(0, arrondi(capital)), prevue: true });
+    }
     mois = decalerMois(mois, 1);
   }
   return sortie;
@@ -3160,8 +3413,8 @@ function afficherEcheancier(lignes) {
   const parMois = {};
   passees.concat(futures).forEach(e => {
     const m = moisDe(e.date); if (m < debut || m > fin) return;
-    const t = parMois[m] || (parMois[m] = { capital: 0, interets: 0, assurance: 0, anticipe: 0, prevue: !!e.prevue });
-    t.capital += e.capital; t.interets += e.interets; t.assurance += e.assurance; t.anticipe += e.anticipe;
+    const t = parMois[m] || (parMois[m] = { capital: 0, interets: 0, capitalise: 0, assurance: 0, anticipe: 0, prevue: !!e.prevue });
+    t.capital += e.capital; t.interets += e.interets; t.capitalise += e.capitalise || 0; t.assurance += e.assurance; t.anticipe += e.anticipe;
   });
   const fond = (couleur, m) => parMois[m]?.prevue ? couleur + '55' : couleur;
   const serie = (cle, nom, couleur) => ({ type: 'bar', label: nom, stack: 'e', borderRadius: 2,
@@ -3169,18 +3422,25 @@ function afficherEcheancier(lignes) {
     backgroundColor: moisListe.map(m => fond(couleur, m)) });
 
   const avant = passees.slice(-3), apres = futures.slice(0, 6);
+  const statut = e => {
+    if (e.anticipe) return 'anticipée';
+    const phase = e.differeTotal ? 'total' : phaseDiffere(d, e.date), quoi = [];
+    if (phase) quoi.push(`différé ${phase}`);
+    quoi.push(e.prevue ? 'prévue' : e.avantSuivi ? 'avant le suivi' : phase === 'total' && !e.assurance ? '' : 'payée');
+    return quoi.filter(Boolean).join(' · ');
+  };
   const ligneTable = e => `<tr class="${e.prevue ? 'discret' : ''}">
-      <td>${dateLongue(e.date)}</td><td>${e.prevue ? 'prévue' : e.anticipe ? 'anticipée' : 'payée'}</td>
+      <td>${dateLongue(e.date)}</td><td>${statut(e)}</td>
       <td class="num">${argent(e.capital + e.interets + e.assurance + e.anticipe)}</td>
-      <td class="num">${argent(e.capital + e.anticipe)}</td><td class="num">${argent(e.interets)}</td>
+      <td class="num">${argent(e.capital + e.anticipe)}</td><td class="num">${e.capitalise ? `${argent(e.capitalise)} <small class="discret">ajoutés au capital</small>` : argent(e.interets)}</td>
       <td class="num">${e.assurance ? argent(e.assurance) : '—'}</td><td class="num">${argent(e.restant)}</td></tr>`;
 
   zone.innerHTML = `<div class="tete-panneau"><div><h2>Échéancier — ${echap(d.nom)}</h2>
-      <p class="sous-titre">Les douze dernières échéances enregistrées et les douze suivantes, à mensualité constante.
+      <p class="sous-titre">Les douze dernières échéances${d.historique?.length ? ', y compris celles d\'avant le début du suivi,' : ' enregistrées'} et les douze suivantes${d.differe ? ', différé compris' : ', à mensualité constante'}.
         Couleurs pleines : payé ; pâles : à venir. Cliquez un autre crédit dans le tableau pour l'afficher.</p></div></div>
     <div class="courbe" style="height:240px"><canvas id="c-echeancier"></canvas></div>
     ${passees.length ? '' : '<p class="discret" style="margin:10px 0 0">Aucune échéance enregistrée depuis le début du suivi : seules les prochaines sont affichées.</p>'}
-    <div class="defile" style="margin-top:14px"><table>
+    <div class="defile" style="margin-top:14px"><table class="tableau-histo">
       <thead><tr><th>Échéance</th><th></th><th class="num">Montant</th><th class="num">Capital</th><th class="num">Intérêts</th><th class="num">Assurance</th><th class="num">Capital restant</th></tr></thead>
       <tbody>${avant.map(ligneTable).join('')}${apres.map(ligneTable).join('') || '<tr><td colspan="7" class="discret">Plus aucune échéance à venir : ce crédit est soldé.</td></tr>'}</tbody></table></div>`;
 
@@ -3188,6 +3448,7 @@ function afficherEcheancier(lignes) {
   graphique('c-echeancier', {
     data: { labels: moisListe.map(m => libelleMois(m, true) + ' ' + m.slice(2, 4)), datasets: [
       serie('capital', 'Capital', '#1E6A48'), serie('interets', 'Intérêts', '#B23A2E'),
+      serie('capitalise', 'Intérêts ajoutés au capital (différé)', '#D9897C'),
       serie('assurance', 'Assurance', '#C08A3E'), serie('anticipe', 'Remboursement anticipé', '#2B5680'),
     ].filter(ds => ds.data.some(v => v > 0.005)) },
     options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
@@ -4079,6 +4340,9 @@ function tiroirReserver(id) {
 function tiroirDette(id, brouillon) {
   const d = id ? E.dettes.find(x => x.id === id) : null;
   const b = brouillon || (d ? {
+    mode: 'restant', edition: true, ...differeRestant(d),
+    // Prochaine échéance : déduite du jour de prélèvement, sauf crédit pas encore commencé.
+    prochaine: d.premiere && dateEcheance(d, 0) > AUJ ? d.premiere : '',
     nom: d.nom, type: d.type, capital: String(etatDette(d).capital).replace('.', ','), taux: String(d.taux).replace('.', ','),
     echeance: d.echeance, jour: d.jour, mensualite: String(d.mensualite).replace('.', ','), manuelle: true,
     assMode: d.assurance?.mode || 'aucune', assValeur: d.assurance ? String(d.assurance.valeur).replace('.', ',') : '',
@@ -4088,10 +4352,10 @@ function tiroirDette(id, brouillon) {
     <div id="t-erreur" class="erreur cache"></div>
     <form id="d-form">
       ${champsDette(b)}
-      <p class="discret" style="margin:12px 0 14px">${d ? 'Corriger le capital restant recale le suivi à aujourd\'hui ; l\'historique des échéances passées est conservé. Un capital de 0 marque le crédit comme soldé.' : 'La première mensualité sera prélevée sur le compte courant au prochain jour indiqué.'}</p>
+      <p class="discret" style="margin:12px 0 14px">${d ? `Corriger le capital restant recale le suivi à aujourd'hui ; l'historique des échéances passées est conservé. Un capital de 0 marque le crédit comme soldé.${b.differeType !== 'aucun' ? ` Le différé ${b.differeType} se poursuit jusqu'en ${libelleMois(decalerMois(premierMoisAVenir(d), +b.differeMois - 1))}.` : ''}` : 'Les prochaines échéances seront prélevées sur le compte courant, à partir de la prochaine date à venir.'}</p>
       <div class="actions-tiroir"><button class="btn" type="submit">${d ? 'Enregistrer' : 'Ajouter le crédit'}</button>${d ? '<button class="btn btn-danger" type="button" id="d-suppr">Supprimer</button>' : ''}</div>
     </form>`);
-  brancherDette($('#d-form'), b, () => tiroirDette(id, b), !!d);
+  brancherDette($('#d-form'), b, () => tiroirDette(id, b), !!d, E.creeLe);
   $('#d-form').onsubmit = e => {
     e.preventDefault();
     const nom = String(b.nom).trim(), c = calcDette(b, !!d);
@@ -4112,9 +4376,14 @@ function tiroirDette(id, brouillon) {
           + `La garder en plus du crédit compterait la même dépense deux fois. La supprimer ?`)) {
         E.programmees = E.programmees.filter(r => r.id !== jumelle.id);
       }
-      ajouterDette({ nom, type: b.type, capital: c.capital, taux: c.taux, mensualite: c.mensualite, jour: +b.jour, echeance: b.echeance, assurance: c.assurance }, decalerJours(AUJ, 1));
+      const r = creerCredit(b, c, E.creeLe);
+      sauver(); fermerTiroir(); rafraichir();
+      const quoi = [r.lies && `${r.lies} échéance${r.lies > 1 ? 's' : ''} rattachée${r.lies > 1 ? 's' : ''}`,
+                    r.ajoutes && `${r.ajoutes} ajoutée${r.ajoutes > 1 ? 's' : ''} au compte courant`,
+                    r.historique && `${r.historique} dans l'historique du crédit`].filter(Boolean);
+      return toast(quoi.length ? `Crédit ajouté · ${quoi.join(', ')}` : 'Crédit ajouté');
     }
-    sauver(); fermerTiroir(); rafraichir(); toast(d ? 'Crédit modifié' : 'Crédit ajouté');
+    sauver(); fermerTiroir(); rafraichir(); toast('Crédit modifié');
   };
   if ($('#d-suppr')) $('#d-suppr').onclick = () => {
     if (!confirm('Supprimer ce crédit et son prélèvement programmé ? Les échéances passées restent dans l\'historique du compte courant.')) return;
