@@ -2439,7 +2439,7 @@
       <tbody>${LIGNES_IMPORT.map((l, i) => l.espece ? `<tr class="${l.inclure ? '' : 'exclue'} ${l.doublon ? 'doublon' : ''}">
         <td><input type="checkbox" data-i="${i}" data-champ="inclure" ${l.inclure ? 'checked' : ''}></td>
         <td class="titre-ligne"><strong>${echap(l.nom || '—')}</strong><small>mouvement d'espèces${l._doublon_interne ? ' · en double dans la sélection'
-          : (l.doublon ? ' · déjà enregistré' : '')}${source(l)}</small></td>
+          : (l.doublon ? ' · déjà enregistré' + (l.deja_budget ? ` par Budget et comptes (virement du ${dateFr(l.deja_budget)})` : '') : '')}${source(l)}</small></td><!-- PersoFolio : MERGE.md §4 (retouche 7) -->
         <td colspan="${operations ? 3 : 2}"><span class="etiquette ${l.sens}">${NOMS_TYPE[l.sens] || l.sens}</span></td>
         <td class="num"><input type="number" step="any" min="0" data-i="${i}" data-champ="montant_eur" value="${l.montant_eur ?? ''}"></td>
         <td><input type="date" data-i="${i}" data-champ="date" value="${l.date || ''}" max="${new Date().toISOString().slice(0, 10)}"></td>

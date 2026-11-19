@@ -1900,6 +1900,7 @@ async def import_apercu(fichier: UploadFile = File(...), user: str = Depends(uti
                 "Date absente du fichier : la date du jour est proposée."
                 if not ligne["date"] else None),
         })
+    passerelle.marquer_deja_budget(lignes, pdb.operations(user, pf))   # PersoFolio : MERGE.md §4 (retouche 7)
     return {"lignes": lignes, "colonnes_reconnues": lu["colonnes_reconnues"],
             "decisions": lu.get("decisions", {}),
             "ignorees": lu["ignorees"], "a_classer": lu.get("a_classer", []),

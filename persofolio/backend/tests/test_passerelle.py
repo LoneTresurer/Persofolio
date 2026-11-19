@@ -341,5 +341,40 @@ class VersementsSaisis(Base):
         self.assertEqual(self.inv()["verses_depuis_budget_eur"], 300.0)   # 500 versés − 200 rapatriés
 
 
+
+class ImportDejaBudget(Base):
+    """Avis du courtier importé : un virement du budget n'y est pas compté deux fois."""
+
+    def ligne(self, jour, montant, nature="DEPOT", **autres):
+        return {"date": jour, "nature": nature, "sens": nature, "montant_eur": montant,
+                "espece": True, "doublon": False, **autres}
+
+    def test_marque_a_cinq_jours_pres(self):
+        passerelle.virer(U, ETAT, 0, "vir-aaaaaa", "2026-11-03", 300.0)
+        passerelle.virer(U, ETAT, 1, "vir-bbbbbb", "2026-11-04", 300.0)
+        lignes = [self.ligne("2026-11-05", 300.0), self.ligne("2026-11-06", 300.0),
+                  self.ligne("2026-11-07", 300.0),                       # un troisième : réel
+                  self.ligne("2026-11-20", 300.0),                       # trop loin
+                  self.ligne("2026-11-05", 299.0),                       # autre montant
+                  self.ligne("2026-11-05", 300.0, "RETRAIT")]            # autre sens
+        passerelle.marquer_deja_budget(lignes, self.pdb.operations(U, self.pf))
+        self.assertEqual([l["deja_budget"] for l in lignes], ["2026-11-03", "2026-11-04", None, None, None, None])
+        self.assertEqual([l["doublon"] for l in lignes], [True, True, False, False, False, False])
+
+    def test_versement_saisi_ici_non_concerne(self):
+        self.pdb.ajouter_operation(U, self.pf, {"date": "2026-11-03", "type": "DEPOT", "montant_eur": 300.0,
+                                                "devise": "EUR", "taux_eur": 1.0})
+        lignes = [self.ligne("2026-11-04", 300.0)]
+        passerelle.marquer_deja_budget(lignes, self.pdb.operations(U, self.pf))
+        self.assertFalse(lignes[0]["doublon"])
+
+    def test_titres_et_doublons_exacts_intacts(self):
+        passerelle.virer(U, ETAT, 0, "vir-aaaaaa", "2026-11-03", 300.0)
+        lignes = [{"date": "2026-11-03", "nature": "ACHAT", "espece": False, "doublon": False},
+                  self.ligne("2026-11-03", 300.0, doublon=True)]
+        passerelle.marquer_deja_budget(lignes, self.pdb.operations(U, self.pf))
+        self.assertEqual([l["deja_budget"] for l in lignes], [None, None])
+
+
 if __name__ == "__main__":
     unittest.main()

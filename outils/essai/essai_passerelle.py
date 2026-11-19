@@ -221,6 +221,25 @@ try:
         verifier("restes de moins d'un centime : seul l'achat de 500 € reste à expliquer",
                  "500,00" in pg.inner_text(".a-expliquer .ligne") and pg.evaluate("INV.a_expliquer_detail.length") == 1,
                  pg.locator(".a-expliquer").all_inner_texts())
+
+        print("12. Versement déjà importé, puis le même virement saisi dans le budget")
+        dep2 = pdb.ajouter_operation(U, PF, {"date": "2026-10-28", "type": "DEPOT", "montant_eur": 420.0,
+                                             "devise": "EUR", "taux_eur": 1.0, "origine": "import_ordres"})
+        charger(); c0, nb_depots = euros(pg.inner_text("#r-courant")), len(depots())
+        pg.click("nav.onglets button[data-onglet=comptes]"); pg.wait_for_timeout(500)
+        pg.click("[data-virer-ici]"); pg.wait_for_timeout(300)
+        pg.fill("#t-montant", "420"); pg.fill("#t-date", "2026-10-26"); pg.wait_for_timeout(200)
+        verifier("le formulaire propose de rattacher", pg.locator("#t-rattacher:not(.cache)").count() == 1)
+        pg.fill("#t-montant", "421"); pg.wait_for_timeout(150)
+        verifier("autre montant : plus de proposition", pg.locator("#t-rattacher.cache").count() == 1)
+        pg.fill("#t-montant", "420"); pg.wait_for_timeout(150)
+        pg.click("#t-rattacher-btn"); pg.wait_for_timeout(1500)
+        verifier("rattaché : réponse « compte courant »", (dep2, "budget") in reponses(), reponses())
+        verifier("aucun versement de plus dans le compte-titres", len(depots()) == nb_depots, depots())
+        e, v = bdb.lire(U)
+        l = [o for o in e["operations"] if o.get("virementId") == f"versement-{dep2}"]
+        verifier("la ligne du courant porte la date du virement", len(l) == 1 and l[0]["date"] == "2026-10-26" and l[0]["montant"] == -420, l)
+        verifier("le courant baisse de 420", abs(euros(pg.inner_text("#r-courant")) - (c0 - 420)) < 0.01, pg.inner_text("#r-courant"))
         b.close()
 finally:
     srv.terminate()

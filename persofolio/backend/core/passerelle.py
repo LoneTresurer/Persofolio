@@ -439,6 +439,38 @@ def annuler_reponse(username: str, etat: dict, version_attendue: int, operation_
         conn.close()
 
 
+def marquer_deja_budget(lignes: List[dict], operations: List[dict]) -> None:
+    """Aperçu d'un import du compte-titres : marque les mouvements déjà écrits par le budget.
+
+    Un virement du budget est déjà dans le compte-titres ; il revient dans l'avis
+    du courtier, souvent 1 à 3 jours après la date du virement, et le repère exact
+    de l'aperçu ne le voit pas. L'importer compterait l'argent deux fois. Même
+    sens, même montant, ±5 jours, chaque virement servant une fois : la ligne
+    devient doublon (donc décochée par défaut) et `deja_budget` porte la date du
+    virement. L'utilisateur peut la recocher : ce serait alors un versement de
+    plus, dont le budget demandera l'origine.
+    """
+    budget = [o for o in operations if o["type"] in ("DEPOT", "RETRAIT")
+              and (o.get("commentaire") or "").startswith(PREFIXE)]
+    pris = set()
+    for ligne in lignes:
+        ligne.setdefault("deja_budget", None)
+        nature = ligne.get("nature") or ligne.get("sens")
+        if not ligne.get("espece") or ligne.get("doublon") or nature not in ("DEPOT", "RETRAIT"):
+            continue
+        try:
+            jour = _date.fromisoformat(ligne["date"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        for o in budget:
+            if (o["id"] not in pris and o["type"] == nature
+                    and abs(float(o["montant_eur"]) - float(ligne.get("montant_eur") or 0)) < 0.005
+                    and abs((_date.fromisoformat(o["date"]) - jour).days) <= 5):
+                pris.add(o["id"])
+                ligne["doublon"], ligne["deja_budget"] = True, o["date"]
+                break
+
+
 # ── Annuler un virement ─────────────────────────────────────────────────────
 def annuler_virement(username: str, etat: dict, version_attendue: int,
                      virement_id: str) -> dict:

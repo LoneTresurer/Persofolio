@@ -168,6 +168,10 @@ routes_pf = (BACK / "routes_portefeuille.py").read_text(encoding="utf-8")
 verifier("versements du budget protégés (modifier et annuler)",
          routes_pf.count("passerelle.lien_budget(") >= 2,
          "remettre la retouche 6 de MERGE.md §4 dans routes_portefeuille.py")
+# Avis du courtier (v57) : un virement du budget, déjà écrit, n'est pas importé deux fois.
+verifier("import : virements du budget marqués doublons (retouche 7)",
+         "passerelle.marquer_deja_budget(" in routes_pf and "deja_budget" in pf,
+         "remettre la retouche 7 de MERGE.md §4 (routes_portefeuille.py et portefeuille.html)")
 
 # ── Scripts Windows ─────────────────────────────────────────────────────────
 # Un .bat enregistré en fins de ligne Unix, ou contenant des accents, n'est pas

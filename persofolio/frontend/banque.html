@@ -1231,7 +1231,7 @@ function expliquerApports(origine) {
    (débit 0 à 10 jours avant le versement, crédit 0 à 10 jours après un retrait),
    sinon une ligne ajoutée. Rien n'est écrit dans le compte-titres : le mouvement
    y est déjà. Le serveur refuse une réponse à un écran périmé. */
-function rattacherAuCourant(v, bilan) {
+function rattacherAuCourant(v, bilan, libelle = null) {
   const vid = `versement-${v.operation_id}`, depot = v.type === 'DEPOT', m = v.montant_eur;
   if (E.operations.some(o => o.virementId === vid)) return;
   if (v.date < E.creeLe) { bilan.anterieurs++; return; }
@@ -1245,17 +1245,18 @@ function rattacherAuCourant(v, bilan) {
     bilan.reclasses++; return;
   }
   E.operations.push({ id: uid(), date: v.date, compte: 'courant', montant: depot ? -m : m,
-    libelle: depot ? 'Versement au compte-titres' : 'Retrait du compte-titres', categorie: 'virement', virementId: vid });
+    libelle: libelle || (depot ? 'Versement au compte-titres' : 'Retrait du compte-titres'), categorie: 'virement', virementId: vid });
   bilan.retires++;
 }
 
-function expliquerVersements(reponses) {          // [{ v, origine }]
+function expliquerVersements(reponses) {          // [{ v, origine, date?, libelle? }]
   return enFile(async () => {
     const ouverts = new Set((INV?.versements_a_expliquer || []).map(v => v.operation_id));
     reponses = reponses.filter(r => ouverts.has(r.v.operation_id));
     if (!reponses.length) return { rien: true };
     const avant = copieEtat(), bilan = { retires: 0, reclasses: 0, anterieurs: 0 };
-    reponses.filter(r => r.origine === 'budget').forEach(r => rattacherAuCourant(r.v, bilan));
+    reponses.filter(r => r.origine === 'budget')
+      .forEach(r => rattacherAuCourant(r.date ? { ...r.v, date: r.date } : r.v, bilan, r.libelle));
     const r = await ecrirePasserelle('/banque/versements', { reponses: reponses.map(({ v, origine }) =>
       ({ operation_id: v.operation_id, montant_eur: v.montant_eur, origine })) }, avant);
     return { ...r, ...bilan };
@@ -4341,11 +4342,38 @@ function tiroirOperation({ id, type, compte } = {}) {
         </div>
         <div class="champ"><label for="t-libelle">Libellé</label><input id="t-libelle" maxlength="80" value="${echap(op?.libelle || '')}" placeholder="${t === 'REVENU' ? 'Prime, remboursement…' : t === 'VIREMENT' ? 'Facultatif' : 'Commerçant ou description'}" ${op?.detteId ? 'disabled' : ''}></div>
         ${t === 'VIREMENT' ? '' : `<div class="champ"><label for="t-cat">Catégorie</label><select id="t-cat" ${op?.detteId ? 'disabled' : ''}>${(t === 'REVENU' ? CATS_ENTREE : CATS_SORTIE.filter(c => c !== 'credit' || op?.categorie === 'credit')).map(c => `<option value="${c}" ${c === (op?.categorie || (t === 'REVENU' ? 'complement' : 'courses')) ? 'selected' : ''}>${CATEGORIES[c].nom}</option>`).join('')}</select></div>`}
+        ${t === 'VIREMENT' && !op ? '<div id="t-rattacher" class="note cache" style="margin:0 0 14px"></div>' : ''}
         <div class="actions-tiroir"><button class="btn" type="submit">${op ? 'Enregistrer' : t === 'VIREMENT' ? 'Effectuer le virement' : t === 'REVENU' ? 'Ajouter le revenu' : 'Ajouter la dépense'}</button>
           ${op ? '<button class="btn btn-danger" type="button" id="t-suppr">Supprimer</button>' : ''}</div>
       </form>`);
     $('#t-types')?.querySelectorAll('button').forEach(b => b.onclick = () => { t = b.dataset.t; rendre(); });
-    if ($('#t-de')) $('#t-de').onchange = e => { $('#t-vers').value = e.target.value === 'courant' ? 'invest' : 'courant'; };
+    if ($('#t-de')) $('#t-de').onchange = e => { $('#t-vers').value = e.target.value === 'courant' ? 'invest' : 'courant'; chercherDejaImporte(); };
+    // Le versement est peut-être déjà dans le compte-titres, importé d'un avis du
+    // courtier sans origine connue : le rattacher plutôt qu'en écrire un second.
+    const chercherDejaImporte = () => {
+      const zone = $('#t-rattacher'); if (!zone) return;
+      const a = $('#t-de').value, b = $('#t-vers').value, montant = arrondi(lireNombre($('#t-montant').value)), date = $('#t-date').value;
+      const sens = versLePortefeuille(a, b) ? (a === 'courant' ? 'DEPOT' : 'RETRAIT') : null;
+      const v = sens && montant > 0 && date && (INV?.versements_a_expliquer || []).find(x => x.type === sens
+        && Math.abs(x.montant_eur - montant) < 0.005 && Math.abs(ecartJours(x.date, date)) <= 5);
+      zone.classList.toggle('cache', !v);
+      if (!v) return;
+      zone.innerHTML = `Un ${sens === 'DEPOT' ? 'versement' : 'retrait'} de ${argent(v.montant_eur)} du ${dateLongue(v.date)} est déjà dans le
+        compte-titres (${SAISIES[v.saisie] || 'saisi là-bas'}), sans origine connue. S'il s'agit de ce virement, rattachez-le :
+        sinon, « Effectuer le virement » en enregistrera un second.
+        <div style="margin-top:8px"><button class="btn" type="button" id="t-rattacher-btn">Le rattacher à ce virement</button></div>`;
+      $('#t-rattacher-btn').onclick = async () => {
+        $('#t-rattacher-btn').disabled = true;
+        try {
+          const r = await expliquerVersements([{ v, origine: 'budget', date: $('#t-date').value, libelle: $('#t-libelle').value.trim() || null }]);
+          if (r.rien) await chargerInvestissement();
+          fermerTiroir(); rafraichir();
+          toast(r.rien ? 'Ce versement avait déjà reçu une réponse.' : 'Virement rattaché au versement déjà présent dans le compte-titres');
+        } catch (e) { await chargerInvestissement().catch(() => {}); erreurTiroir(e.message); }
+      };
+    };
+    ['#t-montant', '#t-date', '#t-vers'].forEach(sel => { const el = $(sel); if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', chercherDejaImporte); });
+    chercherDejaImporte();
     $('#t-form').onsubmit = e => {
       e.preventDefault();
       const montant = arrondi(lireNombre($('#t-montant').value)), date = $('#t-date').value, libelle = $('#t-libelle').value.trim();

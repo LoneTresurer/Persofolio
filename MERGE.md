@@ -138,7 +138,7 @@ en mémoire est toujours valable.
    Sinon `verifier_fusion.py` le signale après chaque fusion (« rien de chargé
    depuis un CDN »), et il suffit de les remettre.
 
-### `backend/routes_portefeuille.py` — une retouche
+### `backend/routes_portefeuille.py` et `frontend/portefeuille.html` — deux retouches
 
 6. **Versements écrits par le budget protégés** (10 novembre). La livraison du
    10 novembre rend de nouveau modifiables et annulables, dans l'onglet
@@ -154,7 +154,23 @@ en mémoire est toujours valable.
    ```
    Le message renvoie l'utilisateur vers Budget et comptes → Comptes, qui
    annule des deux côtés. Les versements saisis dans le compte-titres même
-   restent libres. `verifier_fusion.py` le contrôle.
+   restent libres. `verifier_fusion.py` le contrôle. Depuis le 19 novembre,
+   `lien_budget` refuse aussi un versement saisi ici puis déclaré « de mon
+   compte courant » depuis le budget (table `banque_origines`).
+
+7. **Avis du courtier : un virement du budget n'est pas importé deux fois**
+   (19 novembre). La v57 lit les versements dans les avis PDF. Un virement fait
+   depuis le budget y est déjà écrit, et revient dans l'avis 1 à 3 jours plus
+   tard : le repère exact de l'aperçu ne le voit pas. Une ligne dans
+   `import_apercu`, juste avant le `return` :
+   ```python
+   passerelle.marquer_deja_budget(lignes, pdb.operations(user, pf))   # PersoFolio : MERGE.md §4 (retouche 7)
+   ```
+   (même sens, même montant, ±5 jours : `doublon` vrai, donc décoché ;
+   `deja_budget` = date du virement). Et dans `portefeuille.html`, sur la ligne
+   « mouvement d'espèces » de l'aperçu, le motif affiché après « déjà
+   enregistré » : ` par Budget et comptes (virement du …)`, marqué du même
+   commentaire.
 
 ---
 
@@ -400,6 +416,25 @@ construit par rapport à aujourd'hui : chaque mois écoulé fait passer des
 date du navigateur (Playwright : `page.clock.install`) et vérifier qu'elles
 donnent le même chiffre — c'est ainsi que la livraison du 10 novembre a été
 contrôlée, à quatre dates.
+
+## 6 quinquies. La v57, du 19 novembre — sans la coupure
+
+Partie du dépôt du 10 novembre (méthode du §6 quater). Leur `A_LIRE.txt`
+annonçait la passerelle coupée : le budget n'écrivait plus rien dans le
+compte-titres et ne pouvait plus le lire. **C'était un malentendu**, confirmé
+par l'équipe : la passerelle reste telle quelle. Pas repris : leur
+`passerelle.py`, leur garde dans `routes_banque.py`, `test_v56_lien_coupe.py`,
+le retrait de la retouche 6 et de la phrase « épargne disponible » dans le
+score de régularité, leur `essai_bureau.py` (plus ancien que le nôtre).
+
+Repris : le type PRÉLÈVEMENT (charge, pas retrait), les mouvements d'espèces
+lus dans les avis PDF, le bouton d'import dans Mouvements, les marqueurs sur la
+courbe de chaque ligne, la courbe de valorisation unique, l'onglet Actualités
+retiré (et `httpx` avec lui).
+
+Conséquence côté budget : un versement saisi ou importé dans le compte-titres
+pose désormais la question de son origine (REPRENDRE.md §12), et la retouche 7
+empêche qu'un virement du budget soit importé une seconde fois.
 
 ## 7. À vérifier au premier démarrage réel
 
