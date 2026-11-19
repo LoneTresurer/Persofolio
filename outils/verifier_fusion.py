@@ -128,7 +128,7 @@ verifier("aucun import vers un module archivé ou absent", not _casses,
 
 # ── Dépendances ─────────────────────────────────────────────────────────────
 req = lire(BACK / "requirements.txt")
-for paquet in ("fastapi", "uvicorn", "pandas", "yfinance", "httpx"):
+for paquet in ("fastapi", "uvicorn", "pandas", "yfinance"):   # httpx retiré avec l'onglet Actualités (v57, 19 novembre)
     verifier(f"requirements : {paquet}", re.search(rf"^{paquet}", req, re.M) is not None,
              "dépendance nécessaire aux deux modules")
 # pdfplumber sert désormais à la lecture des relevés bancaires : il n'est plus

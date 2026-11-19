@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 EPS = 1e-9
-TYPES_OPERATION = ("DEPOT", "RETRAIT", "ACHAT", "VENTE", "DIVIDENDE", "SPLIT")
+TYPES_OPERATION = ("DEPOT", "RETRAIT", "PRELEVEMENT", "ACHAT", "VENTE", "DIVIDENDE", "SPLIT")
 TYPES_ORDRE     = ("ACHAT", "VENTE")                      # onglet « Ordres »
 # Onglet « Mouvements ». Les versements et retraits d'espèces restent traités par le
 # calcul — une base existante peut en contenir — mais ne sont plus saisissables ni
@@ -33,7 +33,9 @@ TYPES_ORDRE     = ("ACHAT", "VENTE")                      # onglet « Ordres »
 # Ce que l'onglet Mouvements affiche, par opposition aux ordres d'achat et de vente.
 # Les versements et les retraits y figurent de nouveau : à partir du moment où le
 # solde espèces est suivi, il faut pouvoir voir — et corriger — ce qui l'alimente.
-TYPES_MOUVEMENT = ("DEPOT", "RETRAIT", "DIVIDENDE", "SPLIT")
+TYPES_MOUVEMENT = ("DEPOT", "RETRAIT", "PRELEVEMENT", "DIVIDENDE", "SPLIT")
+# Les opérations qui ne portent qu'un montant, sans titre ni quantité.
+TYPES_ESPECES = ("DEPOT", "RETRAIT", "PRELEVEMENT", "DIVIDENDE")
 
 
 class OperationInvalide(ValueError):
@@ -81,6 +83,12 @@ class Position:
 class EtatCompte:
     cash_eur: float = 0.0
     depots_nets_eur: float = 0.0        # dépôts − retraits réellement saisis
+    # Prélèvements subis : CSG, CRDS, taxe sur les transactions, droits de garde.
+    # Ils quittent le compte comme un retrait, mais ils ne vous reviennent pas. Les
+    # confondre avec un retrait reviendrait à diminuer vos versements nets, donc à
+    # gonfler votre gain d'autant. Ils sont donc comptés à part, et retranchés du
+    # résultat au même titre que les frais de courtage.
+    prelevements_eur: float = 0.0
     # Un achat qui dépasse les espèces disponibles suppose que l'argent est entré sur le
     # compte d'une façon ou d'une autre. Faute de dépôt saisi, on inscrit le complément
     # ici : c'est le capital venu de l'extérieur. Il sert de dénominateur à la
@@ -163,6 +171,14 @@ def _appliquer(etat: EtatCompte, op: dict) -> None:
         m = _montant_obligatoire(op, date)
         etat.cash_eur -= m
         etat.depots_nets_eur -= m
+        enrichie["flux_cash_eur"] = -m
+
+    elif t == "PRELEVEMENT":
+        # L'argent sort du compte sans revenir à son propriétaire : les versements
+        # nets ne bougent pas, et la charge pèse sur le résultat.
+        m = _montant_obligatoire(op, date)
+        etat.cash_eur -= m
+        etat.prelevements_eur += m
         enrichie["flux_cash_eur"] = -m
 
     elif t == "ACHAT":

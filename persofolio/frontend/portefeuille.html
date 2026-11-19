@@ -218,6 +218,8 @@
   .etiquette.DEPOT, .etiquette.DIVIDENDE { background: #E6EEF7; color: #2B5680; }
   .etiquette.SPLIT { background: #F0ECF7; color: #5B4B86; }
   .etiquette.RETRAIT { background: #F1ECE4; color: #7A5A2E; }
+  /* Un prélèvement est une charge : il se distingue d'un retrait, qui vous revient. */
+  .etiquette.PRELEVEMENT { background: #F6E9E7; color: #8A3A2E; }
 
   .vide { text-align: center; padding: 36px 16px; color: var(--encre-2); }
   .vide p { margin: 0 0 14px; }
@@ -369,7 +371,7 @@
 <section id="ecran-attente">
   <div class="boite-connexion">
     <h1>PersoFolio</h1>
-    <p>Suivi de votre compte-titres : positions, plus-values, risque et actualités.</p>
+    <p>Suivi de votre compte-titres : positions, plus-values et risque.</p>
     <p class="discret" id="attente-message">Ouverture de votre portefeuille…</p>
     <div id="auth-erreur" class="erreur cache"></div>
   </div>
@@ -428,7 +430,6 @@
       <button role="tab" data-onglet="repartition">Répartition</button>
       <button role="tab" data-onglet="performance">Performance</button>
       <button role="tab" data-onglet="risque">Risque</button>
-      <button role="tab" data-onglet="actualites">Actualités</button>
       <button role="tab" data-onglet="informations">Informations</button>
     </nav>
 
@@ -483,8 +484,17 @@
     <!-- Mouvements -->
     <div data-vue="mouvements" class="cache">
       <div class="panneau">
-        <h2>Dividendes et opérations sur titres</h2>
-        <p class="sous-titre">Dividendes encaissés et divisions d'actions, détectés automatiquement sur Yahoo Finance.</p>
+        <div class="tete-panneau">
+          <div>
+            <h2>Versements, dividendes et opérations sur titres</h2>
+            <p class="sous-titre">Vos versements et retraits d'espèces, les dividendes encaissés et les divisions d'actions.</p>
+          </div>
+          <!-- Troisième accès à l'import : les relevés contiennent aussi des
+               versements et des virements, c'est donc ici qu'on pense à les charger. -->
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="mini-btn" id="btn-import-mouvements" title="Importer un ou plusieurs relevés. Sélection multiple possible.">Importer des relevés</button>
+          </div>
+        </div>
         <div class="defile" id="table-mouvements"></div>
       </div>
     </div>
@@ -549,15 +559,6 @@
     <!-- Risque -->
     <div data-vue="risque" class="cache">
       <div id="bloc-risque"></div>
-    </div>
-
-    <!-- Actualités -->
-    <div data-vue="actualites" class="cache">
-      <div class="panneau">
-        <h2>Actualités de vos titres</h2>
-        <p class="sous-titre">Flux Yahoo Finance et Google News, avec une lecture automatique du ton de chaque article.</p>
-        <div id="liste-actus"></div>
-      </div>
     </div>
 
     <!-- Informations : les fiches techniques, écrites une seule fois et appelées
@@ -625,6 +626,7 @@
     <button data-type="DIVIDENDE">Dividende</button>
     <button data-type="DEPOT">Versement</button>
     <button data-type="RETRAIT">Retrait</button>
+    <button data-type="PRELEVEMENT">Prélèvement</button>
   </div>
   <div id="ordre-erreur" class="erreur cache"></div>
   <form id="form-ordre">
@@ -637,7 +639,7 @@
       <div class="champ"><label for="o-qte">Quantité</label><input id="o-qte" type="number" min="0" step="any"></div>
       <div class="champ"><label for="o-prix">Prix unitaire <span id="o-devise-lbl"></span></label><input id="o-prix" type="number" min="0" step="any"></div>
     </div>
-    <div class="champ" data-pour="DIVIDENDE DEPOT RETRAIT">
+    <div class="champ" data-pour="DIVIDENDE DEPOT RETRAIT PRELEVEMENT">
       <label for="o-montant">Montant (€)</label><input id="o-montant" type="number" min="0" step="0.01">
       <p class="discret" id="o-aide-montant" style="margin:6px 0 0"></p>
     </div>
@@ -656,8 +658,8 @@
      L'exécutable Windows prend le premier port libre, qui n'est pas toujours 8000.
      Page ouverte en double-clic (file://) : on tente le port habituel. */
   const API = location.protocol.startsWith('http') ? location.origin : 'http://localhost:8000';
-  const LIBELLES = { ACHAT: "Valider l'achat", VENTE: 'Valider la vente', DEPOT: 'Enregistrer le versement', RETRAIT: 'Enregistrer le retrait', DIVIDENDE: 'Enregistrer le dividende' };
-  const NOMS_TYPE = { ACHAT: 'Achat', VENTE: 'Vente', DEPOT: 'Versement', RETRAIT: 'Retrait', DIVIDENDE: 'Dividende', SPLIT: "Division d'actions" };
+  const LIBELLES = { ACHAT: "Valider l'achat", VENTE: 'Valider la vente', DEPOT: 'Enregistrer le versement', RETRAIT: 'Enregistrer le retrait', PRELEVEMENT: 'Enregistrer le prélèvement', DIVIDENDE: 'Enregistrer le dividende' };
+  const NOMS_TYPE = { ACHAT: 'Achat', VENTE: 'Vente', DEPOT: 'Versement', RETRAIT: 'Retrait', PRELEVEMENT: 'Prélèvement', DIVIDENDE: 'Dividende', SPLIT: "Division d'actions" };
   const PALETTE = ['#1E6A48', '#4F9A74', '#9CC5A9', '#2B5680', '#7FA7CB', '#C08A3E', '#8E6BA8', '#B23A2E', '#6B7A70', '#D5C9A1'];
   const $ = s => document.querySelector(s);
   // Couleur courante du thème, lue sur la feuille de style : les graphiques suivent
@@ -942,7 +944,7 @@
     if (charge[nom]) return;
     charge[nom] = true;
     ({ ordres: chargerOperations, mouvements: chargerOperations, repartition: afficherRepartition,
-       performance: chargerPerformance, risque: chargerRisque, actualites: chargerActus,
+       performance: chargerPerformance, risque: chargerRisque,
        informations: afficherInfos }[nom] || (() => {}))();
   }
 
@@ -1350,67 +1352,26 @@
     const axeX = { ticks: { maxTicksLimit: 8, color: teinte('--encre-2') }, grid: { display: false } };
     const eur = v => argent(v).replace(/,00/, '');
 
-    // Ce que valent les lignes, ce qu'elles ont coûté, et — dès qu'il y a de la
-    // trésorerie — ce que vaut le compte entier. L'écart vertical entre les deux
-    // premières courbes est la plus-value latente ; l'écart entre la valeur du compte
-    // et la valeur des titres est l'argent versé qui n'a pas encore été investi.
-    //
-    // La courbe du compte n'apparaît que si des espèces existent quelque part sur la
-    // période : sans elles, elle se superposerait exactement à celle des titres et
-    // n'ajouterait qu'une ligne dans la légende.
-    const avecEspeces = pts.some(p => (p.cash_eur || 0) > 0.005);
-
-    // Marqueurs d'opérations, posés sur la courbe des titres à la date de l'ordre.
-    // Le tableau est plein de trous : une valeur aux dates d'opération, null partout
-    // ailleurs, ce qui donne des points isolés sans ligne qui les relie.
-    const MARQ = {};
-    (PERF.marqueurs || []).forEach(m => { MARQ[m.indice_point] = m; });
-    const COULEUR_SENS = { ACHAT: '#1E6A48', VENTE: '#B23A2E', MIXTE: '#C08A3E' };
-    const pointsOps = pts.map((p, i) => MARQ[i] ? p.titres_eur : null);
-    const couleurs = pts.map((p, i) => MARQ[i] ? COULEUR_SENS[MARQ[i].sens] : 'transparent');
-
-    const jeuxValo = [
-      { label: 'Valeur des titres', data: pts.map(p => p.titres_eur), borderColor: '#1E6A48', backgroundColor: 'rgba(30,106,72,.08)', fill: true, pointRadius: 0, borderWidth: 2, tension: .15 },
-      { label: 'Montant investi', data: pts.map(p => p.cout_titres_eur), borderColor: '#6B7A70', borderDash: [5, 4], fill: false, pointRadius: 0, borderWidth: 1.6, tension: .15 },
-    ];
-    if (avecEspeces) jeuxValo.unshift(
-      { label: 'Valeur du compte', data: pts.map(p => p.valorisation_eur), borderColor: '#2B5680', backgroundColor: 'rgba(43,86,128,.06)', fill: true, pointRadius: 0, borderWidth: 1.8, tension: .15 });
-    if (Object.keys(MARQ).length) jeuxValo.push(
-      // La couleur de chaque point dépend du sens ; celle du jeu entier ne sert qu'à
-      // la pastille de la légende, qui prendrait sinon la première valeur du tableau
-      // — « transparent » — et resterait invisible.
-      { label: 'Achats et ventes', data: pointsOps, showLine: false, pointRadius: 5,
-        pointHoverRadius: 7, pointBackgroundColor: couleurs, pointBorderColor: '#fff',
-        pointBorderWidth: 1.5, backgroundColor: '#6B7A70', borderColor: '#6B7A70',
-        order: -1 });
-
+    // Une seule courbe : ce que valent les titres détenus, jour après jour. Les
+    // espèces, le montant investi et les marqueurs d'opération encombraient la
+    // lecture sans rien apprendre de plus — le prix de revient se lit dans l'en-tête,
+    // et les points d'entrée sur la courbe de chaque ligne, dans l'onglet Positions.
     creerGraphique('c-valo', {
       type: 'line',
-      data: { labels, datasets: jeuxValo },
+      data: { labels, datasets: [
+        { label: 'Valeur des titres', data: pts.map(p => p.titres_eur), borderColor: '#1E6A48',
+          backgroundColor: 'rgba(30,106,72,.08)', fill: true, pointRadius: 0,
+          borderWidth: 2, tension: .15 },
+      ] },
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { display: true, position: 'bottom',
-            labels: { boxWidth: 12, usePointStyle: true, color: teinte('--encre-2') } },
+        plugins: { legend: { display: false },
           tooltip: { callbacks: {
-            // Le jeu des marqueurs n'a pas de valeur propre à annoncer : son contenu
-            // est détaillé plus bas, opération par opération.
-            label: c => c.dataset.label === 'Achats et ventes' ? null
-                      : ` ${c.dataset.label} : ${argent(c.raw)}`,
+            label: c => ` ${argent(c.raw)}`,
             afterBody: items => {
-              const i = items[0].dataIndex, p = pts[i];
-              const lignes = [];
+              const p = pts[items[0].dataIndex];
               const ecart = (p.titres_eur || 0) - (p.cout_titres_eur || 0);
-              lignes.push(` Plus-value latente : ${argent(ecart, 'EUR', true)}`
-                        + (p.cout_titres_eur > 0.005 ? ` (${pct(p.pv_titres_pct)})` : ''));
-              if (avecEspeces) lignes.push(` Espèces : ${argent(p.cash_eur || 0)}`);
-              const m = MARQ[i];
-              if (m) {
-                lignes.push('');
-                m.operations.forEach(o => lignes.push(
-                  ` ${o.type === 'ACHAT' ? '▲ Achat' : '▼ Vente'} ${o.ticker}`
-                  + ` — ${nombre(o.quantite)} à ${argent(o.prix, o.devise)}`
-                  + (o.frais_eur ? ` · ${argent(o.frais_eur)} de frais` : '')));
-              }
-              return lignes;
+              return [` Plus-value latente : ${argent(ecart, 'EUR', true)}`
+                    + (p.cout_titres_eur > 0.005 ? ` (${pct(p.pv_titres_pct)})` : '')];
             } } } },
         scales: { x: axeX, y: { ticks: { callback: eur, color: teinte('--encre-2') }, grid: { color: teinte('--filet') } } } },
     });
@@ -1555,21 +1516,6 @@
           } catch (ex) { champ.disabled = false; champ.value = avant.toFixed(2); alert(ex.message); }
         };
       }
-    } catch (ex) { zone.innerHTML = `<div class="erreur">${echap(ex.message)}</div>`; }
-  }
-
-  /* ── Actualités ──────────────────────────────────────── */
-  async function chargerActus() {
-    const zone = $('#liste-actus');
-    zone.innerHTML = '<div class="vide">Chargement des flux…</div>';
-    try {
-      const { articles } = await api('/compte/actualites');
-      const lib = { 'OPPORTUNITÉ': 'Plutôt positif', POSITIF: 'Plutôt positif', NEUTRE: 'Neutre', RISQUE: 'Plutôt négatif', VIGILANCE: 'Vigilance' };
-      zone.innerHTML = articles.length ? articles.map(a => `<div class="article">
-          <a href="${echap(a.lien)}" target="_blank" rel="noopener">${echap(a.titre)}</a>
-          <span class="sentiment ${a.sentiment}">${lib[a.sentiment] || ''}</span>
-          <div class="meta">${echap(a.nom)} (${echap(a.ticker)})${a.date ? ' · ' + new Date(a.date).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : ''}</div>
-        </div>`).join('') : '<div class="vide">Aucune actualité trouvée pour vos titres.</div>';
     } catch (ex) { zone.innerHTML = `<div class="erreur">${echap(ex.message)}</div>`; }
   }
 
@@ -2125,14 +2071,40 @@
       const h = await api(`/titres/${encodeURIComponent(ticker)}/historique?periode=${periodeTitre}`);
       info.innerHTML = `${echap(h.nom)} · <span class="${classe(h.perf_pct)}">${pct(h.perf_pct)}</span> sur la période · ${h.points.length} cotations ${h.granularite === 'heure' ? 'horaires' : 'journalières'}`;
       const hausse = h.perf_pct >= 0;
+
+      // Vos entrées et sorties sur ce titre, posées sur sa courbe. Le tableau est
+      // plein de trous : une valeur aux dates d'opération, null partout ailleurs,
+      // ce qui donne des points isolés sans ligne pour les relier.
+      const MARQ = {};
+      (h.marqueurs || []).forEach(m => { MARQ[m.indice_point] = m; });
+      const COULEUR_SENS = { ACHAT: '#1E6A48', VENTE: '#B23A2E', MIXTE: '#C08A3E' };
+      const jeux = [{ label: h.ticker, data: h.points.map(p => p.prix),
+        borderColor: hausse ? '#1E6A48' : '#B23A2E',
+        backgroundColor: hausse ? 'rgba(30,106,72,.08)' : 'rgba(178,58,46,.08)', fill: true,
+        pointRadius: 0, borderWidth: 2, tension: .12 }];
+      if (Object.keys(MARQ).length) jeux.push({
+        label: 'Vos opérations',
+        data: h.points.map((p, i) => MARQ[i] ? p.prix : null),
+        showLine: false, pointRadius: 6, pointHoverRadius: 8,
+        pointBackgroundColor: h.points.map((p, i) => MARQ[i] ? COULEUR_SENS[MARQ[i].sens] : 'transparent'),
+        pointBorderColor: '#fff', pointBorderWidth: 2, order: -1 });
+
       creerGraphique('c-titre', {
         type: 'line',
         data: { labels: h.points.map(p => h.granularite === 'heure' ? p.t.slice(5, 16).replace('-', '/') : dateFr(p.t)),
-          datasets: [{ label: h.ticker, data: h.points.map(p => p.prix), borderColor: hausse ? '#1E6A48' : '#B23A2E',
-            backgroundColor: hausse ? 'rgba(30,106,72,.08)' : 'rgba(178,58,46,.08)', fill: true,
-            pointRadius: 0, borderWidth: 2, tension: .12 }] },
+          datasets: jeux },
         options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${argent(c.raw, h.devise)}` } } },
+          plugins: { legend: { display: false },
+            tooltip: { callbacks: {
+              label: c => c.dataset.label === 'Vos opérations' ? null : ` ${argent(c.raw, h.devise)}`,
+              afterBody: items => {
+                const m = MARQ[items[0].dataIndex];
+                if (!m) return [];
+                return [''].concat(m.operations.map(o =>
+                  ` ${o.type === 'ACHAT' ? '▲ Acheté' : '▼ Vendu'} ${nombre(o.quantite)}`
+                  + ` à ${argent(o.prix, h.devise)} le ${dateFr(o.date)}`
+                  + (o.frais_eur ? ` · ${argent(o.frais_eur)} de frais` : '')));
+              } } } },
           scales: { x: { ticks: { maxTicksLimit: 8, color: teinte('--encre-2') }, grid: { display: false } },
                     y: { ticks: { callback: v => argent(v, h.devise), color: teinte('--encre-2') }, grid: { color: teinte('--filet') } } } },
       });
@@ -2150,7 +2122,8 @@
     const aide = $('#o-aide-montant');
     if (aide) aide.textContent =
       t === 'DEPOT' ? "Argent viré sur le compte-titres. Il rejoint vos espèces disponibles."
-      : t === 'RETRAIT' ? "Argent retiré du compte-titres vers votre banque."
+      : t === 'RETRAIT' ? "Argent retiré du compte-titres vers votre banque. Il vous revient, il ne pèse pas sur votre résultat."
+      : t === 'PRELEVEMENT' ? "Charge subie : contribution sociale, taxe, droits de garde. Elle quitte le compte sans vous revenir et pèse donc sur votre gain."
       : t === 'DIVIDENDE' ? "Dividende encaissé. Il rejoint vos espèces disponibles."
       : '';
     $('#o-valider').textContent = editionId ? 'Enregistrer la correction' : LIBELLES[t];
@@ -2209,7 +2182,7 @@
       await api(editionId ? '/compte/operations/' + editionId : '/compte/operations',
                 { method: editionId ? 'PUT' : 'POST', body: JSON.stringify(corps) });
       fermerTiroir();
-      toast(editionId ? 'Saisie corrigée.' : { ACHAT: 'Achat enregistré.', VENTE: 'Vente enregistrée.', DEPOT: 'Versement enregistré.', RETRAIT: 'Retrait enregistré.', DIVIDENDE: 'Dividende enregistré.' }[typeOrdre]);
+      toast(editionId ? 'Saisie corrigée.' : { ACHAT: 'Achat enregistré.', VENTE: 'Vente enregistrée.', DEPOT: 'Versement enregistré.', RETRAIT: 'Retrait enregistré.', PRELEVEMENT: 'Prélèvement enregistré.', DIVIDENDE: 'Dividende enregistré.' }[typeOrdre]);
       rafraichir();
     } catch (ex) { err.textContent = ex.message; err.classList.remove('cache'); }
     finally { btn.disabled = false; }
@@ -2258,6 +2231,7 @@
   let APERCU_IMPORT = [];                      // réponses du serveur, pour retrouver les empreintes
   $('#btn-import').onclick = () => $('#fichier-import').click();
   $('#btn-import-ordres').onclick = () => $('#fichier-import').click();
+  $('#btn-import-mouvements').onclick = () => $('#fichier-import').click();
   $('#fichier-import').onchange = async e => {
     const fichiers = [...e.target.files];
     if (!fichiers.length) return;

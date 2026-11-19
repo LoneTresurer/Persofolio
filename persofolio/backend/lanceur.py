@@ -340,8 +340,8 @@ def ouvrir_fenetre_native(port: int, essai: str | None) -> int:
     url = f"http://localhost:{port}/app/index.html"
     etat = {"serveur": None, "code": 0}
     try:
-        # Les liens « target=_blank » (actualités des titres) s'ouvrent dans le
-        # navigateur, pas dans la fenêtre de l'application.
+        # Les liens « target=_blank » s'ouvrent dans le navigateur, pas dans la
+        # fenêtre de l'application.
         webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
         webview.settings["ALLOW_DOWNLOADS"] = True
     except (AttributeError, TypeError):

@@ -85,6 +85,143 @@ def _texte_couche(contenu: bytes) -> str:
         return ""
 
 
+# ── Mouvements d'espèces : la colonne décide du sens ────────────────────────
+#
+# Un avis d'opération porte, sous l'en-tête « Date | Désignation | Débit (€) |
+# Crédit (€) », des lignes qui ne concernent aucun titre : virement reçu,
+# régularisation, remboursement de frais de gestion, prélèvement social.
+#
+# Le texte brut ne dit pas de quelle colonne vient le montant : il le place en fin
+# de ligne, débit et crédit confondus. Lire le sens dans le libellé serait deviner —
+# « REGULARISATION PEA VIRT 85611543 » ne dit pas si l'argent entre ou sort. On lit
+# donc la POSITION du montant sur la page et on la compare à celle des deux en-têtes
+# de colonne. C'est le courtier lui-même qui déclare le sens, par la mise en page.
+#
+# Deux précautions. Le repère est pris sur la ligne d'en-tête du tableau, repérée par
+# le mot « Désignation » : les mots « Débit » et « Crédit » réapparaissent dans la
+# mention légale du pied de page, et s'y fier donnerait des colonnes fantaisistes.
+# Et un nombre n'est retenu que s'il commence à droite de la colonne Débit : sans
+# cela, le numéro de compte du virement et la ligne « BRUT : » d'un ordre, tous deux
+# dans la zone Désignation, seraient pris pour des montants.
+
+_MARGE_COLONNE = 15.0          # tolérance pour un nombre aligné à droite
+_TOLERANCE_LIGNE = 3.0         # écart vertical en deçà duquel deux mots sont sur la même ligne
+_NOMBRE_SEUL = re.compile(r"^\d{1,3}(?:,\d{1,4})?$")
+
+# Un montant au débit peut être de deux natures. Un RETRAIT est votre argent qui
+# repart chez vous ; un PRÉLÈVEMENT est une charge subie — contribution sociale,
+# taxe, droits de garde — qui quitte le compte sans vous revenir. La distinction
+# n'est pas cosmétique : un retrait diminue vos versements nets, un prélèvement
+# pèse sur votre résultat. Les confondre gonflerait le gain affiché.
+_PRELEVEMENTS = ("CSG", "CRDS", "NPS", "PRELEV", "TAXE", "TVA", "IMPOT", "IMPÔT",
+                 "DROITS DE GARDE", "CONTRIBUTION", "COTISATION", "COMMISSION",
+                 "FRAIS")
+
+
+def _nature_debit(libelle: str) -> str:
+    """Retrait ou prélèvement, d'après le libellé du courtier."""
+    t = _sans_accent(libelle or "").upper()
+    return "PRELEVEMENT" if any(mot in t for mot in _PRELEVEMENTS) else "RETRAIT"
+
+
+def _especes_des_pages(contenu: bytes) -> tuple:
+    """
+    Mouvements d'espèces lus page par page, avec le sens donné par la colonne.
+
+    Renvoie (mouvements, motifs) : les mouvements reconnus, et les raisons pour
+    lesquelles certaines lignes datées ont été laissées de côté.
+    """
+    try:
+        import pdfplumber
+    except ImportError:
+        return [], []
+    mouvements, motifs = [], []
+    try:
+        with pdfplumber.open(io.BytesIO(contenu)) as pdf:
+            for page in pdf.pages:
+                m, r = _especes_une_page(page)
+                mouvements.extend(m)
+                motifs.extend(r)
+    except Exception:
+        return [], []
+    return mouvements, motifs
+
+
+def _especes_une_page(page) -> tuple:
+    mots = page.extract_words()
+    if not mots:
+        return [], []
+
+    # Regroupement des mots en lignes, par ordonnée
+    lignes = []
+    for mot in sorted(mots, key=lambda m: (m["top"], m["x0"])):
+        if lignes and abs(mot["top"] - lignes[-1][0]["top"]) <= _TOLERANCE_LIGNE:
+            lignes[-1].append(mot)
+        else:
+            lignes.append([mot])
+
+    # L'en-tête du tableau : la ligne qui porte « Désignation »
+    entete = next((lg for lg in lignes
+                   if any(_sans_accent(m["text"]).lower() == "designation" for m in lg)), None)
+    if entete is None:
+        return [], []
+    def repere(nom):
+        for m in entete:
+            if _sans_accent(m["text"]).lower() == nom:
+                return m
+        return None
+    debit, credit = repere("debit"), repere("credit")
+    if debit is None or credit is None:
+        return [], []
+    bord = debit["x0"] - _MARGE_COLONNE
+    c_debit = (debit["x0"] + debit["x1"]) / 2
+    c_credit = (credit["x0"] + credit["x1"]) / 2
+
+    mouvements, motifs = [], []
+    for num, lg in enumerate(lignes, start=1):
+        texte = " ".join(m["text"] for m in lg)
+        depart = _LIGNE_DATEE.match(texte)
+        if not depart or _CODE12.search(texte):
+            continue                      # pas une ligne datée, ou une opération sur titre
+
+        # Le montant : les derniers mots numériques situés dans la zone des colonnes.
+        # On remonte de la droite tant que les mots s'enchaînent — « 5 » puis « 555,00 »
+        # forment un seul nombre, le séparateur de milliers étant une espace.
+        pris = []
+        for mot in reversed(lg):
+            if mot["x0"] < bord or not _NOMBRE_SEUL.match(mot["text"]):
+                break
+            pris.insert(0, mot)
+        if not pris:
+            motifs.append({"ligne": num, "nom": " ".join(texte.split()[1:])[:60],
+                           "motif": "aucun montant lisible dans les colonnes Débit ou Crédit"})
+            continue
+
+        montant = _montant("".join(m["text"] for m in pris))
+        if montant is None or montant == 0:
+            motifs.append({"ligne": num, "nom": " ".join(texte.split()[1:])[:60],
+                           "motif": "montant illisible"})
+            continue
+
+        centre = (pris[0]["x0"] + pris[-1]["x1"]) / 2
+        au_credit = abs(centre - c_credit) < abs(centre - c_debit)
+        # Le libellé se reconstruit à partir des MOTS restants, et non par découpe du
+        # texte : « VRT DE 85611543 5 555,00 » contient des « 5 » qu'une recherche
+        # textuelle du montant viendrait rogner dans le numéro de compte.
+        corps = " ".join(m["text"] for m in lg[:len(lg) - len(pris)])
+        sans_date = _LIGNE_DATEE.match(corps)
+        libelle = " ".join((sans_date.group("reste") if sans_date else corps).split())
+        propre = libelle.strip(" .-") or ("Crédit" if au_credit else "Débit")
+        mouvements.append({
+            "ligne": num,
+            "date": _corriger_date(depart.group("date")),
+            "libelle": propre,
+            "montant": abs(montant),
+            "nature": "DEPOT" if au_credit else _nature_debit(propre),
+        })
+    return mouvements, motifs
+
+
 # ── Contrôle des codes et des dates lus ──────────────────────
 
 def _corriger_isin(brut: str) -> Optional[str]:
@@ -194,13 +331,18 @@ def lire_releve_pdf(contenu: bytes, mappages: Optional[dict] = None) -> dict:
             "libelle": (apres[:fin.start()] if fin else apres).strip(),
             "montant": fin.group("montant") if fin else None,
         })
-    if not entetes:
-        raise ImportInvalide(
-            "Aucune opération n'a été reconnue dans ce PDF. Le lecteur attend des lignes "
-            "du type « 09/09/2024  ACHAT COMPTANT  FR0011871110  LIBELLE  1 019,00 », "
-            "suivies des champs QUANTITE, COURS, COURTAGE et BRUT.")
+    # Les mouvements d'espèces se lisent à part : ils n'ont ni titre ni quantité, et
+    # leur sens vient de la colonne où le courtier a posé le montant.
+    especes, motifs_especes = _especes_des_pages(contenu)
 
-    lignes, ignorees = [], []
+    if not entetes and not especes:
+        raise ImportInvalide(
+            "Aucune opération n'a été reconnue dans ce PDF. Le lecteur attend soit des "
+            "lignes du type « 09/09/2024  ACHAT COMPTANT  FR0011871110  LIBELLE  1 019,00 », "
+            "suivies des champs QUANTITE, COURS, COURTAGE et BRUT, soit des mouvements "
+            "d'espèces portés aux colonnes Débit ou Crédit.")
+
+    lignes, ignorees = [], list(motifs_especes)
     for k, e in enumerate(entetes):
         # Le bloc court jusqu'au début de l'opération suivante
         fin = entetes[k + 1]["debut"] if k + 1 < len(entetes) else len(texte)
@@ -270,6 +412,19 @@ def lire_releve_pdf(contenu: bytes, mappages: Optional[dict] = None) -> dict:
             "devise_fichier": None, "date": jour,
         })
 
+    for mv in especes:
+        if not mv["date"]:
+            ignorees.append({"ligne": mv["ligne"], "nom": mv["libelle"], "motif": "date illisible"})
+            continue
+        lignes.append({
+            "ligne": mv["ligne"], "isin": None, "nom": mv["libelle"],
+            "ticker_fichier": None, "quantite": None, "pru": None,
+            "sens": mv["nature"], "nature": mv["nature"],
+            "montant_eur": mv["montant"], "frais": 0.0,
+            "cours_fichier": None, "montant_fichier": mv["montant"],
+            "devise_fichier": None, "date": mv["date"],
+        })
+
     if not lignes:
         raise ImportInvalide(
             "Aucune opération exploitable. " + (
@@ -283,6 +438,10 @@ def lire_releve_pdf(contenu: bytes, mappages: Optional[dict] = None) -> dict:
         "colonnes_reconnues": {"source": f"PDF lu par {source}"},
         "decisions": {"source": "avis d'opération, champs reconnus par étiquette "
                                 "et recoupés par le calcul"},
+        # « ordres » signale à la validation que les dates sont de vraies dates
+        # d'exécution, par opposition à un export de positions. Un avis qui ne porte
+        # que des mouvements d'espèces relève de la même catégorie : ses dates sont
+        # celles des mouvements.
         "type": "ordres", "avertissements": avertissements,
         "separateur": None, "format_date": "%d/%m/%Y",
     }

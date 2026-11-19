@@ -15,7 +15,6 @@ python-multipart>=0.0.6        # dépôt de fichiers (relevés et avis d'opérat
 numpy>=1.24.0                  # routes_portefeuille : risque, corrélations
 pandas>=2.0.0                  # market_data, séries de cours
 yfinance>=0.2.36               # cours et fiches titres
-httpx>=0.25.0                  # actualités des titres
 
 pdfplumber>=0.10.0             # couche de texte des PDF : relevés bancaires et avis
 openpyxl>=3.1.0               # relevés tableur .xlsx (core/tableur.py)

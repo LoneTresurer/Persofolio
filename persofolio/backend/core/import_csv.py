@@ -79,8 +79,13 @@ NATURES = [
     ("DIVIDENDE", ["dividende", "coupon", "revenu", "distribution"]),
     ("DEPOT",     ["virement recu", "vir recu", "virement", "vir ", "versement",
                    "alimentation", "apport", "depot", "approvisionnement"]),
-    ("RETRAIT",   ["retrait", "prelevement", "taxe", "droits de garde", "impot",
-                   "frais", "commission", "cotisation"]),
+    # Un prélèvement subi — contribution sociale, taxe, droits de garde — quitte le
+    # compte sans revenir à son propriétaire : c'est une charge, pas un retrait. Les
+    # ranger ensemble diminuerait les versements nets et gonflerait le gain d'autant.
+    ("PRELEVEMENT", ["prelevement", "csg", "crds", "nps", "taxe", "tva",
+                     "droits de garde", "impot", "frais", "commission", "cotisation",
+                     "contribution"]),
+    ("RETRAIT",   ["retrait", "virement emis", "vir emis", "transfert sortant"]),
 ]
 
 # ── Statuts d'ordre ─────────────────────────────────────────────────────────

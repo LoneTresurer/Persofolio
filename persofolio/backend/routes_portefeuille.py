@@ -17,7 +17,6 @@ Compte (en-tête « Authorization: Bearer <jeton> » obligatoire)
   DELETE /compte/operations/{id}    annuler une opération saisie par erreur
   GET    /compte/historique         valorisation et PnL jour par jour
   GET    /compte/risque             indicateurs de risque du portefeuille actuel
-  GET    /compte/actualites         actualités des titres détenus
   POST   /compte/dividendes/synchroniser   détecte et crédite les dividendes (Yahoo Finance)
   GET    /compte/notifications      notifications (dividendes versés…)
   GET|PUT /compte/parametres        fiscalité des dividendes, indice de comparaison
@@ -32,22 +31,19 @@ import logging
 import time
 from bisect import bisect_left
 from datetime import date, datetime
-from email.utils import parsedate_to_datetime
 from typing import List, Optional
 
-import httpx
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
 from agents import market_data as md
-from agents.news_agent import NewsAgent
 from core import portfolio_calc as calc
-from core import passerelle   # PersoFolio : versements écrits par le budget, voir MERGE.md §4 (retouche 6)
 from core.import_csv import ImportInvalide, lire_positions
 from core.import_pdf import lire_releve_pdf
 from core.portfolio_db import PortfolioDB
+from core import passerelle   # PersoFolio : versements écrits par le budget, voir MERGE.md §4 (retouche 6)
 
 logger = logging.getLogger("portefeuille")
 router = APIRouter()
@@ -249,8 +245,18 @@ async def titre(ticker: str):
 
 
 @router.get("/titres/{ticker}/historique")
-async def historique_titre(ticker: str, periode: str = "1a"):
-    """Cours d'un titre, à l'intervalle réellement publié par Yahoo (horaire sur 5 j et 1 mois)."""
+async def historique_titre(ticker: str, periode: str = "1a",
+                           user: str = Depends(utilisateur_courant),
+                           pf: int = Depends(portefeuille_courant)):
+    """
+    Cours d'un titre, à l'intervalle réellement publié par Yahoo (horaire sur 5 j et 1 mois),
+    accompagné de VOS achats et ventes sur ce titre dans la fenêtre affichée.
+
+    Les marqueurs sont posés ici plutôt que sur la courbe de valorisation du compte :
+    c'est en regardant le cours d'une ligne qu'on veut savoir à quel moment on y est
+    entré, et le rapport entre le point d'entrée et la trajectoire se lit alors
+    directement.
+    """
     tk = ticker.strip().upper()
     serie = await asyncio.to_thread(md.historique_titre, tk, periode)
     if serie.empty:
@@ -259,9 +265,32 @@ async def historique_titre(ticker: str, periode: str = "1a"):
     fmt = "%Y-%m-%d %H:%M" if horaire else "%Y-%m-%d"
     fiche = pdb.fiche_titre(tk) or {}
     debut, fin = float(serie.iloc[0]), float(serie.iloc[-1])
+    points = [{"t": d.strftime(fmt), "prix": _r(float(v), 4)} for d, v in serie.items()]
+
+    # Vos opérations sur ce titre, rattachées au premier point que chacune atteint.
+    # Une opération antérieure à la fenêtre n'est pas montrée : elle se placerait sur
+    # le bord gauche et laisserait croire à une entrée récente.
+    jours_points = [p["t"][:10] for p in points]
+    marqueurs: dict[int, dict] = {}
+    for o in pdb.operations(user, pf):
+        if o["ticker"] != tk or o["type"] not in ("ACHAT", "VENTE") or o["date"] < jours_points[0]:
+            continue
+        i = bisect_left(jours_points, o["date"])
+        if i >= len(jours_points):
+            continue
+        m = marqueurs.setdefault(i, {"indice_point": i, "t": points[i]["t"],
+                                     "sens": None, "operations": []})
+        m["operations"].append({"type": o["type"], "date": o["date"],
+                                "quantite": _r(o["quantite"], 4), "prix": _r(o["prix"]),
+                                "frais_eur": _r(o.get("frais_eur") or 0)})
+    for m in marqueurs.values():
+        sens = {x["type"] for x in m["operations"]}
+        m["sens"] = sens.pop() if len(sens) == 1 else "MIXTE"
+
     return {"ticker": tk, "nom": fiche.get("nom") or tk, "devise": fiche.get("devise") or "EUR",
             "periode": periode, "granularite": "heure" if horaire else "jour",
-            "points": [{"t": d.strftime(fmt), "prix": _r(float(v), 4)} for d, v in serie.items()],
+            "points": points,
+            "marqueurs": sorted(marqueurs.values(), key=lambda m: m["indice_point"]),
             "perf_pct": _r((fin / debut - 1) * 100 if debut else None)}
 
 
@@ -1534,36 +1563,6 @@ async def risque(user: str = Depends(utilisateur_courant), pf: int = Depends(por
     }
 
 
-# ─────────────────────────── Actualités ─────────────────────────────────────
-
-@router.get("/compte/actualites")
-async def actualites(user: str = Depends(utilisateur_courant), pf: int = Depends(portefeuille_courant)):
-    etat = calc.rejouer(pdb.operations(user, pf))
-    tickers = [p.ticker for p in etat.positions_ouvertes()][:12]
-    if not tickers:
-        return {"articles": []}
-    agent = NewsAgent()
-    async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
-        resultats = await asyncio.gather(*(agent._fetch_ticker_news(client, t) for t in tickers),
-                                         return_exceptions=True)
-    articles = []
-    for tk, res in zip(tickers, resultats):
-        if not isinstance(res, list):
-            continue
-        nom = (pdb.fiche_titre(tk) or {}).get("nom") or tk
-        for a in res:
-            a = agent._analyse_article({**a, "ticker": tk})
-            try:
-                d = parsedate_to_datetime(a.get("date", "")).isoformat()
-            except Exception:
-                d = None
-            articles.append({"ticker": tk, "nom": nom, "titre": a.get("titre"),
-                             "lien": a.get("lien"), "date": d, "resume": a.get("desc"),
-                             "sentiment": a.get("type"), "score": a.get("score")})
-    articles.sort(key=lambda a: a["date"] or "", reverse=True)
-    return {"articles": articles}
-
-
 # ─────────────────────────── Paramètres ─────────────────────────────────────
 
 class ParametresIn(BaseModel):
@@ -1835,7 +1834,7 @@ async def import_apercu(fichier: UploadFile = File(...), user: str = Depends(uti
     except ImportInvalide as e:
         raise HTTPException(422, detail=str(e))
 
-    espece = lambda l: (l.get("nature") or l.get("sens")) in ("DEPOT", "RETRAIT", "DIVIDENDE")
+    espece = lambda l: (l.get("nature") or l.get("sens")) in calc.TYPES_ESPECES
     resolutions = await asyncio.gather(*(
         asyncio.to_thread(md.resoudre_isin, l["isin"] or l["ticker_fichier"] or "", l["nom"])
         if not espece(l) else asyncio.sleep(0, result={})
@@ -1965,8 +1964,8 @@ async def import_valider(req: ImportValidation, user: str = Depends(utilisateur_
             erreurs.append({"ticker": l.ticker or l.nom or l.sens, "motif": probleme})
             continue
 
-        # Mouvement d'espèces : versement, retrait ou dividende
-        if l.sens in ("DEPOT", "RETRAIT", "DIVIDENDE"):
+        # Mouvement d'espèces : versement, retrait, prélèvement ou dividende
+        if l.sens in calc.TYPES_ESPECES:
             op = {"date": l.date, "type": l.sens, "ticker": None, "quantite": None,
                   "prix": None, "devise": "EUR", "taux_eur": 1.0, "frais_eur": 0.0,
                   "montant_eur": l.montant_eur, "origine": origine,

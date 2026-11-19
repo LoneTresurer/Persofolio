@@ -33,7 +33,7 @@ app = FastAPI(title="PersoFolio API", version="11.0.0", docs_url="/docs")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
-# Compte-titres (connexion, ordres, positions, PnL, risque, actualités)
+# Compte-titres (connexion, ordres, positions, PnL, risque)
 from routes_portefeuille import router as router_portefeuille
 app.include_router(router_portefeuille, tags=["Compte-titres"])
 
