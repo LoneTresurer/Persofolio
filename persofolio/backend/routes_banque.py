@@ -230,6 +230,63 @@ def declarer_apports(corps: ApportsIn, user: str = Depends(utilisateur_courant))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+class ReponseVersement(BaseModel):
+    operation_id: int = Field(gt=0)
+    montant_eur: float = Field(gt=0)
+    origine: str = Field(pattern="^(budget|externe)$")
+
+
+class VersementsIn(BaseModel):
+    """Réponse à « d'où vient ce versement ? » (ou « où est allé ce retrait ? »),
+    pour des mouvements saisis ou importés dans le compte-titres. Comme pour les
+    achats : ce que l'écran montrait, comparé sous verrou à ce qui reste ouvert."""
+    etat: Dict[str, Any]
+    version: int = Field(ge=0)
+    reponses: List[ReponseVersement] = Field(min_length=1, max_length=500)
+
+
+class AnnulerReponseIn(BaseModel):
+    etat: Dict[str, Any]
+    version: int = Field(ge=0)
+    operation_id: int = Field(gt=0)
+
+
+def _conflit(e: "passerelle.ConflitVersion"):
+    return HTTPException(status_code=409, detail={
+        "message": "Vos données ont été modifiées depuis un autre onglet ou appareil.",
+        "version": e.version_actuelle})
+
+
+@router.post("/banque/versements")
+def declarer_versements(corps: VersementsIn, user: str = Depends(utilisateur_courant)):
+    corps.etat["utilisateur"] = user
+    try:
+        return passerelle.declarer_versements(
+            user, corps.etat, corps.version, [r.model_dump() for r in corps.reponses])
+    except passerelle.ExplicationPerimee as e:
+        raise HTTPException(status_code=409, detail={
+            "code": "explication_perimee",
+            "message": "Ce mouvement a déjà reçu une réponse, ou a changé entre-temps. L'écran a été mis à jour.",
+            "restant": e.restant})
+    except passerelle.ConflitVersion as e:
+        raise _conflit(e)
+    except passerelle.PasserelleIndisponible as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/banque/versements/annuler")
+def annuler_reponse(corps: AnnulerReponseIn, user: str = Depends(utilisateur_courant)):
+    corps.etat["utilisateur"] = user
+    try:
+        return passerelle.annuler_reponse(user, corps.etat, corps.version, corps.operation_id)
+    except passerelle.ConflitVersion as e:
+        raise _conflit(e)
+    except passerelle.PasserelleIndisponible as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
 # ─────────────────────── Lecture de relevés bancaires ───────────────────────
 
 NB_MAX_FICHIERS = 24                   # deux ans de relevés mensuels

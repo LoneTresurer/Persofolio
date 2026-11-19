@@ -44,7 +44,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import date as _date, datetime, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from core.portfolio_db import DB_PATH
 
@@ -159,7 +159,22 @@ def lien_budget(operations: List[dict], op_id: int) -> Optional[str]:
     if not op or op.get("type") not in ("DEPOT", "RETRAIT"):
         return None
     if not (op.get("commentaire") or "").startswith(PREFIXE):
-        return None
+        # Saisi ici, mais déclaré « de mon compte courant » depuis le budget : le
+        # compte courant porte la ligne d'en face, il faut d'abord retirer la réponse.
+        try:
+            conn = _connect()
+            try:
+                rep = _reponses(conn, op.get("username") or "").get(op_id)
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            rep = None
+        if rep != ORIGINE:
+            return None
+        quoi = "Ce versement" if op["type"] == "DEPOT" else "Ce retrait"
+        return (f"{quoi} est rattaché à votre compte courant dans Budget et comptes. "
+                "Retirez d'abord ce rattachement : Budget et comptes → Comptes → "
+                "« Espèces échangées avec le compte-titres » → « Annuler la réponse ».")
     quoi = "Ce versement" if op["type"] == "DEPOT" else "Ce retrait"
     return (f"{quoi} vient de Budget et comptes. Pour le corriger ou l'annuler, passez "
             "par Budget et comptes → Comptes → « Espèces échangées avec le "
@@ -229,13 +244,26 @@ def achats_a_decouvert(operations: List[dict]) -> List[dict]:
     défaut d'origine — chaque réponse à la question gonflait le patrimoine du
     même montant, et la question restait posée.
     """
-    from core.portfolio_calc import rejouer
+    from core.portfolio_calc import rejouer, _cle_tri
     trous = []
+    ordre = sorted(operations, key=_cle_tri)
     for op in rejouer(operations).operations:
         m = op.get("apport_implicite_eur")
         if op.get("type") == "ACHAT" and m and m > 0.005:
             trous.append({"achat_id": op["id"], "date": op["date"],
                           "ticker": op.get("ticker"), "montant_eur": round(m, 2)})
+    # Le montant affiché est arrondi au centime ; celui qu'on versera ne doit pas
+    # l'être. Un versement arrondi laissait chaque achat couvert à un demi-centime
+    # près : les restes s'additionnaient en « 0,01 € à expliquer » qu'aucune ligne
+    # ne portait — question impossible à faire disparaître —, ou en centimes
+    # d'espèces apparus de nulle part. Le calcul du compte-titres ne publie que
+    # l'arrondi ; l'exact se lit dans son total non arrondi, avant et après l'achat.
+    if trous:
+        rang = {o["id"]: k for k, o in enumerate(ordre)}
+        for t in trous:
+            k = rang[t["achat_id"]]
+            t["exact_eur"] = (rejouer(ordre[:k + 1]).apports_implicites_eur
+                              - rejouer(ordre[:k]).apports_implicites_eur)
     return trous
 
 
@@ -295,7 +323,7 @@ def declarer_apports(username: str, etat: dict, version_attendue: int,
             conn.execute(
                 "INSERT INTO operations (portefeuille_id, username, date, type, montant_eur,"
                 " commentaire, saisi_le, origine) VALUES (?,?,?,?,?,?,?,?)",
-                (pf, username, jour, "DEPOT", t["montant_eur"], reference(vid),
+                (pf, username, jour, "DEPOT", t.get("exact_eur", t["montant_eur"]), reference(vid),
                  maintenant, origine))
             crees.append({"id": vid, "date": jour, "montant_eur": t["montant_eur"]})
 
@@ -308,6 +336,102 @@ def declarer_apports(username: str, etat: dict, version_attendue: int,
         nouvelle = _ecrire_etat(conn, username, etat, existe, actuelle, maintenant)
         conn.commit()
         return {"version": nouvelle, "apports": crees, "portefeuille": pf}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# ── D'où vient ce versement ? Où est allé ce retrait ? ──────────────────────
+#
+# Un versement saisi ou importé dans le compte-titres — relevé du courtier, saisie
+# à la main — n'est pas passé par le budget. Comme un achat à découvert, c'est une
+# question à poser : venait-il du compte courant (le budget l'enregistre alors
+# comme un virement, et il compte dans l'épargne investie), ou d'ailleurs ?
+#
+# La réponse ne va pas dans la colonne `origine` de `operations` : le compte-titres
+# y note comment l'opération a été saisie (manuel, import_ordres…), et l'écraser
+# lui ferait perdre cette information. Elle va dans `banque_origines`, table du
+# budget, écrite dans la même transaction que l'état du budget.
+
+def _table_origines(c: sqlite3.Connection) -> None:
+    c.execute("""CREATE TABLE IF NOT EXISTS banque_origines (
+        username      TEXT NOT NULL,
+        operation_id  INTEGER NOT NULL,          -- id dans operations (compte-titres)
+        origine       TEXT NOT NULL,             -- 'budget' ou 'externe'
+        repondu_le    TEXT NOT NULL,
+        PRIMARY KEY (username, operation_id))""")
+
+
+def _reponses(c: sqlite3.Connection, username: str) -> Dict[int, str]:
+    _table_origines(c)
+    return {r["operation_id"]: r["origine"] for r in c.execute(
+        "SELECT operation_id, origine FROM banque_origines WHERE username=?", (username,))}
+
+
+def versements_sans_origine(operations: List[dict], reponses: Dict[int, str]) -> List[dict]:
+    """Versements et retraits du compte-titres que le budget n'a ni écrits ni vu expliquer."""
+    return [{"operation_id": o["id"], "date": o["date"], "type": o["type"],
+             "montant_eur": round(float(o.get("montant_eur") or 0), 2),
+             "saisie": o.get("origine") or "manuel"}
+            for o in operations
+            if o["type"] in ("DEPOT", "RETRAIT")
+            and not (o.get("commentaire") or "").startswith(PREFIXE)
+            and (o.get("origine") or "") not in (ORIGINE, ORIGINE_EXTERNE)
+            and o["id"] not in reponses
+            and float(o.get("montant_eur") or 0) > 0.005]
+
+
+def declarer_versements(username: str, etat: dict, version_attendue: int,
+                        reponses: List[dict]) -> dict:
+    """Enregistre l'origine de versements (ou la destination de retraits).
+
+    `reponses` : [{operation_id, montant_eur, origine}], ce que l'écran montrait.
+    Chaque ligne doit encore être sans réponse, au même montant ; sinon rien
+    n'est écrit (`ExplicationPerimee`) — un second clic ne trouve plus rien.
+    Le compte-titres n'est pas modifié : le versement y est déjà. L'état du budget
+    voyage avec et porte, pour « compte courant », la ligne correspondante.
+    """
+    if not reponses:
+        raise ValueError("aucune réponse")
+    for r in reponses:
+        if r["origine"] not in (ORIGINE, ORIGINE_EXTERNE):
+            raise ValueError(f"origine inattendue : {r['origine']}")
+    maintenant = datetime.now().isoformat(timespec="seconds")
+    conn, existe, actuelle = _ouvrir_transaction(username, version_attendue)
+    try:
+        ouverts = {v["operation_id"]: v for v in
+                   versements_sans_origine(_operations(conn, username, None), _reponses(conn, username))}
+        demandes = {int(r["operation_id"]): r for r in reponses}
+        if any(i not in ouverts or ouverts[i]["montant_eur"] != round(float(r["montant_eur"]), 2)
+               for i, r in demandes.items()):
+            raise ExplicationPerimee(list(ouverts.values()))
+        conn.executemany(
+            "INSERT INTO banque_origines (username, operation_id, origine, repondu_le) VALUES (?,?,?,?)",
+            [(username, i, r["origine"], maintenant) for i, r in demandes.items()])
+        nouvelle = _ecrire_etat(conn, username, etat, existe, actuelle, maintenant)
+        conn.commit()
+        return {"version": nouvelle, "enregistres": sorted(demandes)}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def annuler_reponse(username: str, etat: dict, version_attendue: int, operation_id: int) -> dict:
+    """Retire une réponse : la question est de nouveau posée. L'état du budget,
+    sans la ligne de virement correspondante, voyage avec."""
+    maintenant = datetime.now().isoformat(timespec="seconds")
+    conn, existe, actuelle = _ouvrir_transaction(username, version_attendue)
+    try:
+        _table_origines(conn)
+        n = conn.execute("DELETE FROM banque_origines WHERE username=? AND operation_id=?",
+                         (username, int(operation_id))).rowcount
+        nouvelle = _ecrire_etat(conn, username, etat, existe, actuelle, maintenant)
+        conn.commit()
+        return {"version": nouvelle, "supprimes": n}
     except Exception:
         conn.rollback()
         raise
@@ -454,6 +578,7 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
             ids = [r["id"] for r in conn.execute(
                 "SELECT id FROM portefeuilles WHERE username=? ORDER BY id", (username,)).fetchall()]
         par_pf = [(i, _operations(conn, username, i)) for i in ids] or [(None, _operations(conn, username, None))]
+        reponses = _reponses(conn, username)
     finally:
         conn.close()
 
@@ -466,10 +591,16 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
     depots_nets = somme(lambda e: e.depots_nets_eur)
     titres_cout = round(somme(lambda e: sum(p.cout_eur for p in e.positions.values()
                                             if p.quantite > 1e-9)), 2)
+    # L'origine d'un mouvement : celle que la passerelle a écrite en le créant, ou
+    # la réponse donnée depuis le budget pour un versement saisi dans le compte-titres.
+    origine_de = lambda o: reponses.get(o["id"]) or (o.get("origine") or "")
     net = lambda marque: round(sum(
         float(o.get("montant_eur") or 0) * (1 if o["type"] == "DEPOT" else -1)
         for o in operations
-        if o["type"] in ("DEPOT", "RETRAIT") and (o.get("origine") or "") == marque), 2)
+        if o["type"] in ("DEPOT", "RETRAIT") and origine_de(o) == marque), 2)
+    detail = [t for _, ops, _ in rejoues for t in achats_a_decouvert(ops)]
+    for t in detail:
+        t.pop("exact_eur", None)
     depuis_budget = net(ORIGINE)
     declare_externe = net(ORIGINE_EXTERNE)
     entre_en_tout = round(depots_nets + apports_implicites, 2)
@@ -486,15 +617,21 @@ def etat_investissement(username: str, portefeuille: Optional[int] = None) -> di
         # un achat passé chez le courtier sans versement enregistré. Ce n'est pas
         # une anomalie, c'est une question à poser. Déclarer le versement le fait
         # tomber à zéro, puisque l'achat n'est alors plus à découvert.
-        "a_expliquer_eur": round(apports_implicites, 2),
-        "a_expliquer_detail": [t for _, ops, _ in rejoues for t in achats_a_decouvert(ops)],
+        # Somme des lignes listées, et non total brut : un total qui contiendrait des
+        # restes de moins d'un centime afficherait une question sans réponse possible.
+        "a_expliquer_eur": round(sum(t["montant_eur"] for t in detail), 2),
+        "a_expliquer_detail": detail,
+        # Versements et retraits saisis ou importés dans le compte-titres, dont on
+        # ne sait pas encore d'où ils viennent (ou où ils sont allés).
+        "versements_a_expliquer": versements_sans_origine(operations, reponses),
         # Tous les mouvements d'espèces, pour pouvoir les relire et annuler ceux
         # que la passerelle a écrits. `virement_id` est nul pour un versement saisi
         # dans le compte-titres lui-même : celui-là se corrige là-bas.
         "mouvements": [{
             "operation_id": o["id"], "date": o["date"], "type": o["type"],
             "montant_eur": round(float(o.get("montant_eur") or 0), 2),
-            "origine": o.get("origine") or None,
+            "origine": (reponses.get(o["id"]) or o.get("origine")) if (reponses.get(o["id"]) or o.get("origine")) in (ORIGINE, ORIGINE_EXTERNE) else None,
+            "repondu": o["id"] in reponses,
             "virement_id": (o.get("commentaire") or "")[len(PREFIXE):]
                            if (o.get("commentaire") or "").startswith(PREFIXE) else None,
             "saisi_le": o.get("saisi_le"),

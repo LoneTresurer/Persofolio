@@ -294,6 +294,9 @@
   .tableau-histo td, .tableau-histo th { white-space: nowrap; }
   .tete-moyennes { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin: 6px 0 12px; }
   .tete-moyennes h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .ligne-question { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 0; border-top: 1px solid var(--filet); }
+  .ligne-question .choix { margin: 0; }
   .tete-moyennes .sous-titre { margin: 2px 0 0; }
   /* « Vous connaissez : capital restant dû | capital emprunté » : pleine largeur, libellés sur deux lignes au besoin */
   .segments.large { display: flex; width: 100%; }
@@ -1217,6 +1220,53 @@ function expliquerApports(origine) {
     const r = await ecrirePasserelle('/banque/apports',
       { origine, achats: detail.map(t => ({ achat_id: t.achat_id, montant_eur: t.montant_eur })) }, avant);
     return { ...r, ...bilan };
+  });
+}
+
+/* ── D'où vient ce versement ? Où est allé ce retrait ? ───────────────────
+   Versements et retraits saisis ou importés dans le compte-titres (relevé du
+   courtier, saisie à la main). « Compte courant » : le budget l'enregistre comme
+   un virement, avec les mêmes règles que pour les achats — rien avant le début du
+   suivi (le solde de départ en tient compte), la ligne du relevé si elle existe
+   (débit 0 à 10 jours avant le versement, crédit 0 à 10 jours après un retrait),
+   sinon une ligne ajoutée. Rien n'est écrit dans le compte-titres : le mouvement
+   y est déjà. Le serveur refuse une réponse à un écran périmé. */
+function rattacherAuCourant(v, bilan) {
+  const vid = `versement-${v.operation_id}`, depot = v.type === 'DEPOT', m = v.montant_eur;
+  if (E.operations.some(o => o.virementId === vid)) return;
+  if (v.date < E.creeLe) { bilan.anterieurs++; return; }
+  const [de, a] = depot ? [decalerJours(v.date, -10), v.date] : [v.date, decalerJours(v.date, 10)];
+  const importee = E.operations.find(o => o.compte === 'courant' && !o.virementId
+    && CATEGORIES[o.categorie]?.sens !== 'INTERNE' && Math.abs(o.montant - (depot ? -m : m)) < 0.005
+    && o.date >= de && o.date <= a);
+  if (importee) {
+    importee.reclasse = { categorie: importee.categorie };
+    importee.categorie = 'virement'; importee.virementId = vid;
+    bilan.reclasses++; return;
+  }
+  E.operations.push({ id: uid(), date: v.date, compte: 'courant', montant: depot ? -m : m,
+    libelle: depot ? 'Versement au compte-titres' : 'Retrait du compte-titres', categorie: 'virement', virementId: vid });
+  bilan.retires++;
+}
+
+function expliquerVersements(reponses) {          // [{ v, origine }]
+  return enFile(async () => {
+    const ouverts = new Set((INV?.versements_a_expliquer || []).map(v => v.operation_id));
+    reponses = reponses.filter(r => ouverts.has(r.v.operation_id));
+    if (!reponses.length) return { rien: true };
+    const avant = copieEtat(), bilan = { retires: 0, reclasses: 0, anterieurs: 0 };
+    reponses.filter(r => r.origine === 'budget').forEach(r => rattacherAuCourant(r.v, bilan));
+    const r = await ecrirePasserelle('/banque/versements', { reponses: reponses.map(({ v, origine }) =>
+      ({ operation_id: v.operation_id, montant_eur: v.montant_eur, origine })) }, avant);
+    return { ...r, ...bilan };
+  });
+}
+
+function annulerReponse(operationId) {
+  return enFile(async () => {
+    const avant = copieEtat();
+    retirerLignesVirement(`versement-${operationId}`);
+    return ecrirePasserelle('/banque/versements/annuler', { operation_id: operationId }, avant);
   });
 }
 
@@ -2264,6 +2314,81 @@ Un repère, pas un ordre : il ne s'affiche que si votre coussin de précaution e
 
 /* Part de l'épargne investie : deux fenêtres, la cible de l'utilisateur, et un
    verdict qui reste une observation. L'application ne décide pas à sa place. */
+/* « Argent entré sans passer par le budget » : achats à découvert (une réponse
+   pour tous, comme avant) et versements ou retraits saisis dans le compte-titres
+   (une réponse par ligne, et pour tous s'il y en a plusieurs). Le bloc n'existe
+   que s'il y a des lignes : son total est la somme de ce qui est listé, jamais
+   un reste qu'aucune réponse ne pourrait faire disparaître. */
+const SAISIES = { import_ordres: 'relevé importé', import_positions: 'relevé importé', manuel: 'saisi à la main', auto: 'automatique' };
+function blocAExpliquer() {
+  const achats = INV?.a_expliquer_detail || [], vers = INV?.versements_a_expliquer || [];
+  if (!achats.length && !vers.length) return '';
+  const total = achats.reduce((s, t) => s + t.montant_eur, 0);
+  const ligneVers = v => {
+    const depot = v.type === 'DEPOT';
+    return `<div class="ligne-question">
+      <div><strong>${depot ? 'Versement' : 'Retrait'} de ${argent(v.montant_eur)}</strong> le ${dateLongue(v.date)}
+        <span class="discret">· ${SAISIES[v.saisie] || 'saisi dans le compte-titres'}</span></div>
+      <div class="choix">
+        <button class="mini-btn" type="button" data-vers="${v.operation_id}" data-origine="budget">${depot ? 'De' : 'Vers'} mon compte courant</button>
+        <button class="mini-btn" type="button" data-vers="${v.operation_id}" data-origine="externe">${depot ? 'D\'ailleurs' : 'Ailleurs'}</button>
+      </div></div>`;
+  };
+  return `<div class="repere a-expliquer" style="margin-top:16px">
+      ${achats.length ? `<div class="ligne"><strong>${argent(total)} sont entrés dans votre compte-titres sans passer par votre budget</strong></div>
+        <p class="discret" style="margin:0 0 12px">${achats.length > 1 ? `${achats.length} achats passés` : 'Un achat passé'} chez votre courtier sans virement enregistré ici. D'où venait cet argent ?</p>
+        <div class="choix">
+          <button class="btn" type="button" id="apport-courant" data-achats="budget">De mon compte courant</button>
+          <button class="btn btn-sec" type="button" id="apport-externe" data-achats="externe">D'ailleurs (héritage, autre compte)</button>
+        </div>` : ''}
+      ${vers.length ? `<div class="ligne" style="${achats.length ? 'margin-top:18px' : ''}"><strong>${vers.length > 1 ? `${vers.length} mouvements d'espèces` : 'Un mouvement d\'espèces'} du compte-titres, d'origine inconnue</strong></div>
+        <p class="discret" style="margin:0 0 8px">Saisis ou importés dans le compte-titres. Venus de votre compte courant, ils comptent dans votre épargne investie ; d'ailleurs, non.</p>
+        ${vers.map(ligneVers).join('')}
+        ${vers.length > 1 ? `<div class="choix" style="margin-top:10px"><span class="discret">Pour tous :</span>
+          <button class="mini-btn" type="button" data-vers-tous="budget">Compte courant</button>
+          <button class="mini-btn" type="button" data-vers-tous="externe">Ailleurs</button></div>` : ''}` : ''}
+    </div>`;
+}
+
+/* Un clic désactive tout le bloc jusqu'à ce que les chiffres soient relus du
+   serveur, quoi qu'il arrive : le bloc redessiné est alors celui d'après la
+   réponse. Le serveur refuse de toute façon une seconde réponse. */
+function brancherAExpliquer(zone) {
+  const bloc = zone.querySelector('.a-expliquer'); if (!bloc) return;
+  const executer = async (action, message) => {
+    bloc.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    try {
+      const r = await action();
+      if (r.rien) { await chargerInvestissement(); rafraichir(); return; }
+      rafraichir();
+      toast(message(r));
+    } catch (e) {
+      await chargerInvestissement().catch(() => {});
+      rafraichir();
+      toast(e.detail?.code ? e.message : 'Non enregistré : ' + e.message);
+    }
+  };
+  const bilanTexte = r => {
+    const parts = [];
+    if (r.retires) parts.push(`${r.retires} virement${r.retires > 1 ? 's' : ''} ajouté${r.retires > 1 ? 's' : ''} au compte courant`);
+    if (r.reclasses) parts.push(`${r.reclasses} ligne${r.reclasses > 1 ? 's' : ''} du relevé reconnue${r.reclasses > 1 ? 's' : ''} comme virement`);
+    if (r.anterieurs) parts.push('antérieur au début du suivi : votre solde de départ en tenait déjà compte');
+    return parts.length ? ' — ' + parts.join(', ') : '';
+  };
+  bloc.querySelectorAll('[data-achats]').forEach(b => b.onclick = () => executer(() => expliquerApports(b.dataset.achats),
+    r => b.dataset.achats === 'budget' ? `Origine enregistrée${bilanTexte(r)}.`
+      : 'Apport extérieur enregistré. Votre patrimoine ne change pas : cet argent était déjà compté dans vos titres.'));
+  const vers = INV?.versements_a_expliquer || [];
+  bloc.querySelectorAll('[data-vers]').forEach(b => b.onclick = () => {
+    const v = vers.find(x => x.operation_id === +b.dataset.vers);
+    executer(() => expliquerVersements([{ v, origine: b.dataset.origine }]),
+      r => `Réponse enregistrée${bilanTexte(r)}.`);
+  });
+  bloc.querySelectorAll('[data-vers-tous]').forEach(b => b.onclick = () =>
+    executer(() => expliquerVersements(vers.map(v => ({ v, origine: b.dataset.versTous }))),
+      r => `${vers.length} réponses enregistrées${bilanTexte(r)}.`));
+}
+
 function afficherPartInvestie() {
   const zone = $('#bloc-investie'); if (!zone) return;
   const tout = partInvestie(), an = partInvestie(12);
@@ -2272,7 +2397,8 @@ function afficherPartInvestie() {
   if (!tout) {
     zone.innerHTML = `<h2>Part de l'épargne investie</h2>
       <p class="sous-titre">Disponible après un premier mois civil complet : il faut un mois entier
-      pour savoir ce qui a été épargné, et donc quelle part en est partie investir.</p>`;
+      pour savoir ce qui a été épargné, et donc quelle part en est partie investir.</p>${blocAExpliquer()}`;
+    brancherAExpliquer(zone);
     return;
   }
 
@@ -2336,15 +2462,7 @@ ${argent0(p.epargne)} − ${argent0(p.besoin * p.mois)} = ${argent0(p.libre)}`;
     ${verdict}
     ${doublonsMouvements().size ? `<p class="note alerte" style="margin:14px 0 0">Des versements identiques ont été enregistrés le même jour
       sur le compte-titres. Vérifiez-les dans <button class="btn-lien" type="button" onclick="compteVu='courant';ouvrirOnglet('comptes');document.getElementById('mouvements-titres')?.scrollIntoView()">Comptes</button>.</p>` : ''}
-    ${INV && INV.a_expliquer_eur > 0.005 ? `
-      <div class="repere" style="margin-top:16px">
-        <div class="ligne"><strong>${argent(INV.a_expliquer_eur)} sont entrés dans votre compte-titres sans passer par votre budget</strong></div>
-        <p class="discret" style="margin:0 0 12px">Un achat passé chez votre courtier sans virement enregistré ici. D'où venait cet argent ?</p>
-        <div class="choix">
-          <button class="btn" type="button" id="apport-courant">De mon compte courant</button>
-          <button class="btn btn-sec" type="button" id="apport-externe">D'ailleurs (héritage, autre compte)</button>
-        </div>
-      </div>` : ''}`;
+    ${blocAExpliquer()}`;
 
   const champ = $('#cible-investie');
   if (champ) champ.onchange = () => {
@@ -2352,31 +2470,7 @@ ${argent0(p.epargne)} − ${argent0(p.besoin * p.mois)} = ${argent0(p.libre)}`;
     E.cibleInvestie = champ.value.trim() === '' ? null : Math.min(100, Math.max(0, v));
     sauver(); afficherPartInvestie();
   };
-  // Les deux réponses mènent au même enregistrement ; seule l'origine change,
-  // et avec elle le fait que cet argent compte ou non comme de l'épargne investie.
-  // Les boutons se désactivent au premier clic. Le serveur, lui, refuse de toute
-  // façon une seconde réponse : c'est lui qui garantit qu'elle ne compte qu'une fois.
-  const repondre = origine => async () => {
-    zone.querySelectorAll('#apport-courant, #apport-externe').forEach(b => { b.disabled = true; });
-    try {
-      const r = await expliquerApports(origine);
-      rafraichir();
-      if (r.rien) return;
-      const parts = [];
-      if (r.retires) parts.push(`${r.retires} virement${r.retires > 1 ? 's' : ''} ajouté${r.retires > 1 ? 's' : ''} au compte courant`);
-      if (r.reclasses) parts.push(`${r.reclasses} sortie${r.reclasses > 1 ? 's' : ''} du relevé reconnue${r.reclasses > 1 ? 's' : ''} comme virement`);
-      if (r.anterieurs) parts.push('achats antérieurs au début du suivi : votre solde de départ en tenait déjà compte');
-      toast(origine === 'budget'
-        ? `Origine enregistrée${parts.length ? ' — ' + parts.join(', ') : ''}.`
-        : 'Apport extérieur enregistré. Votre patrimoine ne change pas : cet argent était déjà compté dans vos titres.');
-    } catch (e) {
-      if (['deja_explique', 'explication_perimee'].includes(e.detail?.code)) await chargerInvestissement();
-      rafraichir();
-      toast(e.detail?.code ? e.message : 'Non enregistré : ' + e.message);
-    }
-  };
-  if ($('#apport-courant')) $('#apport-courant').onclick = repondre('budget');
-  if ($('#apport-externe')) $('#apport-externe').onclick = repondre('externe');
+  brancherAExpliquer(zone);
 }
 
 function afficherObjectifs(plan, constatee) {
@@ -2696,7 +2790,7 @@ function panneauMouvements() {
   const mv = [...(INV?.mouvements || [])].sort((a, b) => b.date.localeCompare(a.date) || b.operation_id - a.operation_id);
   if (!mv.length) return '';
   const doublons = doublonsMouvements();
-  const origine = m => !m.virement_id ? 'Saisi dans le compte-titres'
+  const origine = m => (!m.virement_id && !m.repondu) ? 'Saisi dans le compte-titres · origine à préciser (Synthèse)'
     : m.origine === 'externe' ? 'Hors budget (héritage, autre compte)'
     : m.type === 'RETRAIT' ? 'Vers le compte courant' : 'Depuis le compte courant';
   return `<div class="panneau" id="mouvements-titres">
@@ -2712,12 +2806,21 @@ function panneauMouvements() {
           <td>${m.type === 'DEPOT' ? 'Versement' : 'Retrait'}${m.virement_id?.startsWith('apport-') ? ' <span class="etiquette" title="Versement déclaré pour un achat passé sans virement enregistré">achat passé</span>' : ''}${doublons.has(m.operation_id) ? ' <span class="etiquette" style="background:var(--perte-clair);color:var(--perte)">doublon probable</span>' : ''}</td>
           <td class="discret">${origine(m)}</td>
           <td class="num ${m.type === 'DEPOT' ? 'gain' : ''}">${argent(m.type === 'DEPOT' ? m.montant_eur : -m.montant_eur, true)}</td>
-          <td class="num">${m.virement_id ? `<button class="mini-btn" data-annuler-vir="${echap(m.virement_id)}" data-montant="${m.montant_eur}" data-apport="${m.virement_id.startsWith('apport-') ? 1 : ''}">Annuler</button>` : '<span class="discret">se corrige dans le compte-titres</span>'}</td>
+          <td class="num">${m.repondu ? `<button class="mini-btn" data-annuler-rep="${m.operation_id}" data-montant="${m.montant_eur}" data-origine="${m.origine}">Annuler la réponse</button>` : m.virement_id ? `<button class="mini-btn" data-annuler-vir="${echap(m.virement_id)}" data-montant="${m.montant_eur}" data-apport="${m.virement_id.startsWith('apport-') ? 1 : ''}">Annuler</button>` : '<span class="discret">se corrige dans le compte-titres</span>'}</td>
         </tr>`).join('')}</tbody></table></div>
     </div>`;
 }
 
 function brancherMouvements(racine) {
+  racine.querySelectorAll('[data-annuler-rep]').forEach(b => b.onclick = async () => {
+    const id = +b.dataset.annulerRep, lignes = E.operations.filter(o => o.virementId === `versement-${id}`);
+    if (!confirm(`Annuler la réponse donnée pour ce mouvement de ${argent(+b.dataset.montant)} ?\n\nIl restera dans le compte-titres, et la question sera de nouveau posée. `
+      + (lignes.length ? 'La ligne correspondante du compte courant sera retirée (une ligne de relevé reprend sa catégorie).' : 'Aucune ligne du compte courant ne change.'))) return;
+    racine.querySelectorAll('[data-annuler-rep], [data-annuler-vir]').forEach(x => { x.disabled = true; });
+    try { await annulerReponse(id); toast('Réponse annulée : la question est de nouveau posée'); }
+    catch (e) { await chargerInvestissement().catch(() => {}); toast('Non annulée : ' + e.message); }
+    rafraichir();
+  });
   racine.querySelectorAll('[data-annuler-vir]').forEach(b => b.onclick = async () => {
     const vid = b.dataset.annulerVir, montant = argent(+b.dataset.montant);
     const lignes = E.operations.filter(o => o.virementId === vid);

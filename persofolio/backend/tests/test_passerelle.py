@@ -215,5 +215,131 @@ class LienBudget(Base):
         self.assertIsNone(passerelle.lien_budget(ops, 999999))
 
 
+
+class Centimes(Base):
+    """Défaut du 19 novembre : après réponse, « 0,01 € à expliquer » sans aucun achat
+    derrière — question impossible à faire disparaître — ou des centimes d'espèces
+    apparus. Achats en dollars, montants qui ne tombent jamais au centime."""
+
+    def test_trente_achats_aleatoires(self):
+        import random
+        for graine in range(8):
+            with self.subTest(graine=graine):
+                self.setUp()
+                try:
+                    alea = random.Random(graine)
+                    for i in range(30):
+                        q, prix = alea.randint(1, 9), round(alea.uniform(10, 600), 2)
+                        taux, frais = round(alea.uniform(0.88, 0.95), 5), round(alea.uniform(0, 2), 3)
+                        self.pdb.ajouter_operation(U, self.pf, {
+                            "date": f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}", "type": "ACHAT",
+                            "ticker": f"T{i}", "quantite": q, "prix": prix, "devise": "USD",
+                            "taux_eur": taux, "frais_eur": frais, "montant_eur": q * prix * taux})
+                    avant = self.inv()
+                    self.assertEqual(avant["a_expliquer_eur"],
+                                     round(sum(t["montant_eur"] for t in avant["a_expliquer_detail"]), 2))
+                    self.declarer()
+                    apres = self.inv()
+                    self.assertEqual((apres["a_expliquer_eur"], apres["a_expliquer_detail"]), (0.0, []))
+                    self.assertEqual(apres["cash_eur"], 0.0)                 # pas un centime apparu
+                    self.assertEqual(apres["titres_cout_eur"], avant["titres_cout_eur"])
+                finally:
+                    self.tearDown()
+        self.setUp()                                                       # pour le tearDown final
+
+    def test_total_egal_somme_des_lignes(self):
+        """Une base déjà abîmée (versements arrondis) : les restes ne s'affichent plus."""
+        # Deux achats couverts chacun par un versement arrondi, à 0,004 € près :
+        # 0,008 € en tout, que l'ancien total affichait « 0,01 € » sans aucune ligne.
+        for jour, prix in (("2026-01-05", 10.004), ("2026-02-05", 20.004)):
+            self.pdb.ajouter_operation(U, self.pf, {"date": jour[:-1] + "4", "type": "DEPOT", "montant_eur": round(prix, 2),
+                                                    "devise": "EUR", "taux_eur": 1.0})
+            self.pdb.ajouter_operation(U, self.pf, achat(jour, "AAA", 1, prix))
+        i = self.inv()
+        self.assertGreater(round(passerelle.etat_investissement(U)["entre_en_tout_eur"] - 30.0, 3), 0.005)
+        self.assertEqual(i["a_expliquer_detail"], [])
+        self.assertEqual(i["a_expliquer_eur"], 0.0)
+
+
+class VersementsSaisis(Base):
+    """Un versement saisi ou importé dans le compte-titres pose la question de son origine."""
+
+    def setUp(self):
+        super().setUp()
+        self.dep = self.pdb.ajouter_operation(U, self.pf, {
+            "date": "2026-11-05", "type": "DEPOT", "montant_eur": 500.0, "devise": "EUR",
+            "taux_eur": 1.0, "origine": "import_ordres"})
+
+    def repondre(self, origine="budget", montant=500.0, op=None):
+        r = passerelle.declarer_versements(U, ETAT, self.version, [
+            {"operation_id": op or self.dep, "montant_eur": montant, "origine": origine}])
+        self.version = r["version"]
+        return r
+
+    def test_question_posee(self):
+        v = self.inv()["versements_a_expliquer"]
+        self.assertEqual([(x["operation_id"], x["type"], x["montant_eur"], x["saisie"]) for x in v],
+                         [(self.dep, "DEPOT", 500.0, "import_ordres")])
+        self.assertEqual(self.inv()["verses_depuis_budget_eur"], 0.0)
+
+    def test_reponse_courant(self):
+        self.repondre("budget")
+        i = self.inv()
+        self.assertEqual(i["versements_a_expliquer"], [])
+        self.assertEqual(i["verses_depuis_budget_eur"], 500.0)
+        self.assertEqual(i["cash_eur"], 500.0)                       # le compte-titres n'a pas bougé
+        mv = [m for m in i["mouvements"] if m["operation_id"] == self.dep][0]
+        self.assertEqual((mv["origine"], mv["repondu"]), ("budget", True))
+        # la colonne du compte-titres garde sa propre information
+        self.assertEqual(self.pdb.operations(U, self.pf)[0]["origine"], "import_ordres")
+
+    def test_reponse_externe(self):
+        self.repondre("externe")
+        i = self.inv()
+        self.assertEqual((i["verses_exterieurs_eur"], i["verses_depuis_budget_eur"]), (500.0, 0.0))
+
+    def test_second_clic_sans_effet(self):
+        self.repondre()
+        with self.assertRaises(passerelle.ExplicationPerimee):
+            passerelle.declarer_versements(U, ETAT, self.version, [
+                {"operation_id": self.dep, "montant_eur": 500.0, "origine": "budget"}])
+        self.assertEqual(self.inv()["verses_depuis_budget_eur"], 500.0)
+
+    def test_montant_modifie_refuse(self):
+        with self.assertRaises(passerelle.ExplicationPerimee):
+            self.repondre(montant=450.0)
+        self.assertEqual(len(self.inv()["versements_a_expliquer"]), 1)
+
+    def test_annuler_la_reponse(self):
+        self.repondre()
+        r = passerelle.annuler_reponse(U, ETAT, self.version, self.dep)
+        self.version = r["version"]
+        self.assertEqual(r["supprimes"], 1)
+        self.assertEqual(len(self.inv()["versements_a_expliquer"]), 1)
+
+    def test_rattache_au_courant_protege(self):
+        ops = self.pdb.operations(U, self.pf)
+        self.assertIsNone(passerelle.lien_budget(ops, self.dep))           # sans réponse : libre
+        self.repondre("budget")
+        self.assertIn("Annuler la réponse", passerelle.lien_budget(ops, self.dep))
+
+    def test_externe_reste_libre(self):
+        self.repondre("externe")
+        self.assertIsNone(passerelle.lien_budget(self.pdb.operations(U, self.pf), self.dep))
+
+    def test_ecrits_par_le_budget_et_prelevements_exclus(self):
+        passerelle.virer(U, ETAT, self.version, "vir-aaaaaa", "2026-11-06", 300.0)
+        self.pdb.ajouter_operation(U, self.pf, {"date": "2026-11-07", "type": "PRELEVEMENT",
+                                                "montant_eur": 12.0, "devise": "EUR", "taux_eur": 1.0})
+        self.assertEqual([x["operation_id"] for x in self.inv()["versements_a_expliquer"]], [self.dep])
+
+    def test_retrait(self):
+        ret = self.pdb.ajouter_operation(U, self.pf, {"date": "2026-11-20", "type": "RETRAIT",
+                                                      "montant_eur": 200.0, "devise": "EUR", "taux_eur": 1.0})
+        self.repondre("budget")
+        self.repondre("budget", 200.0, ret)
+        self.assertEqual(self.inv()["verses_depuis_budget_eur"], 300.0)   # 500 versés − 200 rapatriés
+
+
 if __name__ == "__main__":
     unittest.main()

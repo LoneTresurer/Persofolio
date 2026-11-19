@@ -68,6 +68,10 @@ class H(SimpleHTTPRequestHandler):
                 r = passerelle.annuler_virement(U, c["etat"], c["version"], c["id"])
             elif self.path == "/banque/apports":
                 r = passerelle.declarer_apports(U, c["etat"], c["version"], c["origine"], c["achats"])
+            elif self.path == "/banque/versements":
+                r = passerelle.declarer_versements(U, c["etat"], c["version"], c["reponses"])
+            elif self.path == "/banque/versements/annuler":
+                r = passerelle.annuler_reponse(U, c["etat"], c["version"], c["operation_id"])
             elif self.path == "/auth/deconnexion":
                 r = {}
             else:

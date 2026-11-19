@@ -172,6 +172,55 @@ try:
             const topo = await (await fetch('vendor/countries-110m.json')).json();
             return ChartGeo.topojson.feature(topo, topo.objects.countries).features.length; }""")
         verifier("module de carte et fond de carte lisibles", n_pays == 177, n_pays)
+
+        print("9. Versement importé dans le compte-titres : d'où vient-il ? (19 novembre)")
+        def reponses():
+            c = sqlite3.connect(DB)
+            try: return c.execute("SELECT operation_id, origine FROM banque_origines ORDER BY operation_id").fetchall()
+            except sqlite3.OperationalError: return []
+            finally: c.close()
+        def lignes(): return pg.locator(".a-expliquer .ligne-question").count()
+        charger(); n_avant = net(); c_avant = euros(pg.inner_text("#r-courant"))
+        dep = pdb.ajouter_operation(U, PF, {"date": "2026-10-12", "type": "DEPOT", "montant_eur": 750.0,
+                                            "devise": "EUR", "taux_eur": 1.0, "origine": "import_ordres"})
+        ret = pdb.ajouter_operation(U, PF, {"date": "2026-10-20", "type": "RETRAIT", "montant_eur": 200.0,
+                                            "devise": "EUR", "taux_eur": 1.0, "origine": "manuel"})
+        charger()
+        verifier("deux lignes posées", lignes() == 2, lignes())
+        verifier("le versement est compté tant qu'on ne sait pas d'où il vient", abs(net() - (n_avant + 550)) < 0.01, net())
+        pg.evaluate(f"const b=document.querySelector('[data-vers=\"{dep}\"][data-origine=budget]'); b.click(); b.click(); b.click();")
+        pg.wait_for_timeout(1500)
+        verifier("trois clics, une seule réponse", reponses() == [(dep, "budget")], reponses())
+        verifier("la ligne a disparu, l'autre reste", lignes() == 1, lignes())
+        verifier("le compte courant porte le versement", abs(euros(pg.inner_text("#r-courant")) - (c_avant - 750)) < 0.01, pg.inner_text("#r-courant"))
+        verifier("le patrimoine ne compte plus 750 € en double", abs(net() - (n_avant - 200)) < 0.01, net())
+        pg.click(f"[data-vers='{ret}'][data-origine=budget]"); pg.wait_for_timeout(1500)
+        verifier("retrait rattaché : le courant le reçoit", abs(euros(pg.inner_text("#r-courant")) - (c_avant - 550)) < 0.01, pg.inner_text("#r-courant"))
+        verifier("le patrimoine revient à son niveau", abs(net() - n_avant) < 0.01, net())
+        verifier("plus aucun mouvement en question", lignes() == 0, lignes())
+
+        print("10. Annuler une réponse, puis répondre pour tous")
+        pg.click("nav.onglets button[data-onglet=comptes]"); pg.wait_for_timeout(600)
+        pg.click(f"[data-annuler-rep='{dep}']"); pg.wait_for_timeout(1500)
+        verifier("réponse retirée", reponses() == [(ret, "budget")], reponses())
+        verifier("la ligne du courant est retirée", abs(euros(pg.inner_text("#r-courant")) - (c_avant + 200)) < 0.01, pg.inner_text("#r-courant"))
+        pg.click(f"[data-annuler-rep='{ret}']"); pg.wait_for_timeout(1500)
+        pg.click("nav.onglets button[data-onglet=synthese]"); pg.wait_for_timeout(600)
+        verifier("les deux questions reviennent", lignes() == 2, lignes())
+        pg.click("[data-vers-tous=externe]"); pg.wait_for_timeout(1500)
+        verifier("pour tous : ailleurs", reponses() == [(dep, "externe"), (ret, "externe")], reponses())
+        verifier("le courant n'a pas bougé", abs(euros(pg.inner_text("#r-courant")) - c_avant) < 0.01, pg.inner_text("#r-courant"))
+
+        print("11. Le centime qui ne partait pas")
+        for jour, prix in (("2026-10-07", 10.004), ("2026-10-08", 20.004)):
+            pdb.ajouter_operation(U, PF, {"date": jour[:-1] + "6" if jour.endswith("7") else "2026-10-07", "type": "DEPOT",
+                                          "montant_eur": round(prix, 2), "devise": "EUR", "taux_eur": 1.0, "origine": "externe"})
+            achat(jour, "AAA", 1, prix)
+        charger()
+        # Reste seul l'achat de la section 5, laissé sans réponse : 500,00 € tout rond.
+        verifier("restes de moins d'un centime : seul l'achat de 500 € reste à expliquer",
+                 "500,00" in pg.inner_text(".a-expliquer .ligne") and pg.evaluate("INV.a_expliquer_detail.length") == 1,
+                 pg.locator(".a-expliquer").all_inner_texts())
         b.close()
 finally:
     srv.terminate()
