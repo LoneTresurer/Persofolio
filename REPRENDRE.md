@@ -79,6 +79,8 @@ Chacun a été découvert en production ou en test, pas par raisonnement.
 | **xlrd absent des sessions Claude** | Le test `.xls` est sauté localement (pas de PyPI) et tourne dans GitHub Actions. LibreOffice (`soffice`) est installé : il convertit un .xls en .xlsx ou .csv pour l'examiner. |
 | **Grille et téléphone** | `grid-template-columns: 1fr` laisse une colonne s'élargir à la taille d'un tableau : la page déborde au lieu de faire défiler le tableau. `minmax(0, 1fr)`. De même, une infobulle invisible (opacity 0) occupe de la place : elle est en `display: none` hors survol. |
 | **Une échéance passée dans `E.operations`** | `soldeCompte` additionne *toutes* les opérations, sans filtre de date. Une échéance d'avant le début du suivi (`E.creeLe`) y serait retranchée une seconde fois : le solde de départ la contient déjà. Elle va dans `dette.historique`, que seul `etatDette` rejoue (`evenementsDette`). |
+| **La colonne `origine` du compte-titres n'est pas à nous** | Le compte-titres y note *comment* une opération a été saisie (`manuel`, `auto`, `import_ordres`, `import_positions`). La passerelle n'y écrit `budget`/`externe` que sur les versements qu'elle crée elle-même. La réponse à « d'où vient ce versement ? » pour un versement saisi là-bas va dans `banque_origines`, jamais dans cette colonne. |
+| **Arrondir un montant qu'un autre calcul doit couvrir** | Un versement déclaré au centime laissait chaque achat couvert à un demi-centime près : « 0,01 € à expliquer » sans aucune ligne, question impossible à faire disparaître. Le montant écrit est exact ; ce qui s'affiche est la somme des lignes listées (19 novembre). |
 | **Deux écritures concurrentes** | Tout ce qui envoie l'état du budget porte un numéro de version. Deux envois simultanés et le second est refusé (409). Les virements s'enchaînent pour cette raison. |
 
 ---
@@ -152,7 +154,7 @@ dernière fusion n'a demandé qu'un seul fichier résolu à la main.
 python outils/verifier_fusion.py     # 53 contrôles statiques
 python outils/dependances.py         # requirements.txt contre les imports réels
 python outils/verifier_bat.py construire.bat
-python outils/essai/essai_passerelle.py .   # 34 contrôles, vrai navigateur hors ligne, vraie passerelle
+python outils/essai/essai_passerelle.py .   # 55 contrôles, vrai navigateur hors ligne, vraie passerelle
 python outils/essai/essai_exemple.py .      # patrimoine de l'exemple à date fixe
 cd persofolio/backend && python -m py_compile main.py routes_*.py core/*.py agents/*.py
 python -m unittest tests.test_passerelle tests.test_calc_frais   # depuis persofolio/backend
@@ -291,4 +293,31 @@ total des entrées. Sur 3 mois, le solde moyen égale la capacité constatée de
 Synthèse. Dépenses historiques : « Dépenser ou investir » (versements nets vers
 le compte-titres). Onglet « Simulateur d'investissement », sans « Le coût
 d'attendre ».
+
+## 12. v57 de l'équipe, origine des versements, doublons (19 novembre)
+
+**v57 fusionnée sans la coupure** de la passerelle annoncée dans leur
+`A_LIRE.txt` : malentendu, confirmé par l'équipe (MERGE.md §6 quinquies).
+
+**« D'où venait cet argent ? »** porte maintenant sur deux choses, dans le
+même bloc de la Synthèse (`blocAExpliquer`, affiché même avant le premier mois
+complet) :
+- les achats à découvert, comme avant (une réponse pour tous) ;
+- les versements et retraits **saisis ou importés dans le compte-titres**
+  (`versements_a_expliquer`), une réponse par ligne et « pour tous ». « Compte
+  courant » : virement côté budget (`versement-<id>`), ligne du relevé
+  rattachée si elle existe (débit 0 à 10 jours avant le versement, crédit 0 à
+  10 jours après un retrait), sinon ajoutée ; rien avant `E.creeLe`. Le
+  compte-titres n'est pas touché. Réponses dans `banque_origines` ;
+  « Annuler la réponse » dans Comptes ; `lien_budget` protège un versement
+  rattaché au courant.
+
+**Doublons** : à l'import d'un avis, un mouvement déjà écrit par un virement du
+budget (même sens, même montant, ±5 jours) est décoché (retouche 7). Dans
+l'autre sens, le formulaire de virement propose « Le rattacher à ce virement »
+quand le versement est déjà dans le compte-titres sans origine.
+
+**Boutons** : tout le bloc reste désactivé jusqu'à ce que les chiffres soient
+relus, quoi qu'il arrive. `essai_passerelle.py` : 55 contrôles (triple clic,
+annulation, pour tous, centimes, rattachement depuis le formulaire).
 
