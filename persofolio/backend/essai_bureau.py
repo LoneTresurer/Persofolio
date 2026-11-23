@@ -151,6 +151,9 @@ class Essai:
             self._controle("même patrimoine qu'au premier lancement",
                            rempli and texte == self.patrimoine_precedent,
                            f"{self.patrimoine_precedent!r} puis {texte!r}")
+        # La Synthèse n'a plus de graphique Chart.js depuis la refonte : on les
+        # compte dans Comptes, qui en dessine deux.
+        self._js("var b = document.querySelector('nav.onglets [data-onglet=comptes]'); if (b) b.click();")
         time.sleep(1.0)                                     # laisser les graphiques se dessiner
         n = self._js("window.Chart ? Object.keys(Chart.instances).length : 0") or 0
         self._controle("graphiques dessinés", n > 0, n)

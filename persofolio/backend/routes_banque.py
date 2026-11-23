@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
 from core import passerelle
-from core.banque_db import BanqueDB, ConflitVersion
+from core.banque_db import BanqueDB, ConflitVersion, verifier_structure
 from core.import_releves import lire_fichiers
 from routes_portefeuille import utilisateur_courant
 
@@ -35,9 +35,6 @@ logger = logging.getLogger("persofolio.banque")
 router = APIRouter()
 bdb = BanqueDB()
 
-TAILLE_MAX = 2_000_000       # octets : large pour des années d'opérations, borne les abus
-
-
 class EtatIn(BaseModel):
     etat: Dict[str, Any]
     version: int = Field(..., ge=0)   # version sur laquelle le navigateur a fondé ses modifications
@@ -45,11 +42,7 @@ class EtatIn(BaseModel):
     @field_validator("etat")
     @classmethod
     def _structure(cls, v: Dict[str, Any]) -> Dict[str, Any]:
-        manquants = [k for k in ("comptes", "operations", "programmees", "dettes", "objectifs", "budgets") if k not in v]
-        if manquants:
-            raise ValueError(f"état incomplet, clés manquantes : {', '.join(manquants)}")
-        if len(str(v)) > TAILLE_MAX:
-            raise ValueError("état trop volumineux")
+        verifier_structure(v)
         return v
 
 

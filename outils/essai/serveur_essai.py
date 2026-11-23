@@ -9,7 +9,7 @@ backend, frontend, port, db = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.ar
 os.environ["PERSOFOLIO_DONNEES"] = os.path.dirname(db)
 sys.path.insert(0, backend)
 from core import passerelle
-from core.banque_db import BanqueDB, ConflitVersion as CV1
+from core.banque_db import BanqueDB, ConflitVersion as CV1, verifier_structure
 from core.portfolio_db import PortfolioDB
 passerelle.DB_PATH = db
 pdb, bdb = PortfolioDB(db), BanqueDB(db)
@@ -39,6 +39,8 @@ class H(SimpleHTTPRequestHandler):
 
     def do_PUT(self):
         c = self._corps()
+        try: verifier_structure(c["etat"])          # même refus que la route FastAPI (422)
+        except ValueError as e: return self._json(422, {"detail": [{"msg": str(e)}]})
         try: return self._json(200, {"version": bdb.ecrire(U, c["etat"], c["version"])})
         except CV1 as e: return self._json(409, {"detail": {"message": "version", "version": e.version_actuelle}})
 

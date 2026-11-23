@@ -119,6 +119,10 @@ try:
         envoyer_pdf()
         pg.click("#imp-valider"); pg.wait_for_selector("#r-net"); pg.wait_for_timeout(600)
         verifier("ancien état conservé dans le nouveau", J("E.archiveV1 && E.archiveV1.programmees.length === 1"))
+        pg.wait_for_timeout(800)
+        enreg = bdb.lire(U)[0] or {}
+        verifier("état enregistré par le serveur (structure acceptée)", enreg.get("format") == "releves-1" and len(enreg.get("operations", [])) > 0,
+                 pg.inner_text("#sauvegarde"))
         verifier("plus d'opérations programmées ni d'objectifs", J("!('programmees' in E) && !('objectifs' in E)"))
         verifier("solde = clôture du dernier relevé", abs(J("soldeCompte('courant')") - CLOTURE_OCT) < 0.005, (J("soldeCompte('courant')"), CLOTURE_OCT))
         verifier("date de référence = fin du dernier relevé", J("DREF") == "2026-10-31", J("DREF"))
@@ -194,6 +198,9 @@ try:
         verifier("solde courant = solde indiqué", abs(J("soldeCompte('courant')") - 1000) < 0.005, J("soldeCompte('courant')"))
         verifier("ancre marquée comme indiquée", J("E.ancres.map(a => a.source)") == ["saisi"], J("E.ancres"))
         verifier("la carte le dit", "solde que vous avez indiqué" in pg.inner_text("[data-vue=synthese]"))
+        pg.wait_for_timeout(800)
+        pg.goto(base); pg.wait_for_selector("#r-net"); pg.wait_for_timeout(400)
+        verifier("tout est encore là après rechargement", abs(J("soldeCompte('courant')") - 1000) < 0.005 and "Enregistré" in pg.inner_text("#sauvegarde"))
         b.close()
 finally:
     srv.terminate()

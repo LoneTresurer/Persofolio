@@ -4,8 +4,8 @@ core/banque_db.py
 Stockage du module « Budget et comptes », dans la même base que le compte-titres
 (data/portefeuille.db) et rattaché au même utilisateur (table utilisateurs).
 
-Prototype : l'état complet du module (comptes, opérations, opérations programmées,
-dettes, objectifs, budgets) est stocké en un document JSON versionné par utilisateur.
+L'état complet du module (comptes, opérations, relevés, soldes connus, dettes) est
+stocké en un document JSON versionné par utilisateur (voir CLES_ETAT).
 La version sert au contrôle de concurrence optimiste : une écriture fondée sur une
 version périmée (autre onglet, autre appareil) est refusée au lieu d'écraser les données.
 Étape suivante prévue : éclater ce document en tables (operations_banque, dettes…)
@@ -18,6 +18,30 @@ from datetime import datetime
 from typing import Optional, Tuple
 
 from core.portfolio_db import DB_PATH
+
+
+# Clés obligatoires de l'état, selon son format. « releves-1 » : depuis la refonte
+# du 23 novembre 2026, tout vient des relevés (plus d'opérations programmées,
+# d'objectifs ni de budgets). Sans format : état d'avant la refonte.
+CLES_ETAT = {
+    "releves-1": ("comptes", "operations", "releves", "ancres", "dettes"),
+    None: ("comptes", "operations", "programmees", "dettes", "objectifs", "budgets"),
+}
+TAILLE_MAX = 2_000_000       # octets : large pour des années d'opérations, borne les abus
+
+
+def verifier_structure(etat: dict) -> None:
+    """Lève ValueError si l'état est incomplet ou démesuré. Partagée par la route
+    PUT /banque/etat et par le serveur d'essai : les essais refusent ce que le
+    vrai serveur refuse."""
+    attendues = CLES_ETAT.get(etat.get("format"))
+    if attendues is None:
+        raise ValueError(f"format d'état inconnu : {etat.get('format')!r}")
+    manquants = [k for k in attendues if k not in etat]
+    if manquants:
+        raise ValueError(f"état incomplet, clés manquantes : {', '.join(manquants)}")
+    if len(str(etat)) > TAILLE_MAX:
+        raise ValueError("état trop volumineux")
 
 
 class ConflitVersion(Exception):

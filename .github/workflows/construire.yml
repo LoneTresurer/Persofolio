@@ -59,7 +59,7 @@ jobs:
         run: python -m py_compile main.py lanceur.py essai_bureau.py routes_*.py core/*.py agents/*.py
       - name: Tests de la passerelle
         working-directory: persofolio/backend
-        run: python -m unittest tests.test_passerelle -v
+        run: python -m unittest tests.test_passerelle tests.test_banque_db -v
       - name: Essai dans le navigateur (hors ligne)
         run: python outils/essai/essai_releves.py .
       - name: Calcul du patrimoine à date fixe
