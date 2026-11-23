@@ -62,13 +62,12 @@ livraisons le ramènent à chaque fois ; il retourne à l'archive à chaque fois
 Décision de Pierre, prise en septembre, toujours valable.
 
 **Rien ne s'invente sur les chiffres.** Toute valeur affichée vient d'une
-mesure, jamais d'un plan. La capacité d'épargne *prévue* sert à guider ; elle
-n'entre dans aucune statistique affichée.
+mesure, jamais d'un plan. Depuis la refonte, il n'y a plus de plan du tout :
+seulement ce que les relevés montrent, et l'échéancier contractuel des emprunts
+pour l'avenir.
 
 **Le ton.** Conseil, jamais leçon. Quand l'utilisateur fait un choix discutable,
-l'application le signale une fois, discrètement, et n'y revient pas. Elle ne
-félicite pas non plus à contretemps : quand le coussin de précaution n'est pas
-constitué, elle se tait plutôt que de dire « objectif atteint ».
+l'application le signale une fois, discrètement, et n'y revient pas.
 
 ---
 
@@ -251,7 +250,7 @@ le navigateur si WebView2 manque.
   macOS : `PersoFolio.app` (arm64 par défaut, `PERSOFOLIO_ARCH=x86_64`).
 - **Essai de l'application construite** : `PERSOFOLIO_ESSAI=<rapport.json>` fait
   tourner `essai_bureau.py` *dans* l'application — session locale, profil
-  d'exemple, 1 150,86 €, Chart.js, puis au second lancement la session doit
+  d'exemple (patrimoine affiché), Chart.js, puis au second lancement la session doit
   avoir survécu. Temps mesurés (28 octobre, machines GitHub) : fenêtre ~1 s,
   serveur prêt 2,5 à 6,5 s selon la machine et le lancement.
 - **Dépendances** : `requirements-bureau.txt` (pywebview, PyInstaller) s'ajoute
