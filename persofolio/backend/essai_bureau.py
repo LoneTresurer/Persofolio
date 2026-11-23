@@ -15,7 +15,7 @@ Ce qu'il vérifie, dans la vraie fenêtre et contre le vrai serveur FastAPI :
 Le chiffre lui-même n'est pas comparé à une valeur fixe : le profil d'exemple est
 construit par rapport à la date du jour, et son patrimoine change chaque mois.
 La justesse du calcul est vérifiée à date fixe par outils/essai/essai_exemple.py
-(28 octobre 2026 → 1 150,86 €).
+(trois dates de référence, voir ce script).
 
 Il mesure aussi les temps de démarrage : fenêtre affichée, serveur prêt, page
 prête. Le rapport est un JSON ; outils/essai/lancer_essai_bureau.py le met en
@@ -119,7 +119,7 @@ class Essai:
         self.rapport["jeton"] = jeton
 
         pret = self._charger(f"{base}/app/banque.html",
-                             "document.querySelector('#ass-exemple') || "
+                             "document.querySelector('#imp-exemple') || "
                              "(document.querySelector('#r-net') && document.querySelector('#r-net').textContent.trim() !== '—')")
         self._controle("page Budget chargée", pret)
         if not pret:
@@ -128,13 +128,12 @@ class Essai:
                        self._js("window.Chart ? Chart.version : null"))
 
         if self.etape == "1":
-            a_assistant = self._js("!!document.querySelector('#ass-exemple')")
-            self._controle("assistant de configuration proposé", a_assistant)
+            a_assistant = self._js("!!document.querySelector('#imp-exemple')")
+            self._controle("import de relevés proposé, avec le profil d'exemple", a_assistant)
             if a_assistant:
-                self._js("document.querySelector('#ass-exemple').click()")
-        # Le profil d'exemple se charge en deux temps : le budget d'abord, puis le
-        # report de l'épargne déjà placée vers le compte-titres. On attend une
-        # valeur stable — deux secondes sans changement — avant de la lire.
+                self._js("document.querySelector('#imp-exemple').click()")
+        # On attend une valeur stable — deux secondes sans changement — avant de la
+        # lire : le compte-titres répond après le budget.
         rempli, texte, depuis = False, "", time.time()
         fin = time.time() + 45
         while time.time() < fin:

@@ -3,23 +3,21 @@ Le calcul du patrimoine, contrôlé à date fixe sur le profil d'exemple.
 
     python outils/essai/essai_exemple.py .        # depuis la racine du dépôt
 
-Le profil d'exemple est construit par rapport à la date du jour : chaque mois
-écoulé fait passer des échéances programmées, et son patrimoine change. Le
-comparer à un chiffre fixe n'a donc de sens qu'à une date fixe. Ce script fige
-l'horloge du navigateur et vérifie les valeurs de référence :
+Le profil d'exemple est fait de six mois de relevés fictifs, construits par
+rapport au mois en cours, passés par le même chemin qu'un vrai import : écart
+entre relevés, rattachement des échéances d'emprunt, ancrage du solde. Tout
+y est relatif au mois en cours, si bien que son patrimoine ne dépend pas de la
+date : 3 403,95 € (compte-titres vide). Le vérifier à trois dates, en
+changeant de mois et d'année, contrôle que le passage du temps ne change rien.
 
-- 28 octobre 2026 : 1 150,86 € — le chiffre qui a traversé la fusion, le
-  renommage et la jonction des deux modules ;
-- 1er novembre 2026 : 200,85 €, et 10 novembre 2026 : −898,08 €, relevés le
-  10 novembre ; ils vérifient que le passage d'un mois est compté de la même
-  façon d'une version à l'autre.
+Si ce chiffre change, le calcul a changé : c'est voulu (et la référence se met
+à jour, en le disant dans le commit) ou c'est une régression.
 
-Si l'un de ces chiffres change, le calcul a changé : c'est voulu (et les
-références se mettent à jour, en le disant dans le commit) ou c'est une
-régression.
+Références d'avant la refonte de novembre 2026 (exemple saisi à la main, avec
+11 500 € versés sur le compte-titres) : 1 150,86 € au 28 octobre 2026. Elles ne
+s'appliquent plus.
 
-Comme essai_passerelle.py : vraie page banque.html, vraie passerelle derrière
-serveur_essai.py, hors ligne, Playwright et Chromium.
+Vraie page banque.html derrière serveur_essai.py, hors ligne, Playwright et Chromium.
 """
 
 import os
@@ -37,9 +35,9 @@ BACK, FRONT = f"{REPO}/persofolio/backend", f"{REPO}/persofolio/frontend"
 sys.path.insert(0, BACK)
 
 REFERENCES = {
-    "2026-10-28T12:00:00": "1 150,86 €",
-    "2026-11-01T12:00:00": "200,85 €",
-    "2026-11-10T12:00:00": "-898,08 €",
+    "2026-11-23T12:00:00": "3 403,95 €",
+    "2026-12-05T12:00:00": "3 403,95 €",
+    "2027-01-15T12:00:00": "3 403,95 €",
 }
 PORT = 8767
 
@@ -73,9 +71,10 @@ def patrimoine_a(date_iso: str) -> str:
             pg.evaluate("localStorage.setItem('persofolio_jeton','t');"
                         "localStorage.setItem('persofolio_user','pierre')")
             pg.goto(base)
-            pg.wait_for_selector("#ass-exemple")
-            pg.click("#ass-exemple")
-            # Le profil se charge en deux temps : on attend une valeur stable.
+            pg.wait_for_selector("#imp-exemple")
+            pg.click("#imp-exemple")
+            pg.wait_for_selector("#r-net")
+            # On attend une valeur stable : le compte-titres répond après le budget.
             lu, depuis, debut = None, time.time(), time.time()
             while time.time() - debut < 45:
                 v = pg.inner_text("#r-net")

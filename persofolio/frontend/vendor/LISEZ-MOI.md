@@ -21,5 +21,5 @@ Empreintes SHA-256, pour vérifier qu'un fichier n'a pas été remplacé :
 ```
 
 Pour changer de version : remplacer le fichier, mettre ce tableau à jour, et
-relancer `python outils/essai/essai_passerelle.py .` — il vérifie que les
+relancer `python outils/essai/essai_releves.py .` — il vérifie que les
 graphiques se dessinent.

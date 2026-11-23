@@ -7,6 +7,13 @@ l'ignorent.
 
 **À lire en entier avant de toucher au code.**
 
+> **23 novembre 2026 : refonte du module Budget et comptes.** Il ne fait plus
+> que lire des relevés bancaires : plus d'assistant, d'opérations saisies ou
+> programmées, d'objectifs, de virements vers le compte-titres. Le §13 décrit
+> ce qui est en place et fait foi. Les §4, §11 et §12 décrivent en partie un
+> fonctionnement retiré ; ils restent pour l'histoire du code serveur, qui, lui,
+> n'a pas changé.
+
 Dépôt public : <https://github.com/LoneTresurer/persofolio>. Branche par défaut
 `perso-finance` ; `portefeuille` et `base` servent à la méthode de fusion (§5).
 Les commits portent l'adresse « noreply » de GitHub, pas une adresse personnelle.
@@ -20,8 +27,8 @@ le proxy les refuse. Elles se créent depuis l'interface GitHub.
 Deux modules, un seul compte, un seul serveur.
 
 - **Budget et comptes** (`frontend/banque.html`, `backend/routes_banque.py`) —
-  compte courant, objectifs d'épargne, crédits, import de relevés bancaires PDF.
-  Écrit par Pierre.
+  lecture des relevés bancaires (PDF, Excel, CSV) : compte courant, crédits et
+  débits, moyennes, emprunts. Écrit par Pierre.
 - **Compte-titres** (`frontend/portefeuille.html`,
   `backend/routes_portefeuille.py`, `core/portfolio_*.py`, `agents/`) — ordres,
   positions, performance, risque. Écrit par le reste de l'équipe, livré par
@@ -36,6 +43,13 @@ phrase a tranché plusieurs arbitrages ; elle en tranchera d'autres.
 ---
 
 ## 2. Ce qu'il faut savoir avant d'écrire une ligne
+
+**Budget et comptes ne contient que ce que disent les relevés.** Aucune
+opération ne se saisit, ne se modifie ni ne se programme. Seuls se décrivent à
+la main les paramètres d'un emprunt (absents des relevés) et, pour un tableur,
+le solde à sa dernière date. Changer la catégorie d'une opération reste permis :
+c'est du classement, pas une donnée. Toute nouvelle fonction se juge à cette
+règle (§13).
 
 **Le code de l'équipe compte-titres ne se modifie pas** sans raison de fusion.
 Leurs livraisons arrivent régulièrement et sont rejouées par-dessus (§5). Toute
@@ -154,7 +168,7 @@ dernière fusion n'a demandé qu'un seul fichier résolu à la main.
 python outils/verifier_fusion.py     # 53 contrôles statiques
 python outils/dependances.py         # requirements.txt contre les imports réels
 python outils/verifier_bat.py construire.bat
-python outils/essai/essai_passerelle.py .   # 55 contrôles, vrai navigateur hors ligne, vraie passerelle
+python outils/essai/essai_releves.py .      # 36 contrôles, vrai navigateur hors ligne (§13)
 python outils/essai/essai_exemple.py .      # patrimoine de l'exemple à date fixe
 cd persofolio/backend && python -m py_compile main.py routes_*.py core/*.py agents/*.py
 python -m unittest tests.test_passerelle tests.test_calc_frais   # depuis persofolio/backend
@@ -167,10 +181,12 @@ authentification) reste non testée ici.
 
 Et le contrôle qui vaut tous les autres : **le patrimoine du profil d'exemple,
 à date fixe** — `python outils/essai/essai_exemple.py .` fige l'horloge du
-navigateur et attend 1 150,86 € au 28 octobre 2026 (200,85 € au 1er novembre,
-−898,08 € au 10). Le profil est construit par rapport à aujourd'hui : sans date
-fixe, son patrimoine change chaque mois et ne prouve rien. Si un de ces
-chiffres bouge sans raison explicite, quelque chose s'est perdu en route.
+navigateur et attend **3 403,95 €** au 23 novembre 2026, au 5 décembre 2026 et
+au 15 janvier 2027. Depuis la refonte, l'exemple est fait de six mois de relevés
+fictifs relatifs au mois en cours : son patrimoine ne dépend plus de la date, et
+les trois dates vérifient que le passage d'un mois ou d'une année ne change
+rien. Si ce chiffre bouge sans raison explicite, quelque chose s'est perdu en
+route. (Avant la refonte : 1 150,86 € au 28 octobre ; ne s'applique plus.)
 
 ---
 
@@ -193,21 +209,17 @@ Python qui lance la commande. Avec un environnement virtuel, c'est
 
 ## 8. Ce qui reste ouvert
 
-- **Synthèse, sur téléphone** : la ligne des objectifs (« Serré ↑ ↓ »,
-  « Modifier ») déborde encore de 31 px. Antérieur au 17 novembre.
 - **Une installation neuve déjà connectée** (17 novembre, point laissé pour
   plus tard) : rien dans le code ni dans l'exécutable n'emporte de données ; le
   profil venait du dossier de données du poste. `journal.txt` le confirmera.
 
 - **Le vrai serveur tourne**, dans l'application construite (GitHub Actions,
-  Windows et Mac Intel) : session locale, profil d'exemple à 1 150,86 €. Les
-  routes `/banque/virement`, `/banque/virement/annuler` et `/banque/apports`
-  n'y sont pas encore exercées par l'essai de bureau — seulement par
-  `essai_passerelle.py`, sans FastAPI.
-- **Les bases déjà abîmées par l'ancien bouton** se réparent à la main, dans
-  Comptes : annuler *tous* les versements qu'il a écrits (datés du jour du
-  clic, signalés « doublon probable » s'il y en a plusieurs), puis répondre de
-  nouveau à la question.
+  Windows et Mac Intel). Depuis la refonte, l'essai de bureau charge le profil
+  d'exemple par l'écran d'import (`#imp-exemple`).
+- **Routes de la passerelle sans appelant** depuis la refonte :
+  `/banque/virement`, `/virement/annuler`, `/apports`, `/versements`,
+  `/versements/annuler`. Gardées, testées par `tests.test_passerelle` ; à
+  retirer si la refonte est confirmée à l'usage (§13).
 - **Mac Apple Silicon** : construit et validé le 29 octobre (fenêtre 0,9 s,
   serveur 4,8 s au premier lancement, 2,6 s au second). Le 28, GitHub n'avait
   aucune machine libre de ce type (5 tâches abandonnées, « capacity
@@ -320,4 +332,66 @@ quand le versement est déjà dans le compte-titres sans origine.
 **Boutons** : tout le bloc reste désactivé jusqu'à ce que les chiffres soient
 relus, quoi qu'il arrive. `essai_passerelle.py` : 55 contrôles (triple clic,
 annulation, pour tous, centimes, rattachement depuis le formulaire).
+
+## 13. Refonte « tout vient des relevés » (23 novembre)
+
+Décidée par Pierre, maquettée puis validée avant d'être codée. Tout est dans
+`frontend/banque.html` (environ 2 850 lignes au lieu de 4 650) ; **le serveur
+n'a pas changé**, hormis un message du lecteur de tableurs.
+
+**Le modèle** (`E.format = 'releves-1'`) : `operations` (toutes importées),
+`releves` (dates, soldes d'ouverture et de clôture de chaque relevé),
+`ancres` (soldes connus : clôture d'un PDF, ou solde indiqué à la fin d'un
+tableur), `dettes`, `regles`, `nonEmprunts`. Plus de `programmees`,
+`objectifs`, `budgets`. Un état d'avant la refonte ouvre l'écran d'import ; il
+est gardé tel quel dans `archiveV1` au premier import, jamais relu.
+
+**Dates.** `DREF` est la fin du dernier relevé : soldes, capital restant dû et
+« sur 30 jours » valent à cette date, et l'en-tête la donne. Le compte-titres
+reste au cours du jour.
+
+**Solde.** `recalerSolde()` part de l'ancre la plus récente. Un tableur n'a pas
+de solde : celui de sa dernière date est demandé à l'import, quand il prolonge
+l'historique au-delà du dernier solde connu.
+
+**Relevé manquant.** `regenererEcarts()` compare la clôture d'un relevé PDF à
+l'ouverture du suivant ; une différence devient une ligne « Relevé manquant »,
+catégorie `ecart` (interne : ni crédit ni débit). Recalculée à chaque import.
+
+**Virements vers le compte-titres.** `lierVirementsTitres()` : une sortie du
+courant du même montant qu'un versement du compte-titres (`INV.mouvements`), à
+5 jours près, devient « Virement entre comptes ». Rien n'est écrit côté
+compte-titres. La question « D'où venait cet argent ? » a disparu du budget.
+
+**Emprunts.** Décrits par leur contrat (ou par le capital restant à la date de
+saisie, `capitalLe`). `rapprocherDettes()` cherche chaque échéance attendue dans
+les relevés (5 % sur le montant, 5 jours sur la date) ; **le capital ne baisse
+que des échéances retrouvées**. Avant le premier relevé, les échéances sont
+supposées payées (`historique`). Le tableau Dettes dit « n sur m échéances ».
+Un prélèvement classé « Remboursements d'emprunt » sans emprunt configuré
+ouvre, après l'import, la configuration de l'emprunt (`modaleEmprunts`), et un
+bandeau le rappelle dans Dettes. Un débit peut être rattaché comme
+remboursement anticipé (menu ⋯ dans Comptes). Taux d'endettement : mensualités
+÷ revenus nets moyens des 3 derniers mois complets (crédit hors virements
+internes et hors remboursements reçus).
+
+**Écrans.** Synthèse (patrimoine net, deux cartes, répartition, épargne
+constatée) ; Comptes (période 3 mois → Tout pour les deux graphiques,
+opérations en lecture seule, catégorie modifiable) ; Budget mensuel (crédit,
+débit, flux, débits face à la moyenne des 3 mois complets précédents) ; Budget
+historique (période × Tout / Crédit / Débit) ; Dettes (sans « Rembourser plus
+vite » ni coût restant) ; Simulateur (pré-rempli par l'épargne constatée).
+Vocabulaire : crédit / débit pour les sens, « emprunt » pour les dettes.
+
+**Profil d'exemple.** Six mois de relevés fictifs passés par `integrer()`,
+comme un vrai import ; le quatrième commence le 4 (écart visible), trois
+emprunts retrouvés dans les relevés, solde de départ 12 000 €. Il n'écrit plus
+dans le compte-titres.
+
+**Essais.** `essai_releves.py` remplace `essai_passerelle.py`, dont les
+parcours n'existent plus ; la passerelle côté serveur reste couverte par
+`tests.test_passerelle`. Le dépôt étant public, aucun PDF réel : la réponse PDF
+de `/banque/releves` y est fabriquée au format du serveur ; le tableur passe par
+le vrai lecteur. `serveur_essai.py` sait désormais répondre à DELETE
+`/banque/etat` (Réinitialiser).
 

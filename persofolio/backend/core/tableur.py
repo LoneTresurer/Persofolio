@@ -302,7 +302,7 @@ class LectureTableur:
         if self.illisibles:
             a.append(f"{self.illisibles} ligne{'s' if self.illisibles > 1 else ''} sans date ou sans montant "
                      "lisible, ignorée" + ("s" if self.illisibles > 1 else "") + ".")
-        a.append("Tableur : pas de soldes à contrôler. Vérifiez le solde du jour proposé plus bas.")
+        a.append("Tableur : pas de soldes à contrôler. Indiquez plus bas le solde à la dernière date du tableur.")
         return a
 
 

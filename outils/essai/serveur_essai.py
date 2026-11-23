@@ -42,6 +42,11 @@ class H(SimpleHTTPRequestHandler):
         try: return self._json(200, {"version": bdb.ecrire(U, c["etat"], c["version"])})
         except CV1 as e: return self._json(409, {"detail": {"message": "version", "version": e.version_actuelle}})
 
+    def do_DELETE(self):
+        if self.path == "/banque/etat":
+            bdb.supprimer(U); return self._json(200, {"ok": True})
+        return self._json(404, {"detail": "absent de l'essai"})
+
     def _multipart(self):
         """Champs d'un formulaire multipart : [(nom, nom de fichier, contenu)]."""
         from email.parser import BytesParser

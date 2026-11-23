@@ -8,7 +8,8 @@
 PersoFolio réunit deux modules autour d'un seul compte utilisateur :
 
 - **Budget et comptes** (`banque.html`) — compte courant et compte investissement,
-  revenus et dépenses, objectifs d'épargne, crédits.
+  crédits et débits, moyennes, emprunts. Tout vient des relevés bancaires importés
+  (PDF, Excel ou CSV) : rien ne se saisit à la main, hormis les paramètres d'un emprunt.
 - **Compte-titres** (`portefeuille.html`) — ordres, positions, performance et risque
   du portefeuille réel, aux cours du marché. Plusieurs portefeuilles par compte,
   notifications de dividendes, import des relevés de courtier (CSV et PDF).

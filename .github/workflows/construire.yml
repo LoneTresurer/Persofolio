@@ -61,7 +61,7 @@ jobs:
         working-directory: persofolio/backend
         run: python -m unittest tests.test_passerelle -v
       - name: Essai dans le navigateur (hors ligne)
-        run: python outils/essai/essai_passerelle.py .
+        run: python outils/essai/essai_releves.py .
       - name: Calcul du patrimoine à date fixe
         run: python outils/essai/essai_exemple.py .
       - name: Relevés tableur
