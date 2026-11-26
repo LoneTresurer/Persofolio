@@ -112,7 +112,7 @@ try:
         print("1. Un ancien état n'est plus affiché, mais conservé")
         pg.wait_for_selector("#imp-fichiers", state="attached")
         verifier("l'écran d'import s'ouvre, pas l'application", pg.locator("#app").is_hidden() and pg.locator("#import").is_visible())
-        verifier("la reprise est expliquée", "version précédente" in pg.inner_text("#imp-corps"))
+        verifier("la reprise est expliquée", "anciennes données" in pg.inner_text("#imp-corps"))
         verifier("aucun assistant de saisie", pg.locator("#assistant").count() == 0)
 
         print("2. Import de trois relevés PDF")

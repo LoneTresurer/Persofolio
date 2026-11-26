@@ -80,10 +80,8 @@
     .marque { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
     .marque .feuille { color: var(--foret); flex: 0 0 auto; }
     .marque span { color: var(--foret); }
+    header.barre .large > .bascule-theme { margin-left: auto; }
 
-    .liens { display: flex; gap: 26px; margin-left: auto; font-size: 14.5px; color: var(--encre-2); }
-    .liens a { padding: 4px 0; border-bottom: 1.5px solid transparent; }
-    .liens a:hover { color: var(--encre); border-bottom-color: var(--foret); }
 
     .bascule-theme {
       flex: 0 0 auto; width: 46px; height: 25px; border-radius: 13px; border: 1px solid var(--filet);
@@ -99,15 +97,8 @@
     .bascule-theme .sombre { left: 7px; }
 
     /* ── Hero : l'argument à gauche, la connexion à droite ─────────── */
-    .hero { display: grid; grid-template-columns: 1fr 400px; gap: 56px; align-items: center; padding: 56px 0 64px; }
+    .hero { display: grid; grid-template-columns: minmax(0, 420px); justify-content: center; padding: 72px 0 88px; }
 
-    .pitch h1 {
-      font-family: 'IBM Plex Serif', Georgia, serif;
-      font-weight: 500; font-size: clamp(34px, 4.4vw, 52px); line-height: 1.12;
-      letter-spacing: -.015em; color: var(--foret-fonce); margin-bottom: 16px;
-    }
-    html[data-theme="sombre"] .pitch h1 { color: var(--encre); }
-    .pitch .chapo { font-size: 17.5px; color: var(--encre-2); max-width: 30ch; }
     .illustration { margin-top: 36px; width: 100%; max-width: 560px; height: auto; display: block; }
 
     /* ── Carte de connexion ────────────────────────────────────────── */
@@ -152,16 +143,6 @@
     html[data-theme="sombre"] .auth-msg.error { background: #2E1A17; border-color: #4A2822; color: #E8A79B; }
     html[data-theme="sombre"] .auth-msg.ok { background: var(--foret-clair); border-color: #2B4538; color: var(--foret); }
 
-    /* ── Les trois promesses ───────────────────────────────────────── */
-    .promesses { border-top: 1px solid var(--filet-2); background: var(--papier); padding: 52px 0 56px; }
-    .promesses .grille { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
-    .promesse h3 { font-family: 'IBM Plex Serif', Georgia, serif; font-weight: 500; font-size: 20px; margin: 14px 0 8px; }
-    .promesse p { color: var(--encre-2); font-size: 14.5px; }
-    .promesse .puce {
-      width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
-      background: var(--foret-clair); color: var(--foret);
-    }
-    .promesse.invest .puce { background: var(--invest-clair); color: var(--invest); }
 
     /* ── Pied de page ──────────────────────────────────────────────── */
     footer { padding: 30px 0 36px; font-size: 13px; color: var(--encre-2); }
@@ -179,7 +160,6 @@
 
     .accueil { padding: 52px 0 24px; }
     .accueil-titre { font-family: 'IBM Plex Serif', Georgia, serif; font-weight: 500; font-size: clamp(28px, 3.4vw, 40px); line-height: 1.15; letter-spacing: -.015em; }
-    .accueil-intro { color: var(--encre-2); font-size: 16px; max-width: 70ch; margin-top: 12px; }
 
     .modules { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 38px; }
     .module-carte {
@@ -193,24 +173,17 @@
     .module-carte.titres .pastille { background: var(--invest-clair); }
     .module-carte h2 { font-family: 'IBM Plex Serif', Georgia, serif; font-weight: 500; font-size: 23px; }
     .module-carte > p { color: var(--encre-2); font-size: 14.5px; margin: 6px 0 16px; }
-    .module-carte ul { list-style: none; border-top: 1px solid var(--filet-2); padding-top: 14px; }
-    .module-carte li { font-size: 14px; color: var(--encre-2); padding: 5px 0 5px 18px; position: relative; }
-    .module-carte li::before { content: '·'; position: absolute; left: 6px; color: var(--foret); font-weight: 700; }
     .module-carte.titres li::before { color: var(--invest); }
     .module-carte .aller { display: inline-block; margin-top: 16px; color: var(--foret); font-weight: 600; font-size: 14.5px; }
     .module-carte.titres .aller { color: var(--invest); }
 
-    .note-serveur { margin: 34px 0 0; font-size: 13px; color: var(--encre-2); }
-    .note-serveur code { background: var(--papier); border: 1px solid var(--filet-2); border-radius: 5px; padding: 1px 6px; font-size: 12.5px; }
 
     /* ── Petits écrans ─────────────────────────────────────────────── */
     @media (max-width: 940px) {
-      .hero { grid-template-columns: 1fr; gap: 36px; padding: 40px 0 48px; }
+      .hero { padding: 40px 0 48px; }
       .connexion { max-width: 440px; width: 100%; }
       .illustration { max-width: 440px; }
-      .promesses .grille { grid-template-columns: 1fr; gap: 26px; }
       .modules { grid-template-columns: 1fr; }
-      .liens { display: none; }
     }
     @media (max-width: 560px) {
       .large { padding: 0 16px; }
@@ -233,12 +206,6 @@
           </svg>
           <div>Perso<span>Folio</span></div>
         </div>
-        <nav class="liens">
-          <a href="#gerez">Gérez</a>
-          <a href="#progressez">Progressez</a>
-          <a href="#realisez">Réalisez</a>
-          <a href="#apropos">À propos</a>
-        </nav>
         <button class="bascule-theme" id="btn-theme" role="switch" aria-checked="false"
                 aria-label="Basculer entre le mode clair et le mode sombre"
                 title="Mode clair / mode sombre"><span class="clair">☀</span><span class="sombre">☾</span></button>
@@ -246,62 +213,6 @@
     </header>
 
     <main class="large hero">
-
-      <section class="pitch">
-        <h1>Votre argent,<br>une vue d'ensemble.</h1>
-        <p class="chapo">Suivez votre budget, votre épargne et vos investissements au même endroit.</p>
-
-        <!-- Les trois cartes du produit, dessinées plutôt que photographiées :
-             rien à charger, et le dessin suit le thème. -->
-        <svg class="illustration" viewBox="0 0 560 330" role="img"
-             aria-label="Trois volets : budget, épargne et investissements">
-          <defs>
-            <linearGradient id="disque" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stop-color="var(--foret-clair)"/>
-              <stop offset="100%" stop-color="var(--papier)"/>
-            </linearGradient>
-          </defs>
-
-          <circle cx="250" cy="175" r="150" fill="url(#disque)"/>
-
-          <!-- Volet 1 : budget -->
-          <g transform="translate(58 92) rotate(-4)">
-            <rect width="156" height="196" rx="16" fill="var(--carte)" stroke="var(--filet-2)"/>
-            <rect x="20" y="22" width="30" height="30" rx="9" fill="var(--foret-clair)"/>
-            <g stroke="var(--foret)" stroke-width="2.4" stroke-linecap="round">
-              <path d="M29 44v-9M35 44v-15M41 44v-6"/>
-            </g>
-            <text x="20" y="80" font-family="IBM Plex Serif, serif" font-size="17" fill="var(--encre)">Budget</text>
-            <text x="20" y="104" font-size="12.5" fill="var(--encre-2)">Maîtrisez</text>
-            <text x="20" y="121" font-size="12.5" fill="var(--encre-2)">vos dépenses.</text>
-            <path d="M20 170c22-6 34 12 52-4s38-30 64-38" stroke="var(--foret)" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-          </g>
-
-          <!-- Volet 2 : épargne -->
-          <g transform="translate(196 58)">
-            <rect width="156" height="212" rx="16" fill="var(--carte)" stroke="var(--filet-2)"/>
-            <rect x="20" y="22" width="30" height="30" rx="9" fill="var(--foret-clair)"/>
-            <path d="M43 30c.3 4.4-1 7.8-3.3 9.7-2.3 1.8-5.3 1.7-6.9.1-1.7-1.6-1.5-4.7.5-6.7 2.1-2.1 5.7-3 9.7-3.1z" fill="var(--foret)"/>
-            <text x="20" y="80" font-family="IBM Plex Serif, serif" font-size="17" fill="var(--encre)">Épargne</text>
-            <text x="20" y="104" font-size="12.5" fill="var(--encre-2)">Construisez</text>
-            <text x="20" y="121" font-size="12.5" fill="var(--encre-2)">vos projets.</text>
-            <path d="M20 186c24-4 36-20 54-34s40-24 62-26" stroke="var(--foret)" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-          </g>
-
-          <!-- Volet 3 : investissements -->
-          <g transform="translate(336 100) rotate(4)">
-            <rect width="166" height="200" rx="16" fill="var(--carte)" stroke="var(--filet-2)"/>
-            <rect x="20" y="22" width="30" height="30" rx="9" fill="var(--invest-clair)"/>
-            <path d="M35 27a10 10 0 1 1-9.4 13.2L35 37z" fill="var(--invest)"/>
-            <path d="M38 25a10 10 0 0 1 8.6 8.6L38 35z" fill="var(--invest)" opacity=".45"/>
-            <text x="20" y="80" font-family="IBM Plex Serif, serif" font-size="17" fill="var(--encre)">Placements</text>
-            <text x="20" y="104" font-size="12.5" fill="var(--encre-2)">Faites grandir</text>
-            <text x="20" y="121" font-size="12.5" fill="var(--encre-2)">votre patrimoine.</text>
-            <path d="M20 180c26 2 40-10 58-22s42-20 68-22" stroke="var(--invest)" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-            <circle cx="146" cy="136" r="4" fill="var(--invest)"/>
-          </g>
-        </svg>
-      </section>
 
       <!-- ── La carte de connexion ─────────────────────────────────── -->
       <section class="connexion">
@@ -314,7 +225,7 @@
         </div>
 
         <h2 id="auth-title">Bienvenue</h2>
-        <p class="sous" id="auth-sub">Connectez-vous à votre espace pour suivre vos finances.</p>
+        <p class="sous" id="auth-sub">Connectez-vous à votre espace.</p>
 
         <!-- Connexion -->
         <div id="form-login">
@@ -356,43 +267,6 @@
       </section>
     </main>
 
-    <!-- ── Ce que fait l'application ───────────────────────────────── -->
-    <section class="promesses">
-      <div class="large grille">
-        <div class="promesse" id="gerez">
-          <div class="puce">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-              <rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19"/><path d="M16.5 14.5h2"/>
-            </svg>
-          </div>
-          <h3>Gérez</h3>
-          <p>Vos relevés bancaires PDF sont lus, classés et vérifiés au centime près. Vos charges fixes et vos budgets
-             se déduisent de vos derniers mois : vous n'avez qu'à relire.</p>
-        </div>
-        <div class="promesse" id="progressez">
-          <div class="puce">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-              <path d="M12 21V8"/><path d="M8.5 11.5 12 8l3.5 3.5"/><path d="M4 21h16"/>
-            </svg>
-          </div>
-          <h3>Progressez</h3>
-          <p>Objectifs d'épargne, épargne de précaution et crédits suivis échéance par échéance : capital restant dû,
-             coût des intérêts, effet d'un remboursement anticipé.</p>
-        </div>
-        <div class="promesse invest" id="realisez">
-          <div class="puce">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 17.5l5.5-6 4 3.5 8-9"/><path d="M15.5 6h5v5"/>
-            </svg>
-          </div>
-          <h3>Réalisez</h3>
-          <p>Le compte-titres suit votre portefeuille réel : ordres, positions, performance et risque, aux cours
-             du marché. Un seul compte ouvre les deux modules ; relier le compte investissement aux espèces du
-             compte-titres est la prochaine étape.</p>
-        </div>
-      </div>
-    </section>
-
     <footer id="apropos">
       <div class="large">
         <div>© 2026 PersoFolio · Projet de Master&nbsp;2 Asset Management, IAE Caen</div>
@@ -426,9 +300,7 @@
     </header>
 
     <main class="large accueil">
-      <h1 class="accueil-titre">Vos finances, de la dépense au placement</h1>
-      <p class="accueil-intro">Deux modules, un seul compte : ce que vous gagnez et dépensez d'un côté, ce que vous
-        investissez de l'autre. Le compte investissement du budget alimentera les espèces du compte-titres.</p>
+      <h1 class="accueil-titre">Bonjour<span id="bonjour-nom"></span></h1>
 
       <div class="modules">
         <a class="module-carte budget" href="banque.html">
@@ -438,13 +310,7 @@
             </svg>
           </div>
           <h2>Budget et comptes</h2>
-          <p>Compte courant et compte investissement, revenus et dépenses, objectifs d'épargne et crédits.</p>
-          <ul>
-            <li>Synthèse de vos deux comptes et de votre patrimoine net</li>
-            <li>Opérations, virements et prélèvements programmés</li>
-            <li>Budget par catégorie et flux du mois</li>
-            <li>Capital restant dû, assurance et remboursement anticipé</li>
-          </ul>
+          <p>Vos comptes, votre budget et vos emprunts, lus dans vos relevés.</p>
           <span class="aller">Ouvrir le budget →</span>
         </a>
 
@@ -455,19 +321,11 @@
             </svg>
           </div>
           <h2>Compte-titres</h2>
-          <p>Suivi du portefeuille réel : ordres, positions, performance et risque, aux cours du marché.</p>
-          <ul>
-            <li>Achats, ventes, dépôts, retraits et dividendes</li>
-            <li>Plus-values latentes et réalisées, frais</li>
-            <li>Répartition par secteur, pays et devise</li>
-            <li>Volatilité et bêta des titres détenus</li>
-          </ul>
+          <p>Votre portefeuille : positions, performance et risque.</p>
           <span class="aller">Ouvrir le compte-titres →</span>
         </a>
       </div>
 
-      <p class="note-serveur">Les deux modules lisent et écrivent sur l'API locale. Si une page reste vide, vérifiez que
-        le backend tourne : <code>python -m uvicorn main:app --reload</code> dans le dossier <code>backend</code>.</p>
     </main>
 
     <footer>
@@ -573,7 +431,7 @@
       document.getElementById('auth-title').textContent = inscription ? 'Créer votre espace' : 'Bienvenue';
       document.getElementById('auth-sub').textContent = inscription
         ? 'Un seul compte pour votre budget et votre compte-titres.'
-        : 'Connectez-vous à votre espace pour suivre vos finances.';
+        : 'Connectez-vous à votre espace.';
       document.getElementById(inscription ? 'signup-user' : 'login-user').focus();
     }
 
@@ -639,6 +497,8 @@
       document.querySelectorAll('.user-name').forEach(el => {
         el.textContent = username ? ('👤 ' + username) : '';
       });
+      const nom = document.getElementById('bonjour-nom');
+      if (nom) nom.textContent = username ? ', ' + username : '';
     }
 
     // Sur Entrée dans les champs, on déclenche la bonne action.

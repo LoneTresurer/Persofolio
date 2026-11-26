@@ -69,6 +69,13 @@ pour l'avenir.
 **Le ton.** Conseil, jamais leçon. Quand l'utilisateur fait un choix discutable,
 l'application le signale une fois, discrètement, et n'y revient pas.
 
+**Les textes sont courts** (26 novembre). Sous-titre d'une carte : une phrase,
+une dizaine de mots, qui dit ce que la carte montre. Infobulle de formule : le
+calcul et ses chiffres, une précision seulement si elle est indispensable.
+Alerte : ce qui se passe et quoi faire, sans le pourquoi. Pas de discours de
+vente : l'utilisateur est déjà dans l'application. `portefeuille.html` n'est pas
+concerné (code de l'équipe).
+
 ---
 
 ## 3. Les pièges qui ont déjà coûté du temps

@@ -623,7 +623,7 @@
       <button role="tab" data-onglet="comptes">Comptes</button>
       <button role="tab" data-onglet="budget">Budget</button>
       <button role="tab" data-onglet="dettes">Dettes</button>
-      <button role="tab" data-onglet="simulateur">Simulateur</button>
+      <button role="tab" data-onglet="simulateur">Simulateur d'investissement</button>
     </nav>
   </header>
 
@@ -1175,10 +1175,10 @@ function resumeDette(b, c, suiviDepuis) {
       const avant = c.passees.filter(l => l.phase !== 'total' && (!suiviDepuis || l.date < suiviDepuis)).length;
       const depuis = suiviDepuis ? rapprocherEcheances(c.passees.filter(l => l.phase !== 'total' && l.date >= suiviDepuis && l.date <= decalerJours(DREF, 5))) : [];
       const lies = depuis.filter(x => x.op).length, ajoutes = depuis.filter(x => !x.op && x.attendu > 0.005).length;
-      if (avant) morceaux.push(`${pl(avant, 'échéance')} payée${avant > 1 ? 's' : ''} ${suiviDepuis ? `avant le début du suivi (${dateLongue(suiviDepuis)})` : 'avant aujourd\'hui'} : historique de l'emprunt, ${suiviDepuis ? 'déjà dans le solde de votre compte courant' : 'déjà dans le solde du compte courant que vous indiquerez'}`);
-      if (lies) morceaux.push(`${pl(lies, 'échéance')} depuis, retrouvée${lies > 1 ? 's' : ''} dans vos relevés et rattachée${lies > 1 ? 's' : ''} à l'emprunt`);
-      if (ajoutes) morceaux.push(`${pl(ajoutes, 'échéance')} depuis le début du suivi${avant ? '' : ` (${dateLongue(suiviDepuis)})`}, introuvable${ajoutes > 1 ? 's' : ''} dans vos relevés : le capital restant dû n'en tiendra compte qu'une fois retrouvée${ajoutes > 1 ? 's' : ''}`);
-      passe = ` Déjà passé, en supposant chaque échéance payée à sa date : ${morceaux.join(' ; ')}.`;
+      if (avant) morceaux.push(`${pl(avant, 'échéance')} ${suiviDepuis ? `avant vos relevés (${dateLongue(suiviDepuis)})` : 'passée' + (avant > 1 ? 's' : '')} : supposée${avant > 1 ? 's' : ''} payée${avant > 1 ? 's' : ''}`);
+      if (lies) morceaux.push(`${pl(lies, 'échéance')} depuis, retrouvée${lies > 1 ? 's' : ''} dans vos relevés`);
+      if (ajoutes) morceaux.push(`${pl(ajoutes, 'échéance')} depuis le début du suivi${avant ? '' : ` (${dateLongue(suiviDepuis)})`}, introuvable${ajoutes > 1 ? 's' : ''} dans vos relevés`);
+      passe = ` ${morceaux.join(' ; ')}.`;
     }
     lignes.push(`Capital restant dû aujourd'hui : <strong>${argent(c.restant)}</strong>.${passe}`);
   }
@@ -1279,8 +1279,8 @@ function vueSimulateur() {
   const partInterets = p.total > 0 ? p.interets / p.total * 100 : 0;
   vue.innerHTML = `
     <div class="panneau">
-      <h2>Simulateur d'intérêts composés</h2>
-      <p class="sous-titre">Ce que deviennent un capital de départ et des versements réguliers, si leur rendement est réinvesti. Les chiffres sont préremplis avec vos comptes.</p>
+      <h2>Projection</h2>
+      <p class="sous-titre">Capital et versements réguliers, intérêts réinvestis. Prérempli avec vos comptes.</p>
       <div class="grille-simu">
         <div>
           <div class="champ"><label for="si-initial">Capital de départ (€)</label><input id="si-initial" inputmode="decimal" value="${sim.initial}"></div>
@@ -1301,14 +1301,13 @@ function vueSimulateur() {
             <div><span>Au bout de ${sim.annees} ans</span><strong style="color:var(--invest)">${aff(p.total)}</strong><span>${sim.reel ? 'en euros d\'aujourd\'hui' : 'en euros courants'}</span></div>
             <div><span>Versé par vous</span><strong>${aff(p.verse)}</strong><span>${argent0(sim.mensuel)} × ${sim.annees * 12} mois${sim.initial ? ` + ${argent0(sim.initial)}` : ''}</span></div>
             <div><span>${formule('Produit par les intérêts', `Capital final − sommes réellement versées
-${argent0(p.total)} − ${argent0(p.verse)} = ${argent0(p.interets)}
-Intérêts calculés chaque mois au taux équivalent (1 + taux annuel)^(1/12) − 1, et réinvestis.`)}</span><strong class="gain">${aff(p.interets)}</strong><span>${pct(partInterets, 0)} du capital final</span></div>
+${argent0(p.total)} − ${argent0(p.verse)} = ${argent0(p.interets)}`)}</span><strong class="gain">${aff(p.interets)}</strong><span>${pct(partInterets, 0)} du capital final</span></div>
           </div>
           <div class="courbe"><canvas id="c-simu"></canvas></div>
         </div>
       </div>
       <p class="note" style="margin-top:16px">${phraseSimu(p, sim)}</p>
-      <p class="discret" style="margin-top:12px">Versements en fin de mois, intérêts réinvestis chaque mois, rendement constant. Le taux saisi est annuel : un rendement de 5 % par an produit exactement 5 % sur douze mois, et non 5 % ÷ 12 chaque mois — d'où un résultat légèrement inférieur à celui des calculatrices qui divisent le taux par douze. La réalité ne l'est pas : un placement en actions fait ce rendement <em>en moyenne</em>, avec des années à −30 %. Ni fiscalité ni frais ne sont déduits ; comptez 0,5 à 2 % de frais annuels selon le support, qui se retirent du rendement saisi.</p>
+      <p class="discret" style="margin-top:12px">Hypothèses : versements en fin de mois, intérêts réinvestis, rendement annuel constant, sans frais ni impôts.</p>
     </div>`;
 
   const relire = () => {
@@ -1338,12 +1337,9 @@ Intérêts calculés chaque mois au taux équivalent (1 + taux annuel)^(1/12) �
 
 /* Une phrase qui dit ce que le graphique montre, calculée et non décorative. */
 function phraseSimu(p, d) {
-  if (d.mensuel <= 0 && d.initial <= 0) return 'Indiquez un capital de départ ou un versement mensuel pour voir l\'effet.';
-  if (d.taux <= 0) return 'À rendement nul, l\'argent ne fait que s\'accumuler : le capital final est exactement la somme versée. C\'est la situation d\'un compte courant, inflation en plus.';
-  const anneesEffort = d.mensuel > 0 ? p.interets / (d.mensuel * 12) : null;
-  return `Sur ${d.annees} ans, les intérêts rapportent ${argent0(p.interets)}, soit ${pct(p.interets / Math.max(p.verse, 1) * 100, 0)} de ce que vous avez versé`
-    + (anneesEffort ? ` — l'équivalent de ${nombre(anneesEffort, 1)} années de versements obtenues sans rien verser.` : '.')
-    + ` Un euro placé aujourd'hui en vaut ${nombre(Math.pow(1 + d.taux / 100, d.annees), 2)} au terme ; le même euro versé la dernière année n'a pas le temps de travailler. C'est la durée, plus que le montant, qui fait le résultat.`;
+  if (d.mensuel <= 0 && d.initial <= 0) return 'Indiquez un capital ou un versement mensuel.';
+  if (d.taux <= 0) return 'À rendement nul, le capital final est la somme versée.';
+  return `Sur ${d.annees} ans : ${argent0(p.interets)} d'intérêts, soit ${pct(p.interets / Math.max(p.verse, 1) * 100, 0)} de vos versements.`;
 }
 
 /* Camembert d'une répartition par catégorie, avec sa légende chiffrée.
@@ -1546,15 +1542,13 @@ function blocFichiers(comptes) {
   const casses = comptes.filter(c => !releveAccepte(c)).length;
   return `<div class="panneau">
     <div class="tete-panneau"><div><h2>Relevés lus</h2>
-      <p class="sous-titre">Pour chaque compte : solde d'ouverture, somme des mouvements, solde de clôture.
-        S'ils ne se recalculent pas au centime, la lecture est fausse et le relevé est écarté.</p></div>
+      <p class="sous-titre">Chaque relevé est vérifié au centime ; sinon, il est écarté.</p></div>
       <button class="mini-btn" id="imp-autres">Ajouter des relevés</button></div>
     <div class="defile"><table><thead><tr><th>Fichier</th><th>Période</th><th class="num">Opérations</th>
       <th class="num">Ouverture + mouvements</th><th class="num">= clôture</th></tr></thead>
       <tbody>${lignes.join('')}</tbody></table></div>
     ${casses ? `<p class="note danger" style="margin-top:12px">${casses} compte${casses > 1 ? 's' : ''} écarté${casses > 1 ? 's' : ''} :
-      le total ne retombe pas sur le solde annoncé. Plutôt que d'importer des chiffres faux, envoyez-nous le fichier :
-      c'est une mise en page que le lecteur ne connaît pas encore.</p>` : ''}</div>`;
+      les totaux ne correspondent pas au solde. Envoyez-nous le fichier.</p>` : ''}</div>`;
 }
 
 function blocAffectation(comptes) {
@@ -1575,7 +1569,7 @@ function blocAffectation(comptes) {
   if (utiles.length < 2) return '';
   return `<div class="panneau">
     <h2>Quel compte est lequel ?</h2>
-    <p class="sous-titre">Un même PDF contient souvent plusieurs comptes : compte courant, livret, prêt.</p>
+    <p class="sous-titre">Un relevé peut contenir plusieurs comptes : choisissez le compte courant.</p>
     <div class="defile"><table><tbody>${utiles.map(c => `<tr>
       <td>${echap(c.libelle || c.numero)}<span class="sous">${echap(c.banque || '')}${c.banque ? ' · ' : ''}${c.nb_operations} opérations · ${c.debut ? dateCourte(c.debut) : ''} → ${c.fin ? dateCourte(c.fin) : ''}</span></td>
       <td class="num">${argent(c.solde_cloture)}</td>
@@ -1593,14 +1587,13 @@ function blocTiers(p, inconnus, eurosInconnus, eurosTotal) {
   const partConnue = 100 - eurosInconnus / eurosTotal * 100;
   return `<div class="panneau">
     <div class="tete-panneau"><div><h2>Classer vos dépenses</h2>
-      <p class="sous-titre">Une ligne par commerçant, la plus lourde d'abord. Classer un commerçant classe
-        toutes ses opérations, passées et à venir.</p></div>
+      <p class="sous-titre">Classer un commerçant classe toutes ses opérations.</p></div>
       <div style="text-align:right"><div class="discret">Euros reconnus</div>
         <div style="font-size:22px;font-weight:500" id="imp-part">${pct(partConnue, 0)}</div></div></div>
     <div class="progres" style="margin-bottom:14px"><i style="width:${Math.min(100, partConnue)}%"></i></div>
     <p class="note ${inconnus.length ? 'alerte' : ''}" style="margin-bottom:14px" id="imp-reste">
       ${inconnus.length
-        ? `${inconnus.length} commerçants non reconnus, ${argent0(eurosInconnus)} au total. Les ${p.mesure.tiers_a_relire_pour_80pct} premiers en expliquent déjà 80 %.`
+        ? `${inconnus.length} commerçants à classer (${argent0(eurosInconnus)}). Les ${p.mesure.tiers_a_relire_pour_80pct} premiers couvrent 80 %.`
         : 'Tout est classé.'}</p>
     <div class="defile" style="max-height:460px;overflow-y:auto">
       <table><thead><tr><th>Commerçant ou tiers</th><th class="num">Opérations</th><th class="num">Total</th>
@@ -1843,8 +1836,7 @@ function modaleEmprunts(liste) {
   const pl = liste.length > 1, parCle = Object.fromEntries(liste.map(l => [l.cle, l]));
   ouvrirModale(`
     <h2 id="modale-titre">${pl ? 'Des prélèvements ressemblent à des emprunts' : 'Un prélèvement ressemble à un emprunt'}</h2>
-    <p>Configuré, un emprunt donne son capital restant dû et son échéancier. Ses paramètres ne figurent pas sur le relevé :
-      il faut les reprendre de votre contrat. La lecture se fait sur le libellé ; elle peut se tromper.</p>
+    <p>Configurez-le avec les paramètres de votre contrat pour suivre son capital restant dû.</p>
     ${liste.map(l => `
       <div class="repere" data-repere="${echap(l.cle)}">
         <div class="ligne"><strong>${echap(l.libelle)}</strong>
@@ -1892,8 +1884,8 @@ function tiroirDette(id, brouillon) {
     <form id="d-form">
       ${champsDette(b)}
       <p class="discret" style="margin:12px 0 14px">${d
-        ? 'Corriger le capital restant le recale à aujourd\'hui ; les échéances déjà retrouvées restent rattachées. Un capital de 0 marque l\'emprunt comme soldé.'
-        : 'Les paramètres viennent de votre contrat ou de votre espace client. Les échéances, elles, sont cherchées dans vos relevés.'}</p>
+        ? 'Le capital corrigé vaut à partir d\'aujourd\'hui. Capital à 0 : emprunt soldé.'
+        : 'Reprenez les paramètres de votre contrat. Les échéances seront cherchées dans vos relevés.'}</p>
       <div class="actions-tiroir"><button class="btn" type="submit">${d ? 'Enregistrer' : 'Ajouter l\'emprunt'}</button>${d ? '<button class="btn btn-danger" type="button" id="d-suppr">Supprimer</button>' : ''}</div>
     </form>`);
   brancherDette($('#d-form'), b, () => tiroirDette(id, b), !!d, E.creeLe);
@@ -1936,7 +1928,7 @@ function modaleOperation(op) {
            <label class="champ"><span class="lib">Remboursement anticipé de</span>
              <select id="m-dette">${dettes.map(d => `<option value="${d.id}">${echap(d.nom)}</option>`).join('')}</select></label>
            <div class="fin"><button class="btn" type="button" id="m-rattacher">Rattacher</button><button class="btn btn-sec" type="button" data-fermer>Annuler</button></div>`
-        : `<p class="discret">Aucune action possible sur cette ligne : montant, date et libellé viennent du relevé.</p>
+        : `<p class="discret">Aucune action possible sur cette ligne.</p>
            <div class="fin"><button class="btn btn-sec" type="button" data-fermer>Fermer</button></div>`}`);
   $('#modale').querySelectorAll('[data-fermer]').forEach(b => b.onclick = fermerModale);
   if ($('#m-rattacher')) $('#m-rattacher').onclick = () => {
@@ -2033,7 +2025,7 @@ async function envoyerReleves(fichiers) {
     if (!data.proposition) {
       zone.innerHTML = `<div class="panneau"><p class="note danger">Aucune opération exploitable.
         ${data.fichiers.map(f => `<br>${echap(f.nom)} : ${echap(f.erreur || (f.anomalies || []).join(', ') || 'relevé déséquilibré')}`).join('')}</p>
-        <p class="discret" style="margin-top:12px">Une photo ou un scan ne contient pas de texte : téléchargez le relevé depuis l'espace client de votre banque.</p>
+        <p class="discret" style="margin-top:12px">Un scan ne se lit pas : téléchargez le relevé depuis votre espace client.</p>
         <button class="btn btn-sec" id="imp-autres" style="margin-top:14px">Choisir d'autres fichiers</button></div>`;
       $('#imp-autres').onclick = () => { IMP = null; rendreImport(); };
       return;
@@ -2078,17 +2070,16 @@ function rendreImport() {
       <div class="panneau accueil-import">
         <h2>${E ? 'Ajouter des relevés' : 'Tout part de vos relevés'}</h2>
         <p class="sous-titre">${E
-          ? 'Les opérations déjà connues ne sont pas importées deux fois. Vos soldes se recalent sur le relevé le plus récent.'
-          : 'Budget et comptes ne contient que ce que vos relevés bancaires disent : opérations, soldes, échéances d\'emprunt. Plusieurs mois donnent des moyennes plus justes.'}</p>
-        ${E_ANCIEN && !E ? '<p class="note" style="margin:0 0 16px">Cette version repart de vos relevés. Vos données saisies à la main avec la version précédente sont conservées dans la base, mais ne sont plus affichées.</p>' : ''}
+          ? 'Les opérations déjà importées sont ignorées.'
+          : 'Importez vos relevés bancaires : tout part d\'eux. Plusieurs mois donnent de meilleures moyennes.'}</p>
+        ${E_ANCIEN && !E ? '<p class="note" style="margin:0 0 16px">Cette version repart de vos relevés. Vos anciennes données sont conservées, mais plus affichées.</p>' : ''}
         <label class="depot" id="depot">
           <input type="file" id="imp-fichiers" accept="application/pdf,.pdf,.xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" multiple hidden>
           <strong>Déposez vos relevés ici : PDF, Excel ou CSV</strong>
           <span>ou cliquez pour les choisir · jusqu'à 24 fichiers</span>
         </label>
-        <p class="discret" style="margin-top:14px">Téléchargez-les depuis l'espace client de votre banque. Les fichiers sont lus par le serveur
-          puis effacés : seules les opérations que vous validez sont enregistrées.</p>
-        ${E ? '' : '<p class="discret" style="margin-top:22px">Pour découvrir l\'application sans vos données : <button class="btn-lien" type="button" id="imp-exemple">charger un profil d\'exemple</button>.</p>'}
+        <p class="discret" style="margin-top:14px">Depuis l'espace client de votre banque. Les fichiers ne sont pas conservés.</p>
+        ${E ? '' : '<p class="discret" style="margin-top:22px">Sans relevé sous la main ? <button class="btn-lien" type="button" id="imp-exemple">charger un profil d\'exemple</button>.</p>'}
       </div>`;
     const input = $('#imp-fichiers'), depot = $('#depot');
     input.onchange = () => envoyerReleves(input.files);
@@ -2116,13 +2107,12 @@ function blocSolde(ops) {
   return `<div class="panneau">
     <h2>${demande ? 'Le solde à la fin du tableur' : 'Votre solde'}</h2>
     ${demande
-      ? `<p class="sous-titre">Un export tableur ne contient pas de solde. Indiquez celui de votre compte courant au
-           <strong>${dateLongue(demande)}</strong>, dernier jour du tableur : votre espace client le donne. Tout l'historique se cale dessus.</p>
+      ? `<p class="sous-titre">Un tableur ne contient pas de solde. Indiquez celui du
+           <strong>${dateLongue(demande)}</strong>, dernier jour du fichier.</p>
          <div class="champ" style="max-width:300px"><label for="imp-solde">Solde au ${dateCourte(demande)}</label>
            <input id="imp-solde" inputmode="decimal" value="${IMP.solde == null ? '' : nombre(IMP.solde, 2)}" placeholder="par exemple 1 250,00"></div>`
-      : pdf ? `<p class="sous-titre">Solde au ${dateLongue(pdf.fin)} : <strong>${argent(pdf.cloture)}</strong>, clôture du relevé le plus récent.
-           S'il manque un relevé entre deux autres, l'écart apparaîtra comme une ligne « Relevé manquant ».</p>`
-      : '<p class="sous-titre">Ces opérations prolongent l\'historique déjà importé ; le solde reste celui de votre dernier relevé.</p>'}
+      : pdf ? `<p class="sous-titre">Solde au ${dateLongue(pdf.fin)} : <strong>${argent(pdf.cloture)}</strong>, clôture du dernier relevé.</p>`
+      : '<p class="sous-titre">Le solde reste celui de votre dernier relevé.</p>'}
     <p class="discret">${ops.length} opérations retenues.</p>
     <div class="actions-tiroir" style="margin-top:18px">
       <button class="btn" id="imp-valider" style="flex:0 0 auto">${E ? 'Importer' : 'Créer mes comptes avec ces relevés'}</button>
@@ -2326,7 +2316,7 @@ function vueSynthese() {
   vue.innerHTML = `
     <section class="tete-synthese">
       <div>
-        <div class="lib">${formule('Patrimoine net', `Compte courant + compte investissement − capital restant dû sur vos emprunts
+        <div class="lib">${formule('Patrimoine net', `Courant + investissement − emprunts
 ${argent0(courant)} + ${argent0(invest)} − ${argent0(dettes)} = ${argent0(net)}`)}</div>
         <div class="gros tres-gros" id="r-net">${argent(net)}</div>
         <div class="discret">${evolNet != null ? `<span class="${classe(evolNet)}">${argent(evolNet, true)}</span> sur 30 jours · ` : ''}comptes au ${dateLongue(DREF)}, titres au cours du jour</div>
@@ -2351,10 +2341,10 @@ ${argent0(courant)} + ${argent0(invest)} − ${argent0(dettes)} = ${argent0(net)
         ${INV ? `${gros(argent(invest))}
         <div class="discret">espèces et titres du compte-titres${auCout ? ', titres au prix de revient' : ', au cours du jour'}</div>
         <dl class="lignes-carte">
-          <dt>${formule('Espèces', 'Le « Solde espèces » du compte-titres, au centime : versements − achats + ventes et dividendes.')}</dt><dd class="${esp < 0 ? 'perte' : ''}">${argent(esp)}</dd>
+          <dt>${formule('Espèces', 'Solde espèces du compte-titres : versements − achats + ventes et dividendes.')}</dt><dd class="${esp < 0 ? 'perte' : ''}">${argent(esp)}</dd>
           <dt>Titres${auCout ? ' (prix de revient)' : ''}</dt><dd>${argent(tit)}</dd>
         </dl>
-        ${auCout ? '<p class="note" style="margin:14px 0 0">Les cours n\'ont pas pu être relevés : les titres sont affichés à leur prix de revient.</p>' : ''}`
+        ${auCout ? '<p class="note" style="margin:14px 0 0">Cours indisponibles : titres au prix de revient.</p>' : ''}`
         : `${gros('—', 'discret')}<p class="discret" style="margin:8px 0 0">Le compte-titres n'est pas encore ouvert.</p>`}
         <a class="lien" href="portefeuille.html">${INV ? 'Ouvrir le compte-titres →' : 'Ouvrir le compte-titres →'}</a>
       </article>
@@ -2363,7 +2353,7 @@ ${argent0(courant)} + ${argent0(invest)} − ${argent0(dettes)} = ${argent0(net)
     <div class="grille-synthese">
       <section class="carte repartition">
         <h2>Où se trouve votre argent</h2>
-        <p class="sous-titre">Vos deux comptes, à la même échelle que ce qui reste dû sur vos emprunts.</p>
+        <p class="sous-titre">Vos avoirs face à vos emprunts.</p>
         <div class="barres-rep">
           <div class="barre-rep" role="img" aria-label="Compte courant ${pct(Math.max(0, courant) / Math.max(avoirs, 1) * 100, 0)}, compte investissement ${pct(Math.max(0, invest) / Math.max(avoirs, 1) * 100, 0)}">
             <div style="width:${Math.max(0, courant) / echelle * 100}%;background:${COULEURS.courant}"></div>
@@ -2378,7 +2368,7 @@ ${argent0(courant)} + ${argent0(invest)} − ${argent0(dettes)} = ${argent0(net)
         </div>
       </section>
       <section class="carte">
-        <h2>${formule('Épargne constatée', constatee ? `Moyenne de (crédit − débit) sur les ${constatee.nb} derniers mois complets, virements entre vos comptes exclus.` : 'Disponible après un premier mois complet de relevés.')}</h2>
+        <h2>${formule('Épargne', constatee ? `Moyenne de (crédit − débit) sur ${constatee.nb} mois complets.` : 'Disponible après un mois complet de relevés.')}</h2>
         <p class="sous-titre">${constatee ? `Moyenne ${constatee.nb > 1 ? `de ${libelleMois(constatee.mois[0]).split(' ')[0]} à ${libelleMois(constatee.mois[constatee.nb - 1])}` : `de ${libelleMois(constatee.mois[0])}`}.` : 'Il faut un mois complet de relevés.'}</p>
         ${constatee ? `${gros(argent0(constatee.moyenne, true), classe(constatee.moyenne))}<div class="discret">par mois</div>
         <dl class="lignes-carte"><dt>Taux d'épargne</dt><dd>${constatee.taux == null ? '—' : pct(constatee.taux, 0)}</dd></dl>` : gros('—', 'discret')}
@@ -2424,13 +2414,13 @@ function vueComptes() {
 
     <section class="carte">
       <h2>Évolution du solde</h2>
-      <p class="sous-titre">Solde du compte courant en fin de journée, tel qu'il ressort des relevés.</p>
+      <p class="sous-titre">Solde du compte courant, jour par jour.</p>
       <div class="courbe" style="height:260px"><canvas id="c-solde"></canvas></div>
     </section>
 
     <section class="carte">
       <h2>Débit, crédit et solde historique</h2>
-      <p class="sous-titre">Pour chaque mois : ce qui est entré, ce qui est sorti, et la différence. Les virements vers le compte-titres et les écarts entre relevés n'y sont pas. Un mois que les relevés ne couvrent pas entièrement est en teinte pâle.</p>
+      <p class="sous-titre">Crédit, débit et solde de chaque mois. Mois incomplet en teinte pâle.</p>
       <div class="courbe" style="height:280px"><canvas id="c-historique"></canvas></div>
     </section>
 
@@ -2455,7 +2445,7 @@ function vueComptes() {
             <td class="num">${o.ecart ? '' : `<button class="plus" type="button" data-op="${o.id}" aria-label="Plus d'actions">⋯</button>`}</td></tr>`).join('')}</tbody></table>
         ${visibles.length > limiteOps ? `<div style="text-align:center;margin-top:12px"><button class="btn btn-sec" id="plus-ops">Afficher les ${Math.min(100, visibles.length - limiteOps)} suivantes</button></div>` : ''}`
         : `<div class="vide"><p>${ops.length ? 'Aucune opération ne correspond à ces filtres.' : 'Aucune opération pour l\'instant.'}</p>${ops.length ? '<button class="btn btn-sec" id="f-raz">Effacer les filtres</button>' : ''}</div>`}</div>
-      <p class="discret" style="margin:14px 0 0">Seule la catégorie se modifie : montants, dates et libellés viennent des relevés. Le menu ⋯ d'un débit le rattache à un emprunt comme remboursement anticipé.</p>
+      <p class="discret" style="margin:14px 0 0">Seule la catégorie est modifiable. Menu ⋯ : remboursement anticipé.</p>
     </section>`;
 
   vue.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { periodeComptes = +b.dataset.pc; vueComptes(); });
@@ -2532,17 +2522,17 @@ function vueBudgetMensuel(vue, sous) {
         <strong>${libelleMois(moisBudget)}</strong>
         <button type="button" id="m-suiv" ${moisBudget >= couverts[couverts.length - 1] ? 'disabled' : ''} aria-label="Mois suivant">›</button>
       </div></div>
-    ${partiel ? `<p class="note" style="margin:0 0 20px">Les relevés ne couvrent pas ce mois en entier${moisBudget === moisDe(DREF) ? ` : ils s'arrêtent au ${dateLongue(DREF)}` : ''}.</p>` : ''}
+    ${partiel ? `<p class="note" style="margin:0 0 20px">Mois incomplet${moisBudget === moisDe(DREF) ? ` : relevés jusqu'au ${dateLongue(DREF)}` : ''}.</p>` : ''}
     <div class="kpis-cartes">
       <div class="kpi"><div class="lib">Crédit</div>${gros(argent(F.entrees), 'gain')}<div class="discret">virements entre vos comptes exclus</div></div>
       <div class="kpi"><div class="lib">Débit</div>${gros(argent(F.sorties))}<div class="discret">${emprunts ? `dont ${argent(emprunts)} d'emprunts` : 'virements entre vos comptes exclus'}</div></div>
       <div class="kpi"><div class="lib">${formule('Solde du mois', `Crédit − débit\n${argent0(F.entrees)} − ${argent0(F.sorties)} = ${argent0(F.solde, true)}`)}</div>${gros(argent(F.solde, true), classe(F.solde))}<div class="discret">crédit − débit</div></div>
-      <div class="kpi"><div class="lib">${formule("Taux d'épargne", taux == null ? 'Non calculé : le crédit du mois est trop faible devant le débit pour que le rapport ait un sens.' : `(Crédit − débit) ÷ crédit\n${argent0(F.solde, true)} ÷ ${argent0(F.entrees)} = ${pct(taux, 0)}`, true)}</div>${gros(taux == null ? '—' : pct(taux, 0))}<div class="discret">part du crédit non dépensée</div></div>
+      <div class="kpi"><div class="lib">${formule("Taux d'épargne", taux == null ? 'Non calculé : crédit trop faible ce mois-ci.' : `(Crédit − débit) ÷ crédit\n${argent0(F.solde, true)} ÷ ${argent0(F.entrees)} = ${pct(taux, 0)}`, true)}</div>${gros(taux == null ? '—' : pct(taux, 0))}<div class="discret">part du crédit non dépensée</div></div>
     </div>
 
     <section class="carte">
       <h2>D'où vient l'argent, où il va</h2>
-      <p class="sous-titre">Le crédit du mois à gauche, sa destination à droite ; à côté, le poids de chaque poste.</p>
+      <p class="sous-titre">D'où vient le crédit du mois, et où il va.</p>
       <div class="grille-flux">
         <div id="sankey"></div>
         <div class="bloc-part"><h3>Répartition des débits</h3><p class="sous-titre">${argent0(F.sorties)} dépensés</p>
@@ -2554,7 +2544,7 @@ function vueBudgetMensuel(vue, sous) {
 
     <section class="carte">
       <h2>Débits par catégorie</h2>
-      <p class="sous-titre">${precedents.length ? `Chaque catégorie face à sa moyenne des ${precedents.length} mois complets précédents (le trait noir).` : 'Pas encore de mois complet avant celui-ci : pas de moyenne à comparer.'} Cliquez une ligne pour voir ses opérations.</p>
+      <p class="sous-titre">${precedents.length ? `Comparés à la moyenne des ${precedents.length} mois précédents (trait noir).` : 'Pas encore de moyenne : aucun mois complet avant celui-ci.'} Cliquez une ligne pour ses opérations.</p>
       <div class="defile">${cats.length ? `<table><thead><tr><th>Catégorie</th><th style="width:32%">${precedents.length ? 'Ce mois face à la moyenne' : 'Ce mois'}</th><th class="num">${libelleMois(moisBudget).split(' ')[0]}</th><th class="num">Moyenne</th><th class="num">Écart</th></tr></thead><tbody>
         ${cats.map(l => {
           const ecart = l.moy == null ? null : l.reel - l.moy;
@@ -2609,13 +2599,13 @@ function vueBudgetHistorique(vue, sous) {
         <div><div class="lib">${formule('Crédit', `${argent0(C)} ÷ ${n} mois = ${argent0(C / n)}`)}</div>${gros(argent0(C / n), 'gain')}<div class="discret">par mois</div></div>
         <div><div class="lib">${formule('Débit', `${argent0(D)} ÷ ${n} mois = ${argent0(D / n)}`)}</div>${gros(argent0(D / n))}<div class="discret">par mois</div></div>
         <div><div class="lib">${formule('Solde', `${argent0(S, true)} ÷ ${n} mois = ${argent0(S / n, true)}`)}</div>${gros(argent0(S / n, true), classe(S))}<div class="discret">par mois</div></div>
-        <div><div class="lib">${formule("Taux d'épargne", tauxE == null ? 'Non calculé : le crédit de la période est trop faible devant le débit.' : `Total épargné ÷ total du crédit, sur toute la période\n${argent0(S, true)} ÷ ${argent0(C)} = ${pct(tauxE, 0)}`, true)}</div>${gros(tauxE == null ? '—' : pct(tauxE, 0))}<div class="discret">total épargné ÷ total du crédit</div></div>
+        <div><div class="lib">${formule("Taux d'épargne", tauxE == null ? 'Non calculé : crédit trop faible.' : `Total épargné ÷ total du crédit\n${argent0(S, true)} ÷ ${argent0(C)} = ${pct(tauxE, 0)}`, true)}</div>${gros(tauxE == null ? '—' : pct(tauxE, 0))}<div class="discret">total épargné ÷ total du crédit</div></div>
       </div>
     </section>
 
     <section class="carte">
       <h2>${sens === 'tout' ? 'Solde mois par mois' : `${Mot} mois par mois`}</h2>
-      <p class="sous-titre">${sens === 'tout' ? 'Crédit, débit et leur différence, chaque mois.' : 'Le total en trait épais, les principales catégories en traits fins. Cliquez un nom de la légende pour masquer sa courbe.'}</p>
+      <p class="sous-titre">${sens === 'tout' ? 'Crédit, débit et leur différence, chaque mois.' : 'Total en trait épais, catégories en traits fins.'}</p>
       <div class="courbe" style="height:290px"><canvas id="c-h-courbe"></canvas></div>
     </section>
 
@@ -2623,7 +2613,7 @@ function vueBudgetHistorique(vue, sous) {
     <div class="grille-histo">
       <section class="carte large">
         <h2>Composition de chaque mois</h2>
-        <p class="sous-titre">Les ${motPluriel} de chaque mois, empilés par catégorie${cats.length > 7 ? ' (les sept premières, le reste regroupé)' : ''}.</p>
+        <p class="sous-titre">Par catégorie, chaque mois.</p>
         <div class="courbe" style="height:280px"><canvas id="c-h-barres"></canvas></div>
       </section>
       <section class="carte">
@@ -2686,12 +2676,12 @@ function vueDettes() {
   const reperes = empruntsReperes();
   const bandeau = reperes.length ? `<div class="bandeau-emprunt">
       <div><strong>${reperes.length > 1 ? `${reperes.length} prélèvements ressemblent à des emprunts` : 'Un prélèvement ressemble à un emprunt'}</strong>
-        <div class="discret">${reperes.slice(0, 2).map(l => `${echap(l.libelle)} · ${argent(l.montant)} le ${dateCourte(l.date)}`).join(' ; ')}. Configurez-le pour suivre son capital restant dû ; sinon, il reste une dépense.</div></div>
+        <div class="discret">${reperes.slice(0, 2).map(l => `${echap(l.libelle)} · ${argent(l.montant)} le ${dateCourte(l.date)}`).join(' ; ')}. Configurez-le pour suivre son capital restant dû.</div></div>
       <button type="button" class="btn" id="b-configurer">${reperes.length > 1 ? 'Les examiner' : 'Le configurer'}</button>
       ${reperes.length === 1 ? '<button type="button" class="mini-btn" id="b-pas-emprunt">Ce n\'en est pas un</button>' : ''}
     </div>` : '';
   if (!E.dettes.length) {
-    vue.innerHTML = `${bandeau}<section class="carte"><div class="vide"><p>Aucun emprunt enregistré. Ajoutez-en un pour suivre son capital restant dû et son échéancier : ses échéances seront retrouvées dans vos relevés.</p><button class="btn" id="btn-dette">Ajouter un emprunt</button></div></section>`;
+    vue.innerHTML = `${bandeau}<section class="carte"><div class="vide"><p>Aucun emprunt. Ajoutez-en un pour suivre son capital restant dû.</p><button class="btn" id="btn-dette">Ajouter un emprunt</button></div></section>`;
     $('#btn-dette').onclick = () => tiroirDette();
     brancherBandeau(reperes); return;
   }
@@ -2707,7 +2697,7 @@ function vueDettes() {
 
   vue.innerHTML = `${bandeau}
     <div class="kpis-cartes">
-      <div class="kpi"><div class="lib">${formule('Capital restant dû', 'Capital de départ, diminué à chaque échéance retrouvée dans vos relevés de la part qui amortit : échéance − intérêts du mois − assurance.')}</div>${gros(argent(totalCapital))}<div class="discret">au ${dateLongue(DREF)}, ${enCours.length} emprunt${enCours.length > 1 ? 's' : ''} en cours</div></div>
+      <div class="kpi"><div class="lib">${formule('Capital restant dû', 'Diminue à chaque échéance retrouvée dans vos relevés.')}</div>${gros(argent(totalCapital))}<div class="discret">au ${dateLongue(DREF)}, ${enCours.length} emprunt${enCours.length > 1 ? 's' : ''} en cours</div></div>
       <div class="kpi"><div class="lib">Prélevé chaque mois</div>${gros(argent(totalMens))}<div class="discret">${totalAss ? `dont ${argent(totalAss)} d'assurance` : 'sans assurance'}</div></div>
       <div class="kpi"><div class="lib">Taux nominal moyen</div>${gros(pct(tauxMoyen, 2))}<div class="discret">pondéré par le capital restant</div></div>
       <div class="kpi"><div class="lib">Fin du dernier emprunt</div>${gros(derniere ? libelleMois(derniere) : '—', 'capitale')}<div class="discret">${derniere ? `dans ${dureeTexte(ecartMois(moisDe(DREF), derniere))}` : ''}</div></div>
@@ -2715,11 +2705,11 @@ function vueDettes() {
 
     <div class="grille-dettes">
       <section class="carte">
-        <h2>${formule("Taux d'endettement", rev ? `Mensualités (assurance comprise) ÷ revenus nets moyens
+        <h2>${formule("Taux d'endettement", rev ? `Mensualités ÷ revenus nets moyens
 ${argent0(totalMens)} ÷ ${argent0(rev.moyenne)} = ${endettement == null ? '—' : pct(endettement)}
-Revenus nets : crédit des derniers mois complets, hors virements entre comptes et remboursements reçus.
-Les banques françaises retiennent ${SEUIL_ENDETTEMENT} % comme limite usuelle.` : 'Disponible après un premier mois complet de relevés.')}</h2>
-        <p class="sous-titre">Mensualités, assurance comprise, rapportées à vos revenus nets moyens des trois derniers mois complets.</p>
+Revenus nets : crédit hors virements internes et remboursements reçus.
+Seuil usuel des banques : ${SEUIL_ENDETTEMENT} %.` : 'Disponible après un premier mois complet de relevés.')}</h2>
+        <p class="sous-titre">Mensualités ÷ revenus nets moyens sur 3 mois.</p>
         ${gros(endettement == null ? '—' : pct(endettement), endettement > SEUIL_ENDETTEMENT ? 'perte' : '')}
         <div class="jauge-endet" role="img" aria-label="Taux d'endettement face au seuil de ${SEUIL_ENDETTEMENT} %"><i class="${endettement > SEUIL_ENDETTEMENT ? 'depasse' : ''}" style="width:${Math.min(100, (endettement || 0) / 50 * 100)}%"></i><b style="left:${SEUIL_ENDETTEMENT / 50 * 100}%"></b></div>
         <div class="graduation"><span>0 %</span><span style="position:absolute;left:${SEUIL_ENDETTEMENT / 50 * 100}%;transform:translateX(-50%)">seuil ${SEUIL_ENDETTEMENT} %</span><span>50 %</span></div>
@@ -2738,7 +2728,7 @@ Les banques françaises retiennent ${SEUIL_ENDETTEMENT} % comme limite usuelle.`
 
     <section class="carte">
       <div class="tete-panneau"><div><h2>Vos emprunts</h2>
-        <p class="sous-titre">Chaque échéance retrouvée dans vos relevés fait baisser le capital restant dû. Cliquez une ligne pour son échéancier.</p></div>
+        <p class="sous-titre">Cliquez un emprunt pour voir son échéancier.</p></div>
         <button class="btn btn-sec" id="btn-dette">Ajouter un emprunt</button></div>
       <div class="defile"><table>
         <thead><tr><th>Emprunt</th><th style="width:15%">Remboursé</th><th class="num">Capital restant</th><th class="num">Taux</th><th class="num">Mensualité</th><th class="num">Fin</th><th>Dans vos relevés</th><th></th></tr></thead>
@@ -2751,8 +2741,8 @@ Les banques françaises retiennent ${SEUIL_ENDETTEMENT} % comme limite usuelle.`
           <td class="num">${proj.impossible ? '<span class="perte">jamais</span>' : fin ? `${libelleMois(fin, true)} ${fin.slice(0, 4)}` : '—'}</td>
           <td>${suivi.attendues ? `<span class="statut ${suivi.vues === suivi.attendues ? 'ok' : 'ko'}">${suivi.vues} sur ${suivi.attendues} échéance${suivi.attendues > 1 ? 's' : ''}</span>` : '<span class="discret">aucune attendue</span>'}</td>
           <td class="num"><button class="mini-btn" data-modif-dette="${d.id}">Modifier</button></td></tr>`).join('')}</tbody></table></div>
-      ${lignes.some(l => l.proj.impossible) ? '<p class="note danger" style="margin:12px 0 0">Une mensualité ne couvre pas les intérêts : cet emprunt ne se rembourse jamais à ce rythme.</p>' : ''}
-      ${lignes.some(l => l.suivi.vues < l.suivi.attendues) ? '<p class="note alerte" style="margin:12px 0 0">Des échéances attendues manquent dans vos relevés : le capital restant dû n\'en tient pas compte. Un relevé manque peut-être, ou les paramètres de l\'emprunt diffèrent du prélèvement réel.</p>' : ''}
+      ${lignes.some(l => l.proj.impossible) ? '<p class="note danger" style="margin:12px 0 0">Une mensualité ne couvre pas les intérêts : l\'emprunt ne se rembourse jamais.</p>' : ''}
+      ${lignes.some(l => l.suivi.vues < l.suivi.attendues) ? '<p class="note alerte" style="margin:12px 0 0">Échéances introuvables dans vos relevés : vérifiez les relevés manquants ou les paramètres de l\'emprunt.</p>' : ''}
     </section>
 
     <section class="carte" id="bloc-echeancier"></section>`;
@@ -2795,7 +2785,7 @@ function afficherEcheancier() {
     <td class="num discret">${e.assurance ? argent(e.assurance) : '—'}</td><td class="num">${argent(e.restant)}</td>
     <td><span class="statut ${cls}">${source}</span></td></tr>`;
   zone.innerHTML = `<h2>Échéancier · ${echap(d.nom)}</h2>
-    <p class="sous-titre">Les dernières échéances, telles que lues dans vos relevés, puis les suivantes d'après le contrat.</p>
+    <p class="sous-titre">Échéances passées (relevés), puis à venir (contrat).</p>
     <div class="defile"><table><thead><tr><th>Date</th><th class="num">Échéance</th><th class="num">Intérêts</th><th class="num">Capital amorti</th><th class="num">Assurance</th><th class="num">Capital restant</th><th>Source</th></tr></thead>
       <tbody>${passees.map(e => ligne(e, e.avantSuivi ? 'avant vos relevés' : e.anticipe ? 'anticipé, relevé' : vues.has(e.date) ? `relevé de ${libelleMois(moisDe(e.date), true).replace('.', '')}` : 'relevé', e.avantSuivi ? 'avenir' : 'ok')).join('')}
         ${futures.map(e => ligne(e, 'à venir', 'avenir')).join('')}</tbody></table></div>`;
