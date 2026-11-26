@@ -176,6 +176,7 @@ python outils/dependances.py         # requirements.txt contre les imports réel
 python outils/verifier_bat.py construire.bat
 python outils/essai/essai_releves.py .      # 36 contrôles, vrai navigateur hors ligne (§13)
 python outils/essai/essai_exemple.py .      # patrimoine de l'exemple à date fixe
+python outils/essai/essai_recette.py .      # 28 contrôles : cas limites, survol, téléphone, sombre (§14)
 cd persofolio/backend && python -m py_compile main.py routes_*.py core/*.py agents/*.py
 python -m unittest tests.test_passerelle tests.test_calc_frais   # depuis persofolio/backend
 ```
@@ -401,3 +402,29 @@ de `/banque/releves` y est fabriquée au format du serveur ; le tableur passe pa
 le vrai lecteur. `serveur_essai.py` sait désormais répondre à DELETE
 `/banque/etat` (Réinitialiser).
 
+
+## 14. Lire un graphique, recette de stabilité (26 novembre)
+
+**Survol des graphiques.** Deux présentations, branchées dans `graphique()` :
+- *Lecture* (`config.lecture`, `brancherLecture`) pour les graphiques à
+  plusieurs séries par mois : Débit, crédit et solde historique ; Solde,
+  Débits ou Crédits mois par mois ; Composition de chaque mois ; Capital
+  restant dû. **Rien ne s'affiche sans survol.** Au survol : le mois et son
+  total à droite du titre de la carte, la valeur de chaque série dans la
+  légende, les autres mois estompés ; sur une barre empilée, le segment
+  survolé et sa part. Un clic sur la légende masque une série.
+- *Bulle* (`brancherBulle`, par défaut) pour les autres : une petite carte au
+  style de l'application, construite à partir des infobulles du graphique.
+
+Piège rencontré : Chart.js traite les mouvements de souris à l'image suivante.
+Un mouvement capté juste avant la sortie arrivait après elle et réaffichait le
+mois. `onHover` ne retient un mois que si le canevas est encore `:hover`.
+
+**Recette** (`essai_recette.py`, aussi dans GitHub Actions) : compte vide, un
+seul relevé incomplet (ordinateur clair et téléphone sombre), tableur seul,
+emprunts soldé / qui ne se rembourse jamais / non configuré, cinq ans et
+2 760 opérations (chaque onglet sous la seconde), noms très longs sur
+téléphone, compte-titres en panne (500), conflit entre deux onglets (409).
+Chaque onglet, chaque réglage, chaque graphique survolé puis quitté ; toute
+erreur JavaScript ou réponse HTTP en erreur fait échouer. `/compte/*` n'existe
+qu'avec FastAPI : son 404 dans le serveur d'essai est attendu.

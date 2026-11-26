@@ -64,6 +64,8 @@ jobs:
         run: python outils/essai/essai_releves.py .
       - name: Calcul du patrimoine à date fixe
         run: python outils/essai/essai_exemple.py .
+      - name: Recette de stabilité (cas limites, survol, téléphone, sombre)
+        run: python outils/essai/essai_recette.py .
       - name: Relevés tableur
         working-directory: persofolio/backend
         run: python -m unittest tests.test_tableur tests.test_calc_frais -v

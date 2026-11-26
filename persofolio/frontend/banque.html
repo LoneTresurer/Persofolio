@@ -556,6 +556,31 @@
   .deux-cartes, .grille-synthese, .grille-histo, .grille-dettes { margin-bottom: 24px; }
   .deux-cartes > .carte, .grille-synthese > .carte, .grille-histo > .carte, .grille-dettes > .carte { margin-bottom: 0; }
 
+  /* Lecture d'un graphique au survol (voir brancherLecture) */
+  .carte.a-lecture { position: relative; }
+  .lecture { position: absolute; top: 22px; right: 30px; text-align: right; pointer-events: none; max-width: 45%; }
+  .lecture:empty { display: none; }
+  .lecture .m { font-size: 13px; color: var(--encre-2); }
+  .lecture .m::first-letter { text-transform: uppercase; }
+  .lecture .v { font-family: 'IBM Plex Serif', Georgia, serif; font-size: 26px; line-height: 1.2; }
+  .lecture .lib-v { font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; color: var(--encre-2); }
+  .lecture .s { font-size: 13px; color: var(--encre-2); margin-top: 2px; }
+  .lecture .s strong { color: var(--encre); font-weight: 500; }
+  .lecture .pastille, .bulle-graph .pastille, .legende-vive .pastille { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; margin-right: 6px; vertical-align: -1px; }
+  .legende-vive { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 14px; font-size: 13px; }
+  .legende-vive button { background: none; border: 0; display: inline-flex; align-items: center; min-height: 32px; padding: 2px 6px; border-radius: 6px;
+    color: var(--encre-2); font: inherit; font-size: 13px; cursor: pointer; }
+  .legende-vive button:hover { background: var(--filet-2); }
+  .legende-vive button b { font-weight: 500; color: var(--encre); margin-left: 8px; font-variant-numeric: tabular-nums; }
+  .legende-vive button.lu { background: var(--filet-2); color: var(--encre); }
+  .legende-vive button.masque { opacity: .45; text-decoration: line-through; }
+  .bulle-graph { position: absolute; pointer-events: none; z-index: 5; opacity: 0; transition: opacity .12s; white-space: nowrap;
+    background: var(--carte); border: 1px solid var(--filet); border-radius: 10px; box-shadow: 0 6px 20px rgba(21, 38, 29, .14); padding: 9px 12px; }
+  .bulle-graph .t { font-size: 12.5px; color: var(--encre-2); margin-bottom: 3px; }
+  .bulle-graph .t::first-letter { text-transform: uppercase; }
+  .bulle-graph .l { display: flex; align-items: center; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .donut { position: relative; }
+
   /* Import */
   .accueil-import { max-width: 760px; margin: 40px auto; padding: 36px 40px; }
   .accueil-import h2 { font-family: 'IBM Plex Serif', Georgia, serif; font-size: 30px; font-weight: 400; }
@@ -569,6 +594,7 @@
     .reglage { align-items: flex-start; }
     .reglages .plage { margin-left: 0; }
     .d-releve { display: none; }
+    .lecture { position: static; text-align: left; max-width: none; margin: -12px 0 10px; }
   }
 </style>
 </head>
@@ -1230,7 +1256,105 @@ function graphique(id, config) {
   const el = document.getElementById(id); if (!el) return;
   Chart.defaults.font.family = "'IBM Plex Sans', system-ui, sans-serif";
   Chart.defaults.color = couleurTheme('--encre-2');
+  config.options = config.options || {};
+  config.options.plugins = config.options.plugins || {};
+  if (config.lecture) brancherLecture(el, config); else brancherBulle(el, config);
   graphiques[id] = new Chart(el, config);
+}
+
+/* ── Lire un graphique ────────────────────────────────────────────────
+   Deux présentations, choisies le 26 novembre :
+   - « lecture » (graphiques à plusieurs séries, par mois) : rien tant que la
+     souris ne survole pas ; au survol, le mois et son total à droite du titre
+     de la carte, la valeur de chaque série dans la légende, les autres mois
+     estompés. Aucune bulle ne cache la donnée.
+   - « bulle » (une seule série, camemberts, barres horizontales) : une petite
+     carte au style de l'application, construite à partir des infobulles du
+     graphique (titre et lignes), à la place de la boîte noire de Chart.js. */
+function brancherBulle(el, config) {
+  const parent = el.parentElement;
+  let bulle = parent.querySelector('.bulle-graph');
+  if (!bulle) { bulle = document.createElement('div'); bulle.className = 'bulle-graph'; bulle.setAttribute('aria-hidden', 'true'); parent.appendChild(bulle); }
+  config.options.plugins.tooltip = { ...(config.options.plugins.tooltip || {}), enabled: false, external: ({ tooltip: t }) => {
+    if (t.opacity === 0 || !t.body?.length) { bulle.style.opacity = 0; return; }
+    const lignes = t.body.map((b, k) => ({ texte: b.lines.join(' '), couleur: t.labelColors[k]?.backgroundColor }));
+    bulle.innerHTML = `${t.title?.length ? `<div class="t">${echap(t.title.join(' '))}</div>` : ''}${lignes.map(l =>
+      `<div class="l">${lignes.length > 1 || config.type === 'doughnut' ? `<i class="pastille" style="background:${typeof l.couleur === 'string' ? l.couleur : 'transparent'}"></i>` : ''}<span>${echap(l.texte)}</span></div>`).join('')}`;
+    const larg = parent.clientWidth, w = bulle.offsetWidth, h = bulle.offsetHeight;
+    let x = t.caretX + 14; if (x + w > larg) x = t.caretX - w - 14;
+    bulle.style.left = Math.max(0, x) + 'px';
+    bulle.style.top = Math.max(0, Math.min(t.caretY - h / 2, parent.clientHeight - h)) + 'px';
+    bulle.style.opacity = 1;
+  } };
+}
+
+/* Estompe une couleur de série hors du mois lu. */
+const estompee = c => typeof c !== 'string' || !c.startsWith('#') ? c : c.slice(0, 7) + (c.length === 9 ? '26' : '40');
+
+function brancherLecture(el, config) {
+  const L = config.lecture, carte = el.closest('.carte');
+  const pile = config.data.datasets.some(d => d.stack) || config.options.scales?.y?.stacked;
+  carte.classList.add('a-lecture');
+  carte.querySelector('.lecture')?.remove();
+  const zone = document.createElement('div'); zone.className = 'lecture'; zone.setAttribute('aria-live', 'polite');
+  carte.appendChild(zone);
+  const courbe = el.closest('.courbe');
+  courbe.nextElementSibling?.classList.contains('legende-vive') && courbe.nextElementSibling.remove();
+  const leg = document.createElement('div'); leg.className = 'legende-vive';
+  courbe.after(leg);
+  const ds = config.data.datasets;
+  const valeur = L.valeur || (v => argent(v));
+  // Couleur de chaque série pour la légende, lue avant que les couleurs ne deviennent des fonctions.
+  ds.forEach(d => { const c = d.borderColor && (d.type === 'line' || config.type === 'line') ? d.borderColor : (Array.isArray(d.backgroundColor) ? d.backgroundColor[d.backgroundColor.length - 1] : d.$fond || d.backgroundColor); d.$couleur = typeof c === 'string' ? c.slice(0, 7) : '#A8B2AB'; });
+  // Couleurs : la série entière, ou seulement le mois lu quand la souris survole.
+  ds.forEach(d => {
+    const fond = d.backgroundColor;
+    const filtre = orig => ctx => {
+      const c = typeof orig === 'function' ? orig(ctx) : Array.isArray(orig) ? orig[ctx.dataIndex] : orig;
+      const lu = ctx.chart.$lu;
+      return lu == null || ctx.type !== 'data' || ctx.dataIndex === lu.i ? c : estompee(c);
+    };
+    if (d.type === 'line' || config.type === 'line') {
+      d.pointRadius = ctx => ctx.chart.$lu?.i === ctx.dataIndex ? 4 : (typeof d.$rayon === 'number' ? d.$rayon : 0);
+      d.$rayon = d.$rayon ?? (typeof d.pointRadius === 'number' ? d.pointRadius : 0);
+      d.pointHoverRadius = 4;
+    } else { d.backgroundColor = filtre(fond); d.hoverBackgroundColor = filtre(fond); }
+  });
+  const ecrire = chart => {
+    const lu = chart.$lu;
+    if (!lu) { zone.innerHTML = ''; }
+    else {
+      const seg = lu.j != null && pile ? ds[lu.j] : null, tot = L.total(lu.i);
+      zone.innerHTML = `<div class="m">${echap(L.titre(lu.i))}</div><div class="v">${tot}</div>${seg ? `<div class="s"><i class="pastille" style="background:${seg.$couleur}"></i>${echap(seg.label)} : <strong>${valeur(seg.data[lu.i])}</strong>${L.part ? ` · ${L.part(seg.data[lu.i], lu.i)}` : ''}</div>` : ''}`;
+    }
+    leg.innerHTML = ds.map((d, j) => `<button type="button" data-serie="${j}" class="${chart.isDatasetVisible(j) ? '' : 'masque'} ${lu && pile && lu.j === j ? 'lu' : ''}" aria-pressed="${chart.isDatasetVisible(j)}" title="Afficher ou masquer">
+      <i class="pastille" style="background:${d.$couleur}"></i>${echap(d.label)}${lu ? `<b>${valeur(d.data[lu.i])}</b>` : ''}</button>`).join('');
+    leg.querySelectorAll('[data-serie]').forEach(b => b.onclick = () => { const j = +b.dataset.serie; chart.setDatasetVisibility(j, !chart.isDatasetVisible(j)); chart.update(); ecrire(chart); });
+  };
+  config.options.plugins.legend = { display: false };
+  config.options.plugins.tooltip = { enabled: false };
+  config.options.interaction = { mode: 'index', intersect: false };
+  config.options.onHover = (e, els, chart) => {
+    let lu = null;
+    // Chart.js traite les mouvements à l'image suivante : un mouvement capté juste
+    // avant la sortie arrive après elle. Seul compte ce qui est encore survolé.
+    if (els.length && e.type !== 'mouseout' && chart.canvas.matches(':hover')) {
+      const pres = pile ? chart.getElementsAtEventForMode(e, 'nearest', { intersect: true }, false) : [];
+      lu = { i: els[0].index, j: pres.length ? pres[0].datasetIndex : null };
+    }
+    const avant = chart.$lu;
+    if (avant?.i === lu?.i && avant?.j === lu?.j) return;
+    chart.$lu = lu; ecrire(chart); chart.update('none');
+  };
+  config.plugins = [...(config.plugins || []), { id: 'lecture', afterInit: ch => { ch.$lu = null; ecrire(ch);
+      const effacer = () => { if (ch.$lu) { ch.$lu = null; ecrire(ch); ch.update('none'); } };
+      ch.canvas.addEventListener('mouseleave', () => { effacer(); requestAnimationFrame(() => requestAnimationFrame(effacer)); }); },
+    // Repère vertical au mois lu, pour les courbes
+    afterDatasetsDraw: ch => {
+      if (!ch.$lu || ch.config.type === 'bar' && !ch.data.datasets.some(d => d.type === 'line')) return;
+      const x = ch.scales.x.getPixelForValue(ch.$lu.i), { top, bottom } = ch.chartArea, c = ch.ctx;
+      c.save(); c.strokeStyle = couleurTheme('--filet'); c.lineWidth = 1; c.beginPath(); c.moveTo(x, top); c.lineTo(x, bottom); c.stroke(); c.restore();
+    } }];
 }
 /* Valeur courante d'une variable CSS : les graphiques sont dessinés sur un canevas
    et ne suivent pas la feuille de style, il faut leur passer la couleur du moment. */
@@ -2481,6 +2605,7 @@ function vueComptes() {
   const encre = couleurTheme('--encre'), perte = couleurTheme('--perte');
   graphique('c-historique', {
     type: 'bar',
+    lecture: { titre: i => libelleMois(retenus[i]) + (moisPartiel(retenus[i]) ? ' (incomplet)' : ''), total: i => `<span class="${classe(fl[i].solde)}">${argent(fl[i].solde, true)}</span> <span class="lib-v">de solde</span>` },
     data: { labels: retenus.map(libMoisCourt), datasets: [
       { label: 'Crédit', data: fl.map(x => arrondi(x.entrees)), backgroundColor: retenus.map((_, i) => pale(COULEURS.courant, i)), borderRadius: 3 },
       { label: 'Débit', data: fl.map(x => arrondi(x.sorties)), backgroundColor: retenus.map((_, i) => pale('#CDBFA8', i)), borderRadius: 3 },
@@ -2638,6 +2763,9 @@ function vueBudgetHistorique(vue, sous) {
     : [ligne(`Total des ${motPluriel}`, fl.map(x => Object.values(x[cote]).reduce((s, v) => s + v, 0)), couleurTheme('--encre'), true),
        ...cats.slice(0, 6).map(c => ligne(nomCat(c), fl.map(x => x[cote][c] || 0), couleur(c), false))];
   graphique('c-h-courbe', { data: { labels, datasets: jeux },
+    lecture: { titre: i => libelleMois(complets[i]), total: i => sens === 'tout'
+      ? `<span class="${classe(fl[i].solde)}">${argent(fl[i].solde, true)}</span> <span class="lib-v">de solde</span>`
+      : `${argent(Object.values(fl[i][cote]).reduce((s, v) => s + v, 0))} <span class="lib-v">de ${motPluriel}</span>` },
     options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: infobulle },
       scales: { x: { grid: { display: false } }, y: { ...axeEuros(), beginAtZero: sens !== 'tout' } } } });
@@ -2647,7 +2775,10 @@ function vueBudgetHistorique(vue, sous) {
   const barres = tete.map(c => ({ type: 'bar', label: nomCat(c), stack: 'h', borderRadius: 2, backgroundColor: couleur(c), data: fl.map(x => arrondi(x[cote][c] || 0)) }));
   if (reste.length) barres.push({ type: 'bar', label: `Autres (${reste.length})`, stack: 'h', borderRadius: 2, backgroundColor: '#C3CCC5',
     data: fl.map(x => arrondi(reste.reduce((s, c) => s + (x[cote][c] || 0), 0))) });
+  const totMois = i => barres.reduce((s, d) => s + (d.data[i] || 0), 0);
   graphique('c-h-barres', { data: { labels, datasets: barres },
+    lecture: { titre: i => libelleMois(complets[i]), total: i => `${argent(totMois(i))} <span class="lib-v">de ${motPluriel}</span>`,
+      part: (v, i) => pct(v / Math.max(totMois(i), 1) * 100, 0) + ' du mois' },
     options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } }, tooltip: infobulle },
       scales: { x: { stacked: true, grid: { display: false } }, y: { ...axeEuros(), stacked: true } } } });
@@ -2759,7 +2890,10 @@ Seuil usuel des banques : ${SEUIL_ENDETTEMENT} %.` : 'Disponible après un premi
   const pas = horizon > 120 ? 3 : 1, labels = [];
   for (let k = 0; k <= horizon; k += pas) labels.push(libMoisCourt(decalerMois(moisDe(DREF), k)));
   const teintes = ['#B8786A', '#D9A397', '#E7C7BE', '#C9A86A', '#9C8FB0'];
+  const moisDette = k => decalerMois(moisDe(DREF), k * pas);
   graphique('c-dettes', { type: 'line',
+    lecture: { titre: i => libelleMois(moisDette(i)), valeur: v => argent0(v),
+      total: i => `${argent0(graphiques['c-dettes'].data.datasets.reduce((s, d, j) => s + (graphiques['c-dettes'].isDatasetVisible(j) ? d.data[i] || 0 : 0), 0))} <span class="lib-v">restant dû</span>` },
     data: { labels, datasets: enCours.map((l, i) => ({ label: l.d.nom, fill: i === 0 ? 'origin' : '-1', pointRadius: 0, borderWidth: 1,
       borderColor: teintes[i % 5], backgroundColor: teintes[i % 5] + 'CC',
       data: labels.map((_, j) => { const s = l.proj.impossible ? null : l.proj.serie; return s ? arrondi(s[Math.min(j * pas, s.length - 1)]) : arrondi(l.etat.capital); }) })) },
